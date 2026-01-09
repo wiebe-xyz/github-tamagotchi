@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-tamagotchi-blue
+  namespace: nijmegen-test
+  labels:
+    app: github-tamagotchi
+    version: blue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-tamagotchi
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: github-tamagotchi
+        version: blue
+    spec:
+      containers:
+        - name: github-tamagotchi
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-token
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-tamagotchi-green
+  namespace: nijmegen-test
+  labels:
+    app: github-tamagotchi
+    version: green
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: github-tamagotchi
+      version: green
+  template:
+    metadata:
+      labels:
+        app: github-tamagotchi
+        version: green
+    spec:
+      containers:
+        - name: github-tamagotchi
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-token
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-tamagotchi
+  namespace: nijmegen-test
+spec:
+  selector:
+    app: github-tamagotchi
+    version: blue
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: github-tamagotchi
+  namespace: nijmegen-test
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+spec:
+  rules:
+    - host: tamagotchi.nijmegen.wiebe.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: github-tamagotchi
+                port:
+                  number: 8000
+  tls:
+    - hosts:
+        - tamagotchi.nijmegen.wiebe.xyz
+      secretName: tamagotchi-tls
