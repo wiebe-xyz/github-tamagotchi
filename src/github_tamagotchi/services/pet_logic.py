@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
 
-
 # Thresholds for pet state changes
 HUNGRY_THRESHOLD_DAYS = 3  # No commits in 3 days = hungry
 WORRIED_THRESHOLD_HOURS = 48  # PR open > 48 hours = worried
