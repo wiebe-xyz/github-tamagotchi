@@ -11,7 +11,7 @@ from github_tamagotchi.services.pet_logic import (
 )
 
 
-def test_calculate_mood_happy_with_ci_success():
+def test_calculate_mood_happy_with_ci_success() -> None:
     """Pet should be dancing when CI is successful."""
     health = RepoHealth(
         last_commit_at=datetime.now(UTC),
@@ -26,7 +26,7 @@ def test_calculate_mood_happy_with_ci_success():
     assert mood == PetMood.DANCING
 
 
-def test_calculate_mood_hungry_no_commits():
+def test_calculate_mood_hungry_no_commits() -> None:
     """Pet should be hungry when no commits in 3+ days."""
     health = RepoHealth(
         last_commit_at=datetime.now(UTC) - timedelta(days=4),
@@ -41,7 +41,7 @@ def test_calculate_mood_hungry_no_commits():
     assert mood == PetMood.HUNGRY
 
 
-def test_calculate_mood_worried_old_pr():
+def test_calculate_mood_worried_old_pr() -> None:
     """Pet should be worried when PR is open > 48 hours."""
     health = RepoHealth(
         last_commit_at=datetime.now(UTC),
@@ -56,7 +56,7 @@ def test_calculate_mood_worried_old_pr():
     assert mood == PetMood.WORRIED
 
 
-def test_calculate_mood_sick_stale_deps():
+def test_calculate_mood_sick_stale_deps() -> None:
     """Pet should be sick when dependencies are stale."""
     health = RepoHealth(
         last_commit_at=datetime.now(UTC),
@@ -71,19 +71,19 @@ def test_calculate_mood_sick_stale_deps():
     assert mood == PetMood.SICK
 
 
-def test_get_next_stage_evolution():
+def test_get_next_stage_evolution() -> None:
     """Pet should evolve when experience threshold is met."""
     next_stage = get_next_stage(PetStage.EGG, experience=150)
     assert next_stage == PetStage.BABY
 
 
-def test_get_next_stage_no_evolution():
+def test_get_next_stage_no_evolution() -> None:
     """Pet should not evolve when experience is below threshold."""
     next_stage = get_next_stage(PetStage.EGG, experience=50)
     assert next_stage == PetStage.EGG
 
 
-def test_calculate_health_delta_positive():
+def test_calculate_health_delta_positive() -> None:
     """Health should increase with recent commit and CI success."""
     health = RepoHealth(
         last_commit_at=datetime.now(UTC) - timedelta(hours=1),
