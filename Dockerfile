@@ -5,14 +5,12 @@ WORKDIR /app
 # Install uv for fast dependency management
 RUN pip install uv
 
-# Copy dependency files
-COPY pyproject.toml ./
-
-# Install dependencies
-RUN uv pip install --system -e .
-
-# Copy application code
+# Copy dependency files and source code
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
+
+# Install dependencies (regular install, not editable)
+RUN uv pip install --system .
 
 # Expose port
 EXPOSE 8000

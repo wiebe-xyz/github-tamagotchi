@@ -1,5 +1,7 @@
 """FastMCP server for GitHub Tamagotchi."""
 
+from typing import Any
+
 from fastmcp import FastMCP
 
 from github_tamagotchi.services.github import GitHubService
@@ -8,7 +10,7 @@ mcp = FastMCP("GitHub Tamagotchi")
 
 
 @mcp.tool()
-async def check_pet_status(repo_owner: str, repo_name: str) -> dict:
+async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
     """Check the status of a pet for a GitHub repository.
 
     Args:
@@ -35,7 +37,7 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict:
 
 
 @mcp.tool()
-async def feed_pet(repo_owner: str, repo_name: str) -> dict:
+async def feed_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
     """Manually feed a pet (simulates activity).
 
     Args:
@@ -54,7 +56,7 @@ async def feed_pet(repo_owner: str, repo_name: str) -> dict:
 
 
 @mcp.tool()
-async def list_pets() -> dict:
+async def list_pets() -> dict[str, Any]:
     """List all registered pets.
 
     Returns:

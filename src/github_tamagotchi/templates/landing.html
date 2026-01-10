@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Tamagotchi - Your Repo's Virtual Pet</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1>Your Repository Has a <span class="highlight">Pet</span></h1>
+                <p class="tagline">A virtual pet that reflects your GitHub repository's health. Keep coding, keep it happy.</p>
+                <a href="/auth/github" class="cta-button">Login with GitHub</a>
+            </div>
+            <div class="hero-pet">
+                <div class="pet-container">
+                    <div class="pet" id="animated-pet">
+                        <div class="pet-body">
+                            <div class="pet-face">
+                                <div class="eyes">
+                                    <div class="eye left"></div>
+                                    <div class="eye right"></div>
+                                </div>
+                                <div class="mouth happy"></div>
+                            </div>
+                        </div>
+                        <div class="pet-shadow"></div>
+                    </div>
+                    <div class="status-badge">Happy</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works">
+        <div class="container">
+            <h2>How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-icon">&#128279;</div>
+                    <h3>Connect Your Repo</h3>
+                    <p>Link your GitHub repository and hatch your new virtual pet.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-icon">&#128187;</div>
+                    <h3>Keep Coding</h3>
+                    <p>Every commit, PR, and resolved issue feeds your pet and helps it grow.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-icon">&#127942;</div>
+                    <h3>Watch It Evolve</h3>
+                    <p>Your pet evolves based on activity. Neglect it and watch it get lonely!</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+        <div class="container">
+            <h2>Why You'll Love It</h2>
+            <div class="feature-grid">
+                <div class="feature">
+                    <h3>MCP Integration</h3>
+                    <p>Check on your pet right from your editor using the Model Context Protocol.</p>
+                </div>
+                <div class="feature">
+                    <h3>Real Metrics</h3>
+                    <p>Your pet's health reflects real repo activity: commits, issues, PRs, and more.</p>
+                </div>
+                <div class="feature">
+                    <h3>Evolution System</h3>
+                    <p>Watch your pet grow from an egg to an adult as your project matures.</p>
+                </div>
+                <div class="feature">
+                    <h3>Mood Indicators</h3>
+                    <p>Happy, hungry, worried, or dancing - your pet shows how your repo is doing.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="container">
+            <h2>Ready to Adopt Your Pet?</h2>
+            <p>Connect your GitHub account and bring your repository to life.</p>
+            <a href="/auth/github" class="cta-button large">Login with GitHub</a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wbgn/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Docs</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 GitHub Tamagotchi. Open Source.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Simple bounce animation for the pet
+        const pet = document.getElementById('animated-pet');
+        let bouncing = true;
+
+        function animatePet() {
+            if (bouncing) {
+                pet.classList.add('bounce');
+                setTimeout(() => {
+                    pet.classList.remove('bounce');
+                }, 500);
+            }
+            setTimeout(animatePet, 2000);
+        }
+
+        animatePet();
+
+        // Blink animation
+        function blink() {
+            const eyes = document.querySelectorAll('.eye');
+            eyes.forEach(eye => eye.classList.add('blink'));
+            setTimeout(() => {
+                eyes.forEach(eye => eye.classList.remove('blink'));
+            }, 150);
+            setTimeout(blink, 3000 + Math.random() * 2000);
+        }
+
+        blink();
+    </script>
+</body>
+</html>
