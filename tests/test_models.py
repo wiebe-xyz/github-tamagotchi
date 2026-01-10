@@ -1,7 +1,5 @@
 """Tests for models and enums."""
 
-import pytest
-
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 
 
