@@ -1,15 +1,16 @@
 """Main FastAPI application entry point."""
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
+import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
-import structlog
 
 from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
+from github_tamagotchi.core.database import close_database
 
 logger = structlog.get_logger()
 
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown
     scheduler.shutdown()
+    await close_database()
     logger.info("GitHub Tamagotchi shutdown complete")
 
 

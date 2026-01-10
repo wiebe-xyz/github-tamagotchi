@@ -1,7 +1,7 @@
 """GitHub API service for repository health metrics."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 import structlog
