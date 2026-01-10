@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import structlog
@@ -90,7 +91,7 @@ class GitHubService:
 
     async def _get_open_prs(
         self, client: httpx.AsyncClient, owner: str, repo: str
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Get list of open pull requests."""
         try:
             resp = await client.get(
@@ -99,14 +100,15 @@ class GitHubService:
                 params={"state": "open", "per_page": 100},
             )
             resp.raise_for_status()
-            return resp.json()
+            result: list[dict[str, Any]] = resp.json()
+            return result
         except Exception as e:
             logger.warning("Failed to get open PRs", error=str(e))
         return []
 
     async def _get_open_issues(
         self, client: httpx.AsyncClient, owner: str, repo: str
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Get list of open issues (excluding PRs)."""
         try:
             resp = await client.get(
@@ -116,7 +118,8 @@ class GitHubService:
             )
             resp.raise_for_status()
             # Filter out PRs (they appear in issues endpoint too)
-            return [i for i in resp.json() if "pull_request" not in i]
+            all_issues: list[dict[str, Any]] = resp.json()
+            return [i for i in all_issues if "pull_request" not in i]
         except Exception as e:
             logger.warning("Failed to get open issues", error=str(e))
         return []
@@ -132,7 +135,8 @@ class GitHubService:
                 headers=self._get_headers(),
             )
             resp.raise_for_status()
-            default_branch = resp.json()["default_branch"]
+            repo_data: dict[str, Any] = resp.json()
+            default_branch: str = repo_data["default_branch"]
 
             # Get combined status
             resp = await client.get(
@@ -140,13 +144,13 @@ class GitHubService:
                 headers=self._get_headers(),
             )
             resp.raise_for_status()
-            status = resp.json()
-            return status["state"] == "success"
+            status: dict[str, Any] = resp.json()
+            return bool(status["state"] == "success")
         except Exception as e:
             logger.warning("Failed to get CI status", error=str(e))
         return None
 
-    def _get_oldest_age_hours(self, items: list[dict]) -> float:
+    def _get_oldest_age_hours(self, items: list[dict[str, Any]]) -> float:
         """Get age in hours of the oldest item."""
         now = datetime.now(UTC)
         oldest = min(
@@ -155,6 +159,6 @@ class GitHubService:
         )
         return (now - oldest).total_seconds() / 3600
 
-    def _get_oldest_age_days(self, items: list[dict]) -> float:
+    def _get_oldest_age_days(self, items: list[dict[str, Any]]) -> float:
         """Get age in days of the oldest item."""
         return self._get_oldest_age_hours(items) / 24
