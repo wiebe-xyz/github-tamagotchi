@@ -1,6 +1,6 @@
 """Pet state management and evolution logic."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
