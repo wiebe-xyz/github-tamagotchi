@@ -1,6 +1,6 @@
 """Tests for database module."""
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
@@ -43,13 +43,10 @@ async def test_session_can_query_pet(test_db: AsyncSession) -> None:
     test_db.add(pet)
     await test_db.commit()
 
-    result = await test_db.execute(
-        text("SELECT name FROM pets WHERE repo_owner = :owner"),
-        {"owner": "query-owner"},
-    )
-    row = result.fetchone()
-    assert row is not None
-    assert row[0] == "QueryPet"
+    result = await test_db.execute(select(Pet).where(Pet.repo_owner == "query-owner"))
+    found_pet = result.scalar_one_or_none()
+    assert found_pet is not None
+    assert found_pet.name == "QueryPet"
 
 
 async def test_pet_default_values(test_db: AsyncSession) -> None:

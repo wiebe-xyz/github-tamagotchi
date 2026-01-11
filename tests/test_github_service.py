@@ -283,9 +283,7 @@ class TestGetRepoHealth:
         respx.get("https://api.github.com/repos/owner/repo/issues").mock(
             return_value=httpx.Response(500)
         )
-        respx.get("https://api.github.com/repos/owner/repo").mock(
-            return_value=httpx.Response(500)
-        )
+        respx.get("https://api.github.com/repos/owner/repo").mock(return_value=httpx.Response(500))
 
         service = GitHubService(token="test")
         result = await service.get_repo_health("owner", "repo")

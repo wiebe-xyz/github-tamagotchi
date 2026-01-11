@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -38,6 +38,7 @@ class Pet(Base):
     """A virtual pet representing a GitHub repository."""
 
     __tablename__ = "pets"
+    __table_args__ = (UniqueConstraint("repo_owner", "repo_name", name="ix_pets_repo"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     repo_owner: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -51,9 +52,7 @@ class Pet(Base):
     experience: Mapped[int] = mapped_column(Integer, default=0)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

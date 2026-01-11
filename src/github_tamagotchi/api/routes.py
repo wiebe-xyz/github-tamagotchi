@@ -1,12 +1,16 @@
 """API routes for pet management."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.core.database import get_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["pets"])
 
@@ -45,14 +49,13 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 async def health_check(session: DbSession) -> HealthResponse:
     """Health check endpoint."""
-    from sqlalchemy import text
-
     from github_tamagotchi import __version__
 
     try:
         await session.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception:
+        logger.exception("Database health check failed")
         db_status = "disconnected"
 
     return HealthResponse(status="healthy", version=__version__, database=db_status)
