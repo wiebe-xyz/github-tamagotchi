@@ -2,15 +2,23 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import close_database
+
+# Set up paths for templates and static files
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 logger = structlog.get_logger()
 
@@ -60,12 +68,11 @@ app = FastAPI(
 
 app.include_router(router)
 
+# Mount static files
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
-@app.get("/")
-async def root() -> dict[str, str]:
-    """Root endpoint."""
-    return {
-        "name": settings.app_name,
-        "version": __version__,
-        "docs": "/docs",
-    }
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request) -> HTMLResponse:
+    """Landing page."""
+    return templates.TemplateResponse("landing.html", {"request": request})

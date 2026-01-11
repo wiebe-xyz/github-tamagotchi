@@ -118,8 +118,8 @@ class GitHubService:
             )
             resp.raise_for_status()
             # Filter out PRs (they appear in issues endpoint too)
-            all_issues: list[dict[str, Any]] = resp.json()
-            return [i for i in all_issues if "pull_request" not in i]
+            data: list[dict[str, Any]] = resp.json()
+            return [i for i in data if "pull_request" not in i]
         except Exception as e:
             logger.warning("Failed to get open issues", error=str(e))
         return []

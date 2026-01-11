@@ -12,7 +12,7 @@ COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
 # Install dependencies
-RUN uv pip install --system -e .
+RUN uv pip install --system .
 
 # Expose port
 EXPOSE 8000
