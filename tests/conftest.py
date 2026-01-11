@@ -1,11 +1,14 @@
 """Test fixtures and configuration."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -36,8 +39,8 @@ async def get_test_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-def create_test_app() -> FastAPI:
-    """Create a test FastAPI app using production routes but no scheduler lifespan."""
+def create_api_test_app() -> FastAPI:
+    """Create a test FastAPI app for API testing (no templates/static)."""
     test_app = FastAPI(title="GitHub Tamagotchi Test")
 
     # Include the production API router
@@ -58,6 +61,12 @@ def create_test_app() -> FastAPI:
     return test_app
 
 
+@asynccontextmanager
+async def empty_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Empty lifespan that doesn't start the scheduler."""
+    yield
+
+
 @pytest.fixture
 async def test_db() -> AsyncIterator[AsyncSession]:
     """Create test database tables and provide a session."""
@@ -72,9 +81,9 @@ async def test_db() -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
-async def client() -> AsyncIterator[AsyncClient]:
-    """Create test client with test database."""
-    test_app = create_test_app()
+async def async_client() -> AsyncIterator[AsyncClient]:
+    """Create async test client for API testing with test database."""
+    test_app = create_api_test_app()
 
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -87,6 +96,28 @@ async def client() -> AsyncIterator[AsyncClient]:
 
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest.fixture
+def client() -> Iterator[TestClient]:
+    """Create sync test client for production app testing (with templates/static)."""
+    # Patch the scheduler to prevent it from starting
+    with patch("github_tamagotchi.main.scheduler") as mock_scheduler:
+        mock_scheduler.start = lambda: None
+        mock_scheduler.shutdown = lambda: None
+        mock_scheduler.add_job = lambda *args, **kwargs: None
+
+        # Import after patching to get the patched version
+        from github_tamagotchi.main import app
+
+        # Override database dependency
+        app.dependency_overrides[get_session] = get_test_session
+
+        with TestClient(app) as tc:
+            yield tc
+
+        # Clean up overrides
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="session", autouse=True)
