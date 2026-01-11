@@ -2,8 +2,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
 from github_tamagotchi.services.pet_logic import (
