@@ -1,19 +1,133 @@
-"""Shared pytest fixtures for all tests."""
+"""Test fixtures and configuration."""
 
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from github_tamagotchi.main import app
+from github_tamagotchi import __version__
+from github_tamagotchi.api.routes import router
+from github_tamagotchi.core.database import get_session
+from github_tamagotchi.models.pet import Base
 from github_tamagotchi.services.github import RepoHealth
+
+# Use SQLite for testing (in-memory)
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+test_engine = create_async_engine(
+    TEST_DATABASE_URL,
+    echo=False,
+)
+
+test_session_factory = async_sessionmaker(
+    test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+
+async def get_test_session() -> AsyncIterator[AsyncSession]:
+    """Get a test database session."""
+    async with test_session_factory() as session:
+        yield session
+
+
+def create_api_test_app() -> FastAPI:
+    """Create a test FastAPI app for API testing (no templates/static)."""
+    test_app = FastAPI(title="GitHub Tamagotchi Test")
+
+    # Include the production API router
+    test_app.include_router(router)
+
+    # Override the database session dependency
+    test_app.dependency_overrides[get_session] = get_test_session
+
+    # Add root endpoint (production uses templates, test returns JSON)
+    @test_app.get("/")
+    async def root() -> dict[str, str]:
+        return {
+            "name": "GitHub Tamagotchi",
+            "version": __version__,
+            "docs": "/docs",
+        }
+
+    return test_app
+
+
+@asynccontextmanager
+async def empty_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Empty lifespan that doesn't start the scheduler."""
+    yield
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Create a test client for the FastAPI app."""
-    return TestClient(app)
+async def test_db() -> AsyncIterator[AsyncSession]:
+    """Create test database tables and provide a session."""
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with test_session_factory() as session:
+        yield session
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest.fixture
+async def async_client() -> AsyncIterator[AsyncClient]:
+    """Create async test client for API testing with test database."""
+    test_app = create_api_test_app()
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app),
+        base_url="http://test",
+    ) as ac:
+        yield ac
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest.fixture
+def client() -> Iterator[TestClient]:
+    """Create sync test client for production app testing (with templates/static)."""
+    # Patch the scheduler to prevent it from starting
+    with patch("github_tamagotchi.main.scheduler") as mock_scheduler:
+        mock_scheduler.start = lambda: None
+        mock_scheduler.shutdown = lambda: None
+        mock_scheduler.add_job = lambda *args, **kwargs: None
+
+        # Import after patching to get the patched version
+        from github_tamagotchi.main import app
+
+        # Override database dependency
+        app.dependency_overrides[get_session] = get_test_session
+
+        with TestClient(app) as tc:
+            yield tc
+
+        # Clean up overrides
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def cleanup_test_engine() -> AsyncIterator[None]:
+    """Cleanup test engine after all tests."""
+    yield
+    await test_engine.dispose()
+
+
+# Mock data fixtures for testing
 
 
 @pytest.fixture
@@ -47,16 +161,7 @@ def unhealthy_repo() -> RepoHealth:
 @pytest.fixture
 def mock_commit_response() -> list[dict[str, Any]]:
     """Mock GitHub commits API response."""
-    return [
-        {
-            "sha": "abc123",
-            "commit": {
-                "committer": {
-                    "date": "2025-01-10T12:00:00Z"
-                }
-            }
-        }
-    ]
+    return [{"sha": "abc123", "commit": {"committer": {"date": "2025-01-10T12:00:00Z"}}}]
 
 
 @pytest.fixture

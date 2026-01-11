@@ -379,8 +379,6 @@ class TestGetNextStage:
             (PetStage.BABY, 500, PetStage.CHILD),
         ],
     )
-    def test_evolution_boundary_cases(
-        self, stage: PetStage, exp: int, expected: PetStage
-    ) -> None:
+    def test_evolution_boundary_cases(self, stage: PetStage, exp: int, expected: PetStage) -> None:
         """Test evolution at exact threshold boundaries."""
         assert get_next_stage(stage, exp) == expected

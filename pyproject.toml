@@ -29,6 +29,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "httpx>=0.27.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [build-system]
@@ -45,6 +46,10 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[[tool.mypy.overrides]]
+module = ["apscheduler", "apscheduler.schedulers", "apscheduler.schedulers.asyncio"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

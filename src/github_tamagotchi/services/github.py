@@ -124,9 +124,7 @@ class GitHubService:
             logger.warning("Failed to get open issues", error=str(e))
         return []
 
-    async def _get_ci_status(
-        self, client: httpx.AsyncClient, owner: str, repo: str
-    ) -> bool | None:
+    async def _get_ci_status(self, client: httpx.AsyncClient, owner: str, repo: str) -> bool | None:
         """Get the CI status of the default branch."""
         try:
             # Get default branch
@@ -153,10 +151,7 @@ class GitHubService:
     def _get_oldest_age_hours(self, items: list[dict[str, Any]]) -> float:
         """Get age in hours of the oldest item."""
         now = datetime.now(UTC)
-        oldest = min(
-            datetime.fromisoformat(i["created_at"].replace("Z", "+00:00"))
-            for i in items
-        )
+        oldest = min(datetime.fromisoformat(i["created_at"].replace("Z", "+00:00")) for i in items)
         return (now - oldest).total_seconds() / 3600
 
     def _get_oldest_age_days(self, items: list[dict[str, Any]]) -> float:

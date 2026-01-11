@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
+from github_tamagotchi.core.database import close_database
 
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown
     scheduler.shutdown()
+    await close_database()
     logger.info("GitHub Tamagotchi shutdown complete")
 
 

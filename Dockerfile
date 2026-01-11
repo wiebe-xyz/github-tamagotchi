@@ -5,11 +5,13 @@ WORKDIR /app
 # Install uv for fast dependency management
 RUN pip install uv
 
-# Copy dependency files and source code
+# Copy all source files needed for build
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
-# Install dependencies (regular install, not editable)
+# Install dependencies
 RUN uv pip install --system .
 
 # Expose port
