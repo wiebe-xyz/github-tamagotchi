@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     github_token: str | None = None
     github_poll_interval_minutes: int = 30
 
+    # ComfyUI
+    comfyui_url: str | None = None
+    comfyui_cf_access_client_id: str | None = None
+    comfyui_cf_access_client_secret: str | None = None
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
