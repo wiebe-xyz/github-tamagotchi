@@ -46,6 +46,14 @@ class HealthResponse(BaseModel):
     database: str
 
 
+class ComfyUIHealthResponse(BaseModel):
+    """ComfyUI health check response."""
+
+    available: bool
+    queue_remaining: int | None = None
+    cuda_available: bool | None = None
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(session: DbSession) -> HealthResponse:
     """Health check endpoint."""
@@ -59,6 +67,20 @@ async def health_check(session: DbSession) -> HealthResponse:
         db_status = "disconnected"
 
     return HealthResponse(status="healthy", version=__version__, database=db_status)
+
+
+@router.get("/health/comfyui", response_model=ComfyUIHealthResponse)
+async def comfyui_health_check() -> ComfyUIHealthResponse:
+    """Check ComfyUI availability."""
+    from github_tamagotchi.services.comfyui import ComfyUIService
+
+    service = ComfyUIService()
+    status = await service.check_health()
+    return ComfyUIHealthResponse(
+        available=status.available,
+        queue_remaining=status.queue_remaining,
+        cuda_available=status.cuda_available,
+    )
 
 
 @router.post("/pets", response_model=PetResponse)
