@@ -57,6 +57,10 @@ warn_required_dynamic_aliases = true
 module = ["apscheduler", "apscheduler.schedulers", "apscheduler.schedulers.asyncio"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["github_tamagotchi.core.config"]
+disable_error_code = ["no-redef"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
