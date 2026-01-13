@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # ComfyUI
+    comfyui_url: str = "http://localhost:8188"
+    comfyui_timeout: float = 120.0
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
