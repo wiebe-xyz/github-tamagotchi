@@ -1,10 +1,15 @@
 """Application configuration."""
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
     app_name: str = "GitHub Tamagotchi"
     debug: bool = False
@@ -23,8 +28,6 @@ class Settings(BaseSettings):
     # ComfyUI
     comfyui_url: str = "http://localhost:8188"
     comfyui_timeout: float = 120.0
-
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
