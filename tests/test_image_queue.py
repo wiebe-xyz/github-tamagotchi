@@ -13,13 +13,13 @@ from github_tamagotchi.services import image_queue
 # Use SQLite for testing (in-memory)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-test_engine = create_async_engine(
+queue_test_engine = create_async_engine(
     TEST_DATABASE_URL,
     echo=False,
 )
 
-test_session_factory = async_sessionmaker(
-    test_engine,
+queue_test_session_factory = async_sessionmaker(
+    queue_test_engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
@@ -28,13 +28,13 @@ test_session_factory = async_sessionmaker(
 @pytest.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     """Create test database tables and provide a session."""
-    async with test_engine.begin() as conn:
+    async with queue_test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with test_session_factory() as session:
+    async with queue_test_session_factory() as session:
         yield session
 
-    async with test_engine.begin() as conn:
+    async with queue_test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
 
@@ -308,11 +308,11 @@ class TestRunWorker:
     async def test_worker_processes_job(self, test_pet: Pet) -> None:
         """Should process pending jobs."""
         # Set up fresh database for this test
-        async with test_engine.begin() as conn:
+        async with queue_test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
         # Create a pet and job
-        async with test_session_factory() as session:
+        async with queue_test_session_factory() as session:
             pet = Pet(
                 repo_owner="worker-test",
                 repo_name="worker-repo",
@@ -332,23 +332,23 @@ class TestRunWorker:
             stop_event.set()
 
         await asyncio.gather(
-            image_queue.run_worker(test_session_factory, stop_event, poll_interval=0.1),
+            image_queue.run_worker(queue_test_session_factory, stop_event, poll_interval=0.1),
             stop_after_processing(),
         )
 
         # Check job was processed
-        async with test_session_factory() as session:
+        async with queue_test_session_factory() as session:
             stats = await image_queue.get_queue_stats(session)
             assert stats["completed"] == 1
             assert stats["pending"] == 0
 
         # Cleanup
-        async with test_engine.begin() as conn:
+        async with queue_test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
 
     async def test_worker_stops_on_event(self) -> None:
         """Should stop when stop event is set."""
-        async with test_engine.begin() as conn:
+        async with queue_test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
         stop_event = asyncio.Event()
@@ -356,9 +356,9 @@ class TestRunWorker:
 
         # Should exit immediately
         await asyncio.wait_for(
-            image_queue.run_worker(test_session_factory, stop_event, poll_interval=0.1),
+            image_queue.run_worker(queue_test_session_factory, stop_event, poll_interval=0.1),
             timeout=1.0,
         )
 
-        async with test_engine.begin() as conn:
+        async with queue_test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
