@@ -332,7 +332,7 @@ class TestRunWorker:
             stop_event.set()
 
         await asyncio.gather(
-            image_queue.run_worker(test_session_factory, stop_event),
+            image_queue.run_worker(test_session_factory, stop_event, poll_interval=0.1),
             stop_after_processing(),
         )
 
@@ -356,7 +356,7 @@ class TestRunWorker:
 
         # Should exit immediately
         await asyncio.wait_for(
-            image_queue.run_worker(test_session_factory, stop_event),
+            image_queue.run_worker(test_session_factory, stop_event, poll_interval=0.1),
             timeout=1.0,
         )
 

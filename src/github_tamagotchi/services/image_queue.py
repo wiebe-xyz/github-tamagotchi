@@ -254,6 +254,7 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
 async def run_worker(
     session_factory: async_sessionmaker[AsyncSession],
     stop_event: asyncio.Event | None = None,
+    poll_interval: float | None = None,
 ) -> None:
     """Run the image generation queue worker.
 
@@ -262,7 +263,9 @@ async def run_worker(
     Args:
         session_factory: Factory for creating database sessions
         stop_event: Optional event to signal worker shutdown
+        poll_interval: Optional poll interval override (defaults to POLL_INTERVAL_SECONDS)
     """
+    interval = poll_interval if poll_interval is not None else POLL_INTERVAL_SECONDS
     logger.info("Starting image generation queue worker")
 
     while True:
@@ -278,11 +281,11 @@ async def run_worker(
                     await process_job(session, job)
                 else:
                     # No pending jobs, wait before polling again
-                    await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                    await asyncio.sleep(interval)
 
         except asyncio.CancelledError:
             logger.info("Worker cancelled")
             break
         except Exception:
             logger.exception("Error in queue worker, continuing...")
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            await asyncio.sleep(interval)
