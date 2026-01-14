@@ -102,6 +102,12 @@ async def async_client() -> AsyncIterator[AsyncClient]:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """Create sync test client for production app testing (with templates/static)."""
+    import importlib
+    import sys
+
+    import github_tamagotchi.main
+    import github_tamagotchi.services.image_queue
+
     # Mock run_worker to be a coroutine that returns immediately when stop is set
     async def mock_run_worker(
         session_factory: object,
@@ -112,20 +118,22 @@ def client() -> Iterator[TestClient]:
         if stop_event:
             await stop_event.wait()
 
-    # Patch the scheduler and image queue worker to prevent them from starting
-    with (
-        patch("github_tamagotchi.main.scheduler") as mock_scheduler,
-        patch(
-            "github_tamagotchi.services.image_queue.run_worker",
-            side_effect=mock_run_worker,
-        ),
-    ):
+    # Patch at module level before reloading
+    original_run_worker = github_tamagotchi.services.image_queue.run_worker
+    github_tamagotchi.services.image_queue.run_worker = mock_run_worker
+
+    # Patch the scheduler
+    with patch("github_tamagotchi.main.scheduler") as mock_scheduler:
         mock_scheduler.start = lambda: None
         mock_scheduler.shutdown = lambda: None
         mock_scheduler.add_job = lambda *args, **kwargs: None
 
-        # Import after patching to get the patched version
-        from github_tamagotchi.main import app
+        # Reload main module to pick up the mocked run_worker
+        # Remove cached module first
+        if "github_tamagotchi.main" in sys.modules:
+            del sys.modules["github_tamagotchi.main"]
+        github_tamagotchi.main = importlib.import_module("github_tamagotchi.main")
+        app = github_tamagotchi.main.app
 
         # Override database dependency
         app.dependency_overrides[get_session] = get_test_session
@@ -135,6 +143,9 @@ def client() -> Iterator[TestClient]:
 
         # Clean up overrides
         app.dependency_overrides.clear()
+
+    # Restore original
+    github_tamagotchi.services.image_queue.run_worker = original_run_worker
 
 
 @pytest.fixture(scope="session", autouse=True)
