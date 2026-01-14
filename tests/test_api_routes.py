@@ -62,3 +62,30 @@ class TestPetsEndpoints:
             json={"repo_owner": "owner", "repo_name": "repo"},
         )
         assert response.status_code == 422
+
+
+class TestQueueStatsEndpoint:
+    """Tests for the queue stats endpoint."""
+
+    def test_queue_stats_returns_200(self, client: TestClient) -> None:
+        """Queue stats endpoint should return 200 OK."""
+        response = client.get("/api/v1/admin/queue/stats")
+        assert response.status_code == 200
+
+    def test_queue_stats_returns_expected_fields(self, client: TestClient) -> None:
+        """Queue stats endpoint should return all expected fields."""
+        response = client.get("/api/v1/admin/queue/stats")
+        data = response.json()
+        assert "pending" in data
+        assert "processing" in data
+        assert "completed" in data
+        assert "failed" in data
+
+    def test_queue_stats_returns_zero_for_empty_queue(self, client: TestClient) -> None:
+        """Queue stats should return zeros when no jobs exist."""
+        response = client.get("/api/v1/admin/queue/stats")
+        data = response.json()
+        assert data["pending"] == 0
+        assert data["processing"] == 0
+        assert data["completed"] == 0
+        assert data["failed"] == 0

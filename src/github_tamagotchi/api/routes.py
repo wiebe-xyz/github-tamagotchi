@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.core.database import get_session
+from github_tamagotchi.services import image_queue
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,15 @@ class ComfyUIHealthResponse(BaseModel):
     cuda_available: bool | None = None
 
 
+class QueueStatsResponse(BaseModel):
+    """Queue statistics response."""
+
+    pending: int
+    processing: int
+    completed: int
+    failed: int
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(session: DbSession) -> HealthResponse:
     """Health check endpoint."""
@@ -80,6 +90,18 @@ async def comfyui_health_check() -> ComfyUIHealthResponse:
         available=status.available,
         queue_remaining=status.queue_remaining,
         cuda_available=status.cuda_available,
+    )
+
+
+@router.get("/admin/queue/stats", response_model=QueueStatsResponse)
+async def get_queue_stats(session: DbSession) -> QueueStatsResponse:
+    """Get image generation queue statistics."""
+    stats = await image_queue.get_queue_stats(session)
+    return QueueStatsResponse(
+        pending=stats.get("pending", 0),
+        processing=stats.get("processing", 0),
+        completed=stats.get("completed", 0),
+        failed=stats.get("failed", 0),
     )
 
 

@@ -235,6 +235,12 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
         # 1. Call ComfyUI API to generate image for each stage
         # 2. Upload generated images to MinIO
         # 3. Update pet with image URLs
+        #
+        # NOTE: While images are generating, the badge endpoint should serve a fallback:
+        # - A placeholder image ("Generating your pet...")
+        # - Or a simple emoji-based fallback
+        # - Or a generic stage silhouette
+        # This is handled by checking if the pet has images; if not, serve fallback.
 
         # Simulate some processing time for now (remove when real implementation added)
         await asyncio.sleep(0.1)
