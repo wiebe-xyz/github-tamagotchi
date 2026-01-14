@@ -105,20 +105,21 @@ def client() -> Iterator[TestClient]:
     import importlib
     import sys
 
-    import github_tamagotchi.main
     import github_tamagotchi.services.image_queue
 
-    # Mock run_worker to be a coroutine that returns immediately when stop is set
+    # Mock run_worker to wait for stop event or cancellation
     async def mock_run_worker(
         session_factory: object,
         stop_event: asyncio.Event | None = None,
         poll_interval: float | None = None,
     ) -> None:
-        # Just wait for stop event immediately
-        if stop_event:
-            await stop_event.wait()
+        try:
+            if stop_event:
+                await stop_event.wait()
+        except asyncio.CancelledError:
+            pass
 
-    # Patch at module level before reloading
+    # Patch at module level before reloading main
     original_run_worker = github_tamagotchi.services.image_queue.run_worker
     github_tamagotchi.services.image_queue.run_worker = mock_run_worker
 
@@ -129,11 +130,10 @@ def client() -> Iterator[TestClient]:
         mock_scheduler.add_job = lambda *args, **kwargs: None
 
         # Reload main module to pick up the mocked run_worker
-        # Remove cached module first
         if "github_tamagotchi.main" in sys.modules:
             del sys.modules["github_tamagotchi.main"]
-        github_tamagotchi.main = importlib.import_module("github_tamagotchi.main")
-        app = github_tamagotchi.main.app
+        main_module = importlib.import_module("github_tamagotchi.main")
+        app = main_module.app
 
         # Override database dependency
         app.dependency_overrides[get_session] = get_test_session

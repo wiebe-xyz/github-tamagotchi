@@ -25,6 +25,13 @@ queue_test_session_factory = async_sessionmaker(
 )
 
 
+@pytest.fixture(scope="module", autouse=True)
+async def cleanup_queue_test_engine() -> AsyncIterator[None]:
+    """Cleanup queue test engine after all tests in this module."""
+    yield
+    await queue_test_engine.dispose()
+
+
 @pytest.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     """Create test database tables and provide a session."""
