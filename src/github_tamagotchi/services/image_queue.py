@@ -8,6 +8,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
+from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.services.image_generation import ImageGenerationService
 
 logger = structlog.get_logger()
 
@@ -209,10 +211,24 @@ async def get_queue_stats(session: AsyncSession) -> dict[str, int]:
     return stats
 
 
+async def get_pet_by_id(session: AsyncSession, pet_id: int) -> Pet | None:
+    """Get a pet by ID.
+
+    Args:
+        session: Database session
+        pet_id: ID of the pet
+
+    Returns:
+        The pet, or None if not found
+    """
+    result = await session.execute(select(Pet).where(Pet.id == pet_id))
+    return result.scalar_one_or_none()
+
+
 async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
     """Process a single image generation job.
 
-    This is a placeholder that will be replaced with actual ComfyUI integration.
+    Generates pet images via ComfyUI for the specified stage (or all stages if None).
 
     Args:
         session: Database session
@@ -229,24 +245,54 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
     await mark_job_processing(session, job.id)
 
     try:
-        # TODO: Integrate with ComfyUI for actual image generation
-        # For now, this is a placeholder that simulates work
-        # In the future, this will:
-        # 1. Call ComfyUI API to generate image for each stage
-        # 2. Upload generated images to MinIO
-        # 3. Update pet with image URLs
-        #
-        # NOTE: While images are generating, the badge endpoint should serve a fallback:
-        # - A placeholder image ("Generating your pet...")
-        # - Or a simple emoji-based fallback
-        # - Or a generic stage silhouette
-        # This is handled by checking if the pet has images; if not, serve fallback.
+        # Fetch the pet to get owner/repo info
+        pet = await get_pet_by_id(session, job.pet_id)
+        if not pet:
+            raise ValueError(f"Pet with id {job.pet_id} not found")
 
-        # Simulate some processing time for now (remove when real implementation added)
-        await asyncio.sleep(0.1)
+        # Determine which stages to generate (specific stage or all stages)
+        stages = [job.stage] if job.stage else [stage.value for stage in PetStage]
+
+        # Generate images for each stage
+        image_service = ImageGenerationService()
+        for stage in stages:
+            logger.info(
+                "Generating image for stage",
+                job_id=job.id,
+                pet_id=job.pet_id,
+                stage=stage,
+            )
+
+            result = await image_service.generate_pet_image(
+                owner=pet.repo_owner,
+                repo=pet.repo_name,
+                stage=stage,
+            )
+
+            if not result.success:
+                raise RuntimeError(
+                    f"Image generation failed for stage {stage}: {result.error}"
+                )
+
+            logger.info(
+                "Successfully generated image for stage",
+                job_id=job.id,
+                pet_id=job.pet_id,
+                stage=stage,
+                filename=result.filename,
+            )
+
+            # NOTE: Image storage to MinIO will be implemented separately.
+            # For now, ComfyUI saves images to its output directory.
+            # The badge endpoint can serve from there or use a fallback.
 
         await mark_job_completed(session, job.id)
-        logger.info("Successfully processed job", job_id=job.id, pet_id=job.pet_id)
+        logger.info(
+            "Successfully processed job",
+            job_id=job.id,
+            pet_id=job.pet_id,
+            stages_generated=stages,
+        )
 
     except Exception as e:
         error_msg = str(e)

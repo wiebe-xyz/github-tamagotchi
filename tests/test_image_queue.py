@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from github_tamagotchi.models.image_job import JobStatus
 from github_tamagotchi.models.pet import Base, Pet, PetMood, PetStage
 from github_tamagotchi.services import image_queue
+from github_tamagotchi.services.image_generation import GenerationResult
 
 # Use SQLite for testing (in-memory)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -299,14 +301,127 @@ class TestProcessJob:
     async def test_process_job_success(
         self, db_session: AsyncSession, test_pet: Pet
     ) -> None:
-        """Should process a job successfully."""
+        """Should process a job successfully when image generation succeeds."""
         job = await image_queue.create_job(db_session, test_pet.id)
 
-        await image_queue.process_job(db_session, job)
+        # Mock the image generation service to return success
+        mock_result = GenerationResult(
+            success=True,
+            image_data=b"fake_image_data",
+            filename="test_image.png",
+        )
+
+        with patch(
+            "github_tamagotchi.services.image_queue.ImageGenerationService"
+        ) as mock_service_class:
+            mock_service = AsyncMock()
+            mock_service.generate_pet_image.return_value = mock_result
+            mock_service_class.return_value = mock_service
+
+            await image_queue.process_job(db_session, job)
 
         updated_job = await image_queue.get_job_by_id(db_session, job.id)
         assert updated_job is not None
         assert updated_job.status == JobStatus.COMPLETED.value
+
+    async def test_process_job_with_specific_stage(
+        self, db_session: AsyncSession, test_pet: Pet
+    ) -> None:
+        """Should only generate image for the specified stage."""
+        job = await image_queue.create_job(db_session, test_pet.id, stage="baby")
+
+        mock_result = GenerationResult(
+            success=True,
+            image_data=b"fake_image_data",
+            filename="test_image.png",
+        )
+
+        with patch(
+            "github_tamagotchi.services.image_queue.ImageGenerationService"
+        ) as mock_service_class:
+            mock_service = AsyncMock()
+            mock_service.generate_pet_image.return_value = mock_result
+            mock_service_class.return_value = mock_service
+
+            await image_queue.process_job(db_session, job)
+
+            # Should be called only once for the specific stage
+            assert mock_service.generate_pet_image.call_count == 1
+            call_args = mock_service.generate_pet_image.call_args
+            assert call_args.kwargs["stage"] == "baby"
+
+        updated_job = await image_queue.get_job_by_id(db_session, job.id)
+        assert updated_job is not None
+        assert updated_job.status == JobStatus.COMPLETED.value
+
+    async def test_process_job_all_stages(
+        self, db_session: AsyncSession, test_pet: Pet
+    ) -> None:
+        """Should generate images for all stages when stage is None."""
+        job = await image_queue.create_job(db_session, test_pet.id)  # stage=None
+
+        mock_result = GenerationResult(
+            success=True,
+            image_data=b"fake_image_data",
+            filename="test_image.png",
+        )
+
+        with patch(
+            "github_tamagotchi.services.image_queue.ImageGenerationService"
+        ) as mock_service_class:
+            mock_service = AsyncMock()
+            mock_service.generate_pet_image.return_value = mock_result
+            mock_service_class.return_value = mock_service
+
+            await image_queue.process_job(db_session, job)
+
+            # Should be called 6 times (once for each stage)
+            assert mock_service.generate_pet_image.call_count == 6
+
+    async def test_process_job_failure(
+        self, db_session: AsyncSession, test_pet: Pet
+    ) -> None:
+        """Should mark job as failed when image generation fails."""
+        job = await image_queue.create_job(db_session, test_pet.id, stage="egg")
+
+        mock_result = GenerationResult(
+            success=False,
+            error="ComfyUI connection failed",
+        )
+
+        with patch(
+            "github_tamagotchi.services.image_queue.ImageGenerationService"
+        ) as mock_service_class:
+            mock_service = AsyncMock()
+            mock_service.generate_pet_image.return_value = mock_result
+            mock_service_class.return_value = mock_service
+
+            with pytest.raises(RuntimeError, match="Image generation failed"):
+                await image_queue.process_job(db_session, job)
+
+        updated_job = await image_queue.get_job_by_id(db_session, job.id)
+        assert updated_job is not None
+        # Should be pending for retry (attempts=1 < MAX_ATTEMPTS=3)
+        assert updated_job.status == JobStatus.PENDING.value
+        assert "ComfyUI connection failed" in str(updated_job.error)
+
+    async def test_process_job_pet_not_found(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Should fail when pet is not found."""
+        # Create a job for a non-existent pet by directly inserting
+        from github_tamagotchi.models.image_job import ImageGenerationJob
+
+        job = ImageGenerationJob(
+            pet_id=99999,  # Non-existent pet
+            status=JobStatus.PENDING.value,
+        )
+        db_session.add(job)
+        await db_session.commit()
+        await db_session.refresh(job)
+
+        with pytest.raises(ValueError, match="Pet with id 99999 not found"):
+            await image_queue.process_job(db_session, job)
 
 
 class TestRunWorker:
@@ -329,19 +444,35 @@ class TestRunWorker:
             await session.commit()
             await session.refresh(pet)
 
-            await image_queue.create_job(session, pet.id)
+            await image_queue.create_job(session, pet.id, stage="egg")  # Single stage for speed
 
-        # Run worker briefly
+        # Mock the image generation service
+        mock_result = GenerationResult(
+            success=True,
+            image_data=b"fake_image_data",
+            filename="test_image.png",
+        )
+
+        # Run worker briefly with mocked image service
         stop_event = asyncio.Event()
 
         async def stop_after_processing() -> None:
             await asyncio.sleep(0.5)
             stop_event.set()
 
-        await asyncio.gather(
-            image_queue.run_worker(queue_test_session_factory, stop_event, poll_interval=0.1),
-            stop_after_processing(),
-        )
+        with patch(
+            "github_tamagotchi.services.image_queue.ImageGenerationService"
+        ) as mock_service_class:
+            mock_service = AsyncMock()
+            mock_service.generate_pet_image.return_value = mock_result
+            mock_service_class.return_value = mock_service
+
+            await asyncio.gather(
+                image_queue.run_worker(
+                    queue_test_session_factory, stop_event, poll_interval=0.1
+                ),
+                stop_after_processing(),
+            )
 
         # Check job was processed
         async with queue_test_session_factory() as session:
