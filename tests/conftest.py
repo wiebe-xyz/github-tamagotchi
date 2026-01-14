@@ -101,11 +101,20 @@ async def async_client() -> AsyncIterator[AsyncClient]:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """Create sync test client for production app testing (with templates/static)."""
-    # Patch the scheduler to prevent it from starting
-    with patch("github_tamagotchi.main.scheduler") as mock_scheduler:
+    # Patch the scheduler and image queue worker to prevent them from starting
+    with (
+        patch("github_tamagotchi.main.scheduler") as mock_scheduler,
+        patch("github_tamagotchi.main.image_queue") as mock_image_queue,
+    ):
         mock_scheduler.start = lambda: None
         mock_scheduler.shutdown = lambda: None
         mock_scheduler.add_job = lambda *args, **kwargs: None
+
+        # Mock run_worker to be a coroutine that returns immediately
+        async def mock_run_worker(*args: object, **kwargs: object) -> None:
+            pass
+
+        mock_image_queue.run_worker = mock_run_worker
 
         # Import after patching to get the patched version
         from github_tamagotchi.main import app
