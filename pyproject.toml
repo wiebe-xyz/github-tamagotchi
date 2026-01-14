@@ -46,10 +46,20 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
 module = ["apscheduler", "apscheduler.schedulers", "apscheduler.schedulers.asyncio"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["github_tamagotchi.core.config"]
+disable_error_code = ["no-redef"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
