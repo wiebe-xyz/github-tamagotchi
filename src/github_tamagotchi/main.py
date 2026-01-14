@@ -1,5 +1,7 @@
 """Main FastAPI application entry point."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +16,8 @@ from fastapi.templating import Jinja2Templates
 from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
-from github_tamagotchi.core.database import close_database
+from github_tamagotchi.core.database import async_session_factory, close_database
+from github_tamagotchi.services import image_queue
 
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
@@ -51,9 +54,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         poll_interval_minutes=settings.github_poll_interval_minutes,
     )
 
+    # Start image generation queue worker
+    worker_stop_event = asyncio.Event()
+    worker_task = asyncio.create_task(
+        image_queue.run_worker(async_session_factory, worker_stop_event)
+    )
+    logger.info("Image generation queue worker started")
+
     yield
 
     # Shutdown
+    # Stop image queue worker
+    worker_stop_event.set()
+    worker_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await worker_task
+    logger.info("Image generation queue worker stopped")
+
     scheduler.shutdown()
     await close_database()
     logger.info("GitHub Tamagotchi shutdown complete")

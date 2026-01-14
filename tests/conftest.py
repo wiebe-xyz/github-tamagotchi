@@ -1,5 +1,6 @@
 """Test fixtures and configuration."""
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
+
+# Import all models to ensure they're registered with Base.metadata
+from github_tamagotchi.models import ImageGenerationJob, Pet  # noqa: F401
 from github_tamagotchi.models.pet import Base
 from github_tamagotchi.services.github import RepoHealth
 
@@ -98,17 +102,56 @@ async def async_client() -> AsyncIterator[AsyncClient]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
+async def _create_tables() -> None:
+    """Helper to create all database tables."""
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def _drop_tables() -> None:
+    """Helper to drop all database tables."""
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """Create sync test client for production app testing (with templates/static)."""
-    # Patch the scheduler to prevent it from starting
+    import importlib
+    import sys
+
+    import github_tamagotchi.services.image_queue
+
+    # Create database tables
+    asyncio.get_event_loop().run_until_complete(_create_tables())
+
+    # Mock run_worker to wait for stop event or cancellation
+    async def mock_run_worker(
+        session_factory: object,
+        stop_event: asyncio.Event | None = None,
+        poll_interval: float | None = None,
+    ) -> None:
+        try:
+            if stop_event:
+                await stop_event.wait()
+        except asyncio.CancelledError:
+            pass
+
+    # Patch at module level before reloading main
+    original_run_worker = github_tamagotchi.services.image_queue.run_worker
+    github_tamagotchi.services.image_queue.run_worker = mock_run_worker
+
+    # Patch the scheduler
     with patch("github_tamagotchi.main.scheduler") as mock_scheduler:
         mock_scheduler.start = lambda: None
         mock_scheduler.shutdown = lambda: None
         mock_scheduler.add_job = lambda *args, **kwargs: None
 
-        # Import after patching to get the patched version
-        from github_tamagotchi.main import app
+        # Reload main module to pick up the mocked run_worker
+        if "github_tamagotchi.main" in sys.modules:
+            del sys.modules["github_tamagotchi.main"]
+        main_module = importlib.import_module("github_tamagotchi.main")
+        app = main_module.app
 
         # Override database dependency
         app.dependency_overrides[get_session] = get_test_session
@@ -118,6 +161,12 @@ def client() -> Iterator[TestClient]:
 
         # Clean up overrides
         app.dependency_overrides.clear()
+
+    # Restore original
+    github_tamagotchi.services.image_queue.run_worker = original_run_worker
+
+    # Drop database tables
+    asyncio.get_event_loop().run_until_complete(_drop_tables())
 
 
 @pytest.fixture(scope="session", autouse=True)

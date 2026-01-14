@@ -46,7 +46,8 @@ jobs:
         run: uv pip install --system -e ".[dev]"
 
       - name: Run tests
-        run: pytest --cov=src --cov-report=xml
+        run: pytest --cov=src --cov-report=xml --timeout=60
+        timeout-minutes: 5
 
   build:
     runs-on: ubuntu-latest
