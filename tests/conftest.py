@@ -16,10 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
-from github_tamagotchi.models.pet import Base
 
 # Import all models to ensure they're registered with Base.metadata
 from github_tamagotchi.models import ImageGenerationJob, Pet  # noqa: F401
+from github_tamagotchi.models.pet import Base
 from github_tamagotchi.services.github import RepoHealth
 
 # Use SQLite for testing (in-memory)
@@ -102,6 +102,18 @@ async def async_client() -> AsyncIterator[AsyncClient]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
+async def _create_tables() -> None:
+    """Helper to create all database tables."""
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def _drop_tables() -> None:
+    """Helper to drop all database tables."""
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """Create sync test client for production app testing (with templates/static)."""
@@ -109,6 +121,9 @@ def client() -> Iterator[TestClient]:
     import sys
 
     import github_tamagotchi.services.image_queue
+
+    # Create database tables
+    asyncio.get_event_loop().run_until_complete(_create_tables())
 
     # Mock run_worker to wait for stop event or cancellation
     async def mock_run_worker(
@@ -149,6 +164,9 @@ def client() -> Iterator[TestClient]:
 
     # Restore original
     github_tamagotchi.services.image_queue.run_worker = original_run_worker
+
+    # Drop database tables
+    asyncio.get_event_loop().run_until_complete(_drop_tables())
 
 
 @pytest.fixture(scope="session", autouse=True)
