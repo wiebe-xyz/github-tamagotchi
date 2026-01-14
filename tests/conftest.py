@@ -17,6 +17,9 @@ from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.models.pet import Base
+
+# Import all models to ensure they're registered with Base.metadata
+from github_tamagotchi.models import ImageGenerationJob, Pet  # noqa: F401
 from github_tamagotchi.services.github import RepoHealth
 
 # Use SQLite for testing (in-memory)
