@@ -29,27 +29,6 @@ class TestHealthEndpoint:
 class TestPetsEndpoints:
     """Tests for pet management endpoints."""
 
-    def test_create_pet_not_implemented(self, client: TestClient) -> None:
-        """Create pet endpoint should return 501 until implemented."""
-        response = client.post(
-            "/api/v1/pets",
-            json={"repo_owner": "owner", "repo_name": "repo", "name": "TestPet"},
-        )
-        assert response.status_code == 501
-        assert response.json()["detail"] == "Not implemented yet"
-
-    def test_get_pet_not_implemented(self, client: TestClient) -> None:
-        """Get pet endpoint should return 501 until implemented."""
-        response = client.get("/api/v1/pets/owner/repo")
-        assert response.status_code == 501
-        assert response.json()["detail"] == "Not implemented yet"
-
-    def test_feed_pet_not_implemented(self, client: TestClient) -> None:
-        """Feed pet endpoint should return 501 until implemented."""
-        response = client.post("/api/v1/pets/owner/repo/feed")
-        assert response.status_code == 501
-        assert response.json()["detail"] == "Not implemented yet"
-
     def test_create_pet_validates_input(self, client: TestClient) -> None:
         """Create pet endpoint should validate required fields."""
         response = client.post("/api/v1/pets", json={})
@@ -62,3 +41,29 @@ class TestPetsEndpoints:
             json={"repo_owner": "owner", "repo_name": "repo"},
         )
         assert response.status_code == 422
+
+    def test_get_pet_not_found_returns_404(self, client: TestClient) -> None:
+        """Get pet endpoint should return 404 for non-existent pet."""
+        response = client.get("/api/v1/pets/nonexistent/repo")
+        assert response.status_code == 404
+
+    def test_feed_pet_not_found_returns_404(self, client: TestClient) -> None:
+        """Feed pet endpoint should return 404 for non-existent pet."""
+        response = client.post("/api/v1/pets/nonexistent/repo/feed")
+        assert response.status_code == 404
+
+    def test_delete_pet_not_found_returns_404(self, client: TestClient) -> None:
+        """Delete pet endpoint should return 404 for non-existent pet."""
+        response = client.delete("/api/v1/pets/nonexistent/repo")
+        assert response.status_code == 404
+
+    def test_list_pets_returns_200(self, client: TestClient) -> None:
+        """List pets endpoint should return 200 OK."""
+        response = client.get("/api/v1/pets")
+        assert response.status_code == 200
+        data = response.json()
+        assert "items" in data
+        assert "total" in data
+        assert "page" in data
+        assert "page_size" in data
+        assert "pages" in data
