@@ -101,6 +101,19 @@ async def async_client() -> AsyncIterator[AsyncClient]:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """Create sync test client for production app testing (with templates/static)."""
+    import asyncio
+
+    async def setup_db() -> None:
+        async with test_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    async def teardown_db() -> None:
+        async with test_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+
+    # Create tables before test
+    asyncio.get_event_loop().run_until_complete(setup_db())
+
     # Patch the scheduler to prevent it from starting
     with patch("github_tamagotchi.main.scheduler") as mock_scheduler:
         mock_scheduler.start = lambda: None
@@ -118,6 +131,9 @@ def client() -> Iterator[TestClient]:
 
         # Clean up overrides
         app.dependency_overrides.clear()
+
+    # Drop tables after test
+    asyncio.get_event_loop().run_until_complete(teardown_db())
 
 
 @pytest.fixture(scope="session", autouse=True)
