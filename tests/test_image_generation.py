@@ -239,9 +239,7 @@ class TestImageGenerationService:
         assert result.error is None
 
     @pytest.mark.asyncio
-    async def test_generate_queue_failure(
-        self, service: ImageGenerationService
-    ) -> None:
+    async def test_generate_queue_failure(self, service: ImageGenerationService) -> None:
         """Should return error when prompt queuing fails."""
         with patch.object(service, "_queue_prompt", return_value=None):
             result = await service.generate_pet_image("owner", "repo", "baby")
@@ -251,9 +249,7 @@ class TestImageGenerationService:
         assert result.image_data is None
 
     @pytest.mark.asyncio
-    async def test_generate_image_retrieval_failure(
-        self, service: ImageGenerationService
-    ) -> None:
+    async def test_generate_image_retrieval_failure(self, service: ImageGenerationService) -> None:
         """Should return error when image retrieval fails."""
         with (
             patch.object(service, "_queue_prompt", return_value="test-prompt-id"),
@@ -268,9 +264,7 @@ class TestImageGenerationService:
     @pytest.mark.asyncio
     async def test_generate_timeout(self, service: ImageGenerationService) -> None:
         """Should handle timeout errors gracefully."""
-        with patch.object(
-            service, "_queue_prompt", side_effect=httpx.TimeoutException("Timeout")
-        ):
+        with patch.object(service, "_queue_prompt", side_effect=httpx.TimeoutException("Timeout")):
             result = await service.generate_pet_image("owner", "repo", "teen")
 
         assert result.success is False
@@ -278,13 +272,9 @@ class TestImageGenerationService:
         assert "timed out" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_generate_generic_error(
-        self, service: ImageGenerationService
-    ) -> None:
+    async def test_generate_generic_error(self, service: ImageGenerationService) -> None:
         """Should handle generic errors gracefully."""
-        with patch.object(
-            service, "_queue_prompt", side_effect=Exception("Connection refused")
-        ):
+        with patch.object(service, "_queue_prompt", side_effect=Exception("Connection refused")):
             result = await service.generate_pet_image("owner", "repo", "elder")
 
         assert result.success is False
@@ -292,9 +282,7 @@ class TestImageGenerationService:
         assert "Connection refused" in result.error
 
     @pytest.mark.asyncio
-    async def test_check_health_success(
-        self, service: ImageGenerationService
-    ) -> None:
+    async def test_check_health_success(self, service: ImageGenerationService) -> None:
         """Should return True when ComfyUI is healthy."""
         mock_response = AsyncMock()
         mock_response.status_code = 200
@@ -308,9 +296,7 @@ class TestImageGenerationService:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_check_health_failure(
-        self, service: ImageGenerationService
-    ) -> None:
+    async def test_check_health_failure(self, service: ImageGenerationService) -> None:
         """Should return False when ComfyUI is unreachable."""
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__.return_value.get = AsyncMock(

@@ -36,9 +36,7 @@ async def test_check_health_success(comfyui_service: ComfyUIService) -> None:
         request=mock_request,
     )
 
-    with patch.object(
-        httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=mock_response
-    ):
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=mock_response):
         status = await comfyui_service.check_health()
 
     assert status.available is True
@@ -58,9 +56,7 @@ async def test_check_health_cpu_only(comfyui_service: ComfyUIService) -> None:
         request=mock_request,
     )
 
-    with patch.object(
-        httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=mock_response
-    ):
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=mock_response):
         status = await comfyui_service.check_health()
 
     assert status.available is True
