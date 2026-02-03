@@ -38,32 +38,35 @@ async def test_health_check_response_schema(async_client: AsyncClient) -> None:
     assert "database" in data
 
 
-async def test_create_pet_not_implemented(async_client: AsyncClient) -> None:
-    """Test create pet endpoint returns 501 (not yet implemented)."""
+async def test_create_pet_returns_201(async_client: AsyncClient) -> None:
+    """Test create pet endpoint returns 201 with pet data."""
     response = await async_client.post(
         "/api/v1/pets",
         json={
-            "repo_owner": "test-owner",
-            "repo_name": "test-repo",
+            "repo_owner": "api-test-owner",
+            "repo_name": "api-test-repo",
             "name": "TestPet",
         },
     )
-    assert response.status_code == 501
-    assert response.json()["detail"] == "Not implemented yet"
+    assert response.status_code == 201
+    data = response.json()
+    assert data["repo_owner"] == "api-test-owner"
+    assert data["repo_name"] == "api-test-repo"
+    assert data["name"] == "TestPet"
 
 
-async def test_get_pet_not_implemented(async_client: AsyncClient) -> None:
-    """Test get pet endpoint returns 501 (not yet implemented)."""
-    response = await async_client.get("/api/v1/pets/test-owner/test-repo")
-    assert response.status_code == 501
-    assert response.json()["detail"] == "Not implemented yet"
+async def test_get_pet_returns_404_for_missing(async_client: AsyncClient) -> None:
+    """Test get pet endpoint returns 404 for non-existent pet."""
+    response = await async_client.get("/api/v1/pets/nonexistent-owner/nonexistent-repo")
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
 
 
-async def test_feed_pet_not_implemented(async_client: AsyncClient) -> None:
-    """Test feed pet endpoint returns 501 (not yet implemented)."""
-    response = await async_client.post("/api/v1/pets/test-owner/test-repo/feed")
-    assert response.status_code == 501
-    assert response.json()["detail"] == "Not implemented yet"
+async def test_feed_pet_returns_404_for_missing(async_client: AsyncClient) -> None:
+    """Test feed pet endpoint returns 404 for non-existent pet."""
+    response = await async_client.post("/api/v1/pets/nonexistent-owner/nonexistent-repo/feed")
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
 
 
 async def test_create_pet_validates_request_body(async_client: AsyncClient) -> None:
