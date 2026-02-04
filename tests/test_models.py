@@ -1,5 +1,7 @@
 """Tests for models and enums."""
 
+from sqlalchemy import String
+
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 
 
@@ -110,8 +112,14 @@ class TestPetModel:
 
     def test_string_field_lengths(self) -> None:
         """String fields should have appropriate max lengths."""
-        assert Pet.__table__.columns["repo_owner"].type.length == 255
-        assert Pet.__table__.columns["repo_name"].type.length == 255
-        assert Pet.__table__.columns["name"].type.length == 100
-        assert Pet.__table__.columns["stage"].type.length == 20
-        assert Pet.__table__.columns["mood"].type.length == 20
+        repo_owner_type = Pet.__table__.columns["repo_owner"].type
+        repo_name_type = Pet.__table__.columns["repo_name"].type
+        name_type = Pet.__table__.columns["name"].type
+        stage_type = Pet.__table__.columns["stage"].type
+        mood_type = Pet.__table__.columns["mood"].type
+
+        assert isinstance(repo_owner_type, String) and repo_owner_type.length == 255
+        assert isinstance(repo_name_type, String) and repo_name_type.length == 255
+        assert isinstance(name_type, String) and name_type.length == 100
+        assert isinstance(stage_type, String) and stage_type.length == 20
+        assert isinstance(mood_type, String) and mood_type.length == 20
