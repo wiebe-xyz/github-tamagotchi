@@ -12,6 +12,14 @@ from github_tamagotchi.core.config import settings
 logger = structlog.get_logger()
 
 
+class RateLimitError(Exception):
+    """Raised when GitHub API rate limit is exceeded."""
+
+    def __init__(self, message: str, reset_time: datetime | None = None) -> None:
+        super().__init__(message)
+        self.reset_time = reset_time
+
+
 @dataclass
 class RepoHealth:
     """Health metrics for a GitHub repository."""
@@ -39,6 +47,20 @@ class GitHubService:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         return headers
+
+    def _check_rate_limit(self, response: httpx.Response) -> None:
+        """Check if rate limit was hit and raise RateLimitError if so."""
+        if response.status_code == 403:
+            remaining = response.headers.get("X-RateLimit-Remaining")
+            if remaining is not None and int(remaining) == 0:
+                reset_timestamp = response.headers.get("X-RateLimit-Reset")
+                reset_time = None
+                if reset_timestamp:
+                    reset_time = datetime.fromtimestamp(int(reset_timestamp), tz=UTC)
+                raise RateLimitError(
+                    "GitHub API rate limit exceeded",
+                    reset_time=reset_time,
+                )
 
     async def get_repo_health(self, owner: str, repo: str) -> RepoHealth:
         """Fetch health metrics for a repository."""
@@ -79,12 +101,15 @@ class GitHubService:
                 headers=self._get_headers(),
                 params={"per_page": 1},
             )
+            self._check_rate_limit(resp)
             resp.raise_for_status()
             commits = resp.json()
             if commits:
                 return datetime.fromisoformat(
                     commits[0]["commit"]["committer"]["date"].replace("Z", "+00:00")
                 )
+        except RateLimitError:
+            raise
         except Exception as e:
             logger.warning("Failed to get last commit", error=str(e))
         return None
@@ -99,9 +124,12 @@ class GitHubService:
                 headers=self._get_headers(),
                 params={"state": "open", "per_page": 100},
             )
+            self._check_rate_limit(resp)
             resp.raise_for_status()
             result: list[dict[str, Any]] = resp.json()
             return result
+        except RateLimitError:
+            raise
         except Exception as e:
             logger.warning("Failed to get open PRs", error=str(e))
         return []
@@ -116,10 +144,13 @@ class GitHubService:
                 headers=self._get_headers(),
                 params={"state": "open", "per_page": 100},
             )
+            self._check_rate_limit(resp)
             resp.raise_for_status()
             # Filter out PRs (they appear in issues endpoint too)
             data: list[dict[str, Any]] = resp.json()
             return [i for i in data if "pull_request" not in i]
+        except RateLimitError:
+            raise
         except Exception as e:
             logger.warning("Failed to get open issues", error=str(e))
         return []
@@ -132,6 +163,7 @@ class GitHubService:
                 f"{self.base_url}/repos/{owner}/{repo}",
                 headers=self._get_headers(),
             )
+            self._check_rate_limit(resp)
             resp.raise_for_status()
             repo_data: dict[str, Any] = resp.json()
             default_branch: str = repo_data["default_branch"]
@@ -141,9 +173,12 @@ class GitHubService:
                 f"{self.base_url}/repos/{owner}/{repo}/commits/{default_branch}/status",
                 headers=self._get_headers(),
             )
+            self._check_rate_limit(resp)
             resp.raise_for_status()
             status: dict[str, Any] = resp.json()
             return bool(status["state"] == "success")
+        except RateLimitError:
+            raise
         except Exception as e:
             logger.warning("Failed to get CI status", error=str(e))
         return None
