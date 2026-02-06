@@ -49,6 +49,48 @@ DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tamagotchi
 GITHUB_TOKEN=ghp_xxx
 ```
 
+## MCP Integration
+
+The GitHub Tamagotchi exposes an MCP (Model Context Protocol) server that allows AI assistants to interact with your pets.
+
+### Available MCP Tools
+
+- **register_pet**: Create a new pet for a GitHub repository
+- **check_pet_status**: Get current pet status and repository health metrics
+- **feed_pet**: Manually feed a pet to increase health and happiness
+- **list_pets**: List all registered pets
+- **get_pet_history**: View pet evolution history and stats
+- **update_pet_from_repo**: Sync pet status with current repository health
+
+### Configuring MCP Client
+
+Add the following to your MCP client configuration (e.g., `~/.claude/claude_code_config.json` for Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "github-tamagotchi": {
+      "type": "streamable-http",
+      "url": "http://localhost:8000/mcp/mcp"
+    }
+  }
+}
+```
+
+For production deployments, replace `localhost:8000` with your deployment URL.
+
+### MCP Endpoint
+
+The MCP server is mounted at `/mcp/mcp` when running the application:
+
+```bash
+# Start the server
+uv run uvicorn github_tamagotchi.main:app --reload
+
+# MCP endpoint will be available at:
+# http://localhost:8000/mcp/mcp
+```
+
 ## Deployment
 
 Deployed to k3s cluster at `nijmegen.wiebe.xyz`. See `k8s/` directory for manifests.
