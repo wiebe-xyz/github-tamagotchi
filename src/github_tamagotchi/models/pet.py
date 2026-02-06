@@ -1,7 +1,7 @@
 """Pet model representing a GitHub repository's health."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -11,7 +11,7 @@ class Base(DeclarativeBase):
     """Base class for all models."""
 
 
-class PetStage(str, Enum):
+class PetStage(StrEnum):
     """Evolution stages of the pet."""
 
     EGG = "egg"
@@ -22,7 +22,7 @@ class PetStage(str, Enum):
     ELDER = "elder"
 
 
-class PetMood(str, Enum):
+class PetMood(StrEnum):
     """Current mood of the pet based on repo health."""
 
     HAPPY = "happy"
