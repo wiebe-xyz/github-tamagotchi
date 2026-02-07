@@ -5,13 +5,15 @@ import math
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,13 @@ class FeedResponse(BaseModel):
 
     message: str
     pet: PetResponse
+
+
+class WebhookResponse(BaseModel):
+    """Response for webhook processing."""
+
+    status: str
+    message: str
 
 
 class HealthResponse(BaseModel):
@@ -178,3 +187,42 @@ async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> Non
             detail=f"Pet not found for {repo_owner}/{repo_name}",
         )
     await pet_crud.delete_pet(session, pet)
+
+
+@router.post("/webhooks/github", response_model=WebhookResponse)
+async def github_webhook(request: Request, session: DbSession) -> WebhookResponse:
+    """Receive GitHub webhook events and update pet state."""
+    body = await request.body()
+
+    # Verify signature if webhook secret is configured
+    if settings.github_webhook_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not signature or not verify_signature(
+            body, signature, settings.github_webhook_secret
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature",
+            )
+
+    event_type = request.headers.get("X-GitHub-Event", "")
+    if not event_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing X-GitHub-Event header",
+        )
+
+    # Handle ping event (sent when webhook is first configured)
+    if event_type == "ping":
+        return WebhookResponse(status="ok", message="pong")
+
+    handler = EVENT_HANDLERS.get(event_type)
+    if not handler:
+        return WebhookResponse(
+            status="ignored",
+            message=f"event type '{event_type}' is not handled",
+        )
+
+    payload = await request.json()
+    message = await handler(payload, session)
+    return WebhookResponse(status="processed", message=message)
