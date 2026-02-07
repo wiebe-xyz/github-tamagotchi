@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # GitHub
     github_token: str | None = None
     github_poll_interval_minutes: int = 30
+    github_webhook_secret: str | None = None
 
     # ComfyUI
     comfyui_url: str | None = None
