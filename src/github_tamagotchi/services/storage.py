@@ -1,6 +1,8 @@
 """MinIO/S3 storage service for pet images."""
 
+import asyncio
 import io
+import re
 from typing import TYPE_CHECKING
 
 import structlog
@@ -8,11 +10,23 @@ from minio import Minio
 from minio.error import S3Error
 
 from github_tamagotchi.core.config import settings
+from github_tamagotchi.models.pet import PetStage
 
 if TYPE_CHECKING:
     from minio.datatypes import Object as MinioObject
 
 logger = structlog.get_logger()
+
+_VALID_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _validate_path_component(value: str, name: str) -> None:
+    """Validate that a path component does not contain path traversal characters."""
+    if not value or not _VALID_NAME_RE.match(value):
+        raise ValueError(
+            f"Invalid {name}: must contain only alphanumeric characters, "
+            f"hyphens, underscores, and dots"
+        )
 
 
 class StorageService:
@@ -51,13 +65,16 @@ class StorageService:
 
     def _get_object_path(self, owner: str, repo: str, stage: str) -> str:
         """Build the object path for a pet image."""
+        _validate_path_component(owner, "owner")
+        _validate_path_component(repo, "repo")
         return f"pets/{owner}/{repo}/{stage}.png"
 
     async def ensure_bucket_exists(self) -> None:
         """Ensure the bucket exists, creating it if necessary."""
         try:
-            if not self.client.bucket_exists(self.bucket):
-                self.client.make_bucket(self.bucket)
+            exists = await asyncio.to_thread(self.client.bucket_exists, self.bucket)
+            if not exists:
+                await asyncio.to_thread(self.client.make_bucket, self.bucket)
                 logger.info("Created bucket", bucket=self.bucket)
         except S3Error as e:
             logger.error("Failed to ensure bucket exists", error=str(e))
@@ -81,12 +98,13 @@ class StorageService:
 
         try:
             await self.ensure_bucket_exists()
-            self.client.put_object(
+            await asyncio.to_thread(
+                self.client.put_object,
                 self.bucket,
                 object_path,
                 io.BytesIO(image_data),
-                length=len(image_data),
-                content_type="image/png",
+                len(image_data),
+                "image/png",
             )
             logger.info(
                 "Uploaded pet image",
@@ -114,7 +132,9 @@ class StorageService:
         object_path = self._get_object_path(owner, repo, stage)
 
         try:
-            response = self.client.get_object(self.bucket, object_path)
+            response = await asyncio.to_thread(
+                self.client.get_object, self.bucket, object_path
+            )
             data = response.read()
             response.close()
             response.release_conn()
@@ -131,7 +151,7 @@ class StorageService:
         object_path = self._get_object_path(owner, repo, stage)
 
         try:
-            self.client.stat_object(self.bucket, object_path)
+            await asyncio.to_thread(self.client.stat_object, self.bucket, object_path)
             return True
         except S3Error as e:
             if e.code == "NoSuchKey":
@@ -140,11 +160,13 @@ class StorageService:
 
     async def delete_images(self, owner: str, repo: str) -> None:
         """Delete all images for a pet."""
-        stages = ["egg", "baby", "child", "teen", "adult", "elder"]
+        stages = [stage.value for stage in PetStage]
         for stage in stages:
             object_path = self._get_object_path(owner, repo, stage)
             try:
-                self.client.remove_object(self.bucket, object_path)
+                await asyncio.to_thread(
+                    self.client.remove_object, self.bucket, object_path
+                )
                 logger.debug("Deleted image", path=object_path)
             except S3Error as e:
                 if e.code != "NoSuchKey":
@@ -160,8 +182,8 @@ class StorageService:
         stages: list[str] = []
 
         try:
-            objects: list[MinioObject] = list(
-                self.client.list_objects(self.bucket, prefix=prefix)
+            objects: list[MinioObject] = await asyncio.to_thread(
+                lambda: list(self.client.list_objects(self.bucket, prefix=prefix))
             )
             for obj in objects:
                 if obj.object_name and obj.object_name.endswith(".png"):
@@ -176,8 +198,8 @@ class StorageService:
     def get_public_url(self, owner: str, repo: str, stage: str) -> str:
         """Get the public URL for a pet image.
 
-        Note: This assumes the bucket has public read access configured,
-        or returns a presigned URL for private buckets.
+        Note: This assumes the bucket has public read access configured.
+        For private buckets, use presigned URLs via the MinIO client instead.
         """
         object_path = self._get_object_path(owner, repo, stage)
         protocol = "https" if self.secure else "http"

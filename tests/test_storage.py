@@ -43,6 +43,27 @@ class TestStorageService:
         path = storage_service._get_object_path("owner-name", "repo-name", "baby")
         assert path == "pets/owner-name/repo-name/baby.png"
 
+    def test_get_object_path_rejects_path_traversal(
+        self, storage_service: StorageService
+    ) -> None:
+        """Test that path traversal characters are rejected."""
+        with pytest.raises(ValueError, match="Invalid owner"):
+            storage_service._get_object_path("../etc", "repo", "egg")
+
+    def test_get_object_path_rejects_slashes(
+        self, storage_service: StorageService
+    ) -> None:
+        """Test that slashes in input are rejected."""
+        with pytest.raises(ValueError, match="Invalid repo"):
+            storage_service._get_object_path("owner", "repo/../../etc", "egg")
+
+    def test_get_object_path_rejects_empty(
+        self, storage_service: StorageService
+    ) -> None:
+        """Test that empty owner/repo is rejected."""
+        with pytest.raises(ValueError, match="Invalid owner"):
+            storage_service._get_object_path("", "repo", "egg")
+
     async def test_ensure_bucket_exists_creates_bucket(
         self, storage_service: StorageService, mock_minio_client: MagicMock
     ) -> None:

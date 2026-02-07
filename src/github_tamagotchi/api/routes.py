@@ -6,12 +6,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
-from github_tamagotchi.models.pet import PetStage
+from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.image_generation import (
     ImageGenerationService,
     get_pet_characteristics,
@@ -116,6 +117,18 @@ async def get_characteristics(repo_owner: str, repo_name: str) -> PetCharacteris
     return PetCharacteristics(**chars)
 
 
+async def _update_images_generated_at(
+    session: AsyncSession, repo_owner: str, repo_name: str
+) -> None:
+    """Update the images_generated_at timestamp for a pet if it exists."""
+    await session.execute(
+        update(Pet)
+        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+        .values(images_generated_at=func.now())
+    )
+    await session.commit()
+
+
 @router.get(
     "/pets/{repo_owner}/{repo_name}/image/{stage}",
     responses={
@@ -128,6 +141,7 @@ async def get_pet_image(
     repo_owner: str,
     repo_name: str,
     stage: str,
+    session: DbSession,
 ) -> Response:
     """Get the pet image for a specific stage.
 
@@ -176,6 +190,7 @@ async def get_pet_image(
         image_service = ImageGenerationService(storage=storage)
         image_data = await image_service.generate_stage_image(repo_owner, repo_name, stage)
         await storage.upload_image(repo_owner, repo_name, stage, image_data)
+        await _update_images_generated_at(session, repo_owner, repo_name)
         return Response(content=image_data, media_type="image/png")
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
@@ -188,7 +203,9 @@ async def get_pet_image(
     "/pets/{repo_owner}/{repo_name}/generate-images",
     response_model=ImageGenerationResponse,
 )
-async def generate_pet_images(repo_owner: str, repo_name: str) -> ImageGenerationResponse:
+async def generate_pet_images(
+    repo_owner: str, repo_name: str, session: DbSession
+) -> ImageGenerationResponse:
     """Trigger generation of all stage images for a pet.
 
     This generates images for all 6 stages (egg, baby, child, teen, adult, elder)
@@ -207,6 +224,7 @@ async def generate_pet_images(repo_owner: str, repo_name: str) -> ImageGeneratio
         storage = StorageService()
         image_service = ImageGenerationService(storage=storage)
         paths = await image_service.generate_all_stages(repo_owner, repo_name)
+        await _update_images_generated_at(session, repo_owner, repo_name)
         return ImageGenerationResponse(
             message="Images generated successfully",
             stages=list(paths.keys()),
@@ -215,14 +233,16 @@ async def generate_pet_images(repo_owner: str, repo_name: str) -> ImageGeneratio
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
     except Exception as e:
         logger.error("Failed to generate images: %s", e)
-        raise HTTPException(status_code=503, detail=f"Image generation failed: {e}") from None
+        raise HTTPException(status_code=503, detail="Image generation failed") from None
 
 
 @router.post(
     "/pets/{repo_owner}/{repo_name}/regenerate-images",
     response_model=ImageGenerationResponse,
 )
-async def regenerate_pet_images(repo_owner: str, repo_name: str) -> ImageGenerationResponse:
+async def regenerate_pet_images(
+    repo_owner: str, repo_name: str, session: DbSession
+) -> ImageGenerationResponse:
     """Delete existing images and regenerate all stages.
 
     Use this to force regeneration if ComfyUI settings or prompts have changed.
@@ -240,6 +260,7 @@ async def regenerate_pet_images(repo_owner: str, repo_name: str) -> ImageGenerat
         storage = StorageService()
         image_service = ImageGenerationService(storage=storage)
         paths = await image_service.regenerate_images(repo_owner, repo_name)
+        await _update_images_generated_at(session, repo_owner, repo_name)
         return ImageGenerationResponse(
             message="Images regenerated successfully",
             stages=list(paths.keys()),
@@ -248,4 +269,4 @@ async def regenerate_pet_images(repo_owner: str, repo_name: str) -> ImageGenerat
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
     except Exception as e:
         logger.error("Failed to regenerate images: %s", e)
-        raise HTTPException(status_code=503, detail=f"Image regeneration failed: {e}") from None
+        raise HTTPException(status_code=503, detail="Image regeneration failed") from None

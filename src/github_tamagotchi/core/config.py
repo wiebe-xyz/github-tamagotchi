@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # ComfyUI image generation
     comfyui_url: str | None = None
     comfyui_timeout_seconds: int = 300
+    comfyui_checkpoint_model: str = "sd_xl_base_1.0.safetensors"
     image_generation_enabled: bool = True
 
     # MinIO/S3 storage

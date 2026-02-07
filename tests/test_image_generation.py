@@ -257,7 +257,7 @@ class TestImageGenerationService:
     async def test_generate_all_stages(
         self, image_service: ImageGenerationService, mock_storage: MagicMock
     ) -> None:
-        """Test generating all stage images."""
+        """Test generating all stage images in parallel."""
         image_service.generate_stage_image = AsyncMock(return_value=b"image data")
 
         result = await image_service.generate_all_stages("owner", "repo")

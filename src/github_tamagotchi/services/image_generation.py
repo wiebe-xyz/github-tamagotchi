@@ -136,7 +136,7 @@ def build_comfyui_workflow(
         "4": {
             "class_type": "CheckpointLoaderSimple",
             "inputs": {
-                "ckpt_name": "sd_xl_base_1.0.safetensors",
+                "ckpt_name": settings.comfyui_checkpoint_model,
             },
         },
         "5": {
@@ -301,10 +301,18 @@ class ImageGenerationService:
 
             raise RuntimeError("No images found in ComfyUI output")
 
+    async def _generate_and_upload_stage(
+        self, owner: str, repo: str, stage: str
+    ) -> tuple[str, str]:
+        """Generate and upload a single stage image, returning (stage, path)."""
+        image_data = await self.generate_stage_image(owner, repo, stage)
+        path = await self.storage.upload_image(owner, repo, stage, image_data)
+        return stage, path
+
     async def generate_all_stages(
         self, owner: str, repo: str
     ) -> dict[str, str]:
-        """Generate images for all pet stages.
+        """Generate images for all pet stages in parallel.
 
         Args:
             owner: Repository owner
@@ -314,12 +322,11 @@ class ImageGenerationService:
             Dictionary mapping stage names to storage paths
         """
         stages = [stage.value for stage in PetStage]
-        paths: dict[str, str] = {}
 
-        for stage in stages:
-            image_data = await self.generate_stage_image(owner, repo, stage)
-            path = await self.storage.upload_image(owner, repo, stage, image_data)
-            paths[stage] = path
+        results = await asyncio.gather(
+            *(self._generate_and_upload_stage(owner, repo, stage) for stage in stages)
+        )
+        paths = dict(results)
 
         logger.info(
             "Generated all stage images",
