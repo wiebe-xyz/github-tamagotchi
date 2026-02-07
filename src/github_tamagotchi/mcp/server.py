@@ -10,12 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from github_tamagotchi.core.database import async_session_factory
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import GitHubService
-from github_tamagotchi.services.pet_logic import (
-    calculate_experience,
-    calculate_health_delta,
-    calculate_mood,
-    get_next_stage,
-)
+from github_tamagotchi.services.pet_logic import apply_repo_health_to_pet, get_next_stage
 
 mcp = FastMCP("GitHub Tamagotchi")
 
@@ -282,23 +277,7 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
         github = GitHubService()
         health = await github.get_repo_health(repo_owner, repo_name)
 
-        old_stage = pet.stage
-        old_mood = pet.mood
-
-        health_delta = calculate_health_delta(health)
-        pet.health = max(0, min(100, pet.health + health_delta))
-
-        exp_gained = calculate_experience(health)
-        pet.experience += exp_gained
-
-        pet.mood = calculate_mood(health, pet.health).value
-
-        new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
-        evolved = new_stage.value != old_stage
-        if evolved:
-            pet.stage = new_stage.value
-
-        pet.last_checked_at = datetime.now(UTC)
+        changes = apply_repo_health_to_pet(pet, health)
 
         await session.commit()
 
@@ -312,14 +291,16 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
                 "experience": pet.experience,
             },
             "changes": {
-                "health_delta": health_delta,
-                "experience_gained": exp_gained,
-                "mood_changed": old_mood != pet.mood,
+                "health_delta": changes["health_delta"],
+                "experience_gained": changes["exp_gained"],
+                "mood_changed": changes["old_mood"] != pet.mood,
             },
         }
 
-        if evolved:
-            response["evolution"] = f"Your pet evolved from {old_stage} to {new_stage.value}!"
+        if changes["evolved"]:
+            response["evolution"] = (
+                f"Your pet evolved from {changes['old_stage']} to {changes['new_stage'].value}!"
+            )
 
         return response
 

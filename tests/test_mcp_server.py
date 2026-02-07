@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.mcp.server import (
+    _calculate_stage_progress,
     check_pet_status,
     feed_pet,
     get_pet_history,
@@ -357,3 +358,59 @@ class TestUpdatePetFromRepo:
             result = await _update_pet_from_repo("owner", "nonexistent")
 
         assert "error" in result
+
+
+class TestFeedPetEvolution:
+    """Tests for pet evolution during feeding."""
+
+    async def test_feed_pet_triggers_evolution(self, test_db: AsyncSession) -> None:
+        """Should trigger evolution when experience crosses threshold."""
+        pet = Pet(
+            repo_owner="owner",
+            repo_name="repo",
+            name="TestPet",
+            stage=PetStage.EGG.value,
+            mood=PetMood.CONTENT.value,
+            health=80,
+            experience=96,  # +5 from feeding will reach 101, crossing BABY threshold of 100
+        )
+        test_db.add(pet)
+        await test_db.commit()
+
+        with patch(
+            "github_tamagotchi.mcp.server.async_session_factory"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _feed_pet("owner", "repo")
+
+        assert "error" not in result
+        assert result["pet"]["stage"] == PetStage.BABY.value
+        assert "evolution" in result
+        assert "evolved" in result["evolution"]
+
+
+class TestCalculateStageProgress:
+    """Tests for the _calculate_stage_progress helper function."""
+
+    def test_progress_mid_stage(self) -> None:
+        """Should calculate correct progress percentage."""
+        result = _calculate_stage_progress(300, PetStage.BABY.value)
+        assert result["at_max_stage"] is False
+        assert result["next_stage"] == PetStage.CHILD.value
+        assert result["current_exp"] == 300
+        assert result["exp_needed"] == 500
+        assert result["percentage"] == 50  # (300 - 100) / (500 - 100) = 50%
+
+    def test_progress_at_max_stage(self) -> None:
+        """Should indicate max stage reached."""
+        result = _calculate_stage_progress(20000, PetStage.ELDER.value)
+        assert result["at_max_stage"] is True
+        assert result["percentage"] == 100
+
+    def test_progress_at_start(self) -> None:
+        """Should show 0% progress at the start of a stage."""
+        result = _calculate_stage_progress(100, PetStage.BABY.value)
+        assert result["at_max_stage"] is False
+        assert result["percentage"] == 0

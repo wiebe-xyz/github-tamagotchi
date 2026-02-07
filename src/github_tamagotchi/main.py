@@ -17,14 +17,9 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database
 from github_tamagotchi.mcp.server import get_mcp_server
-from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.models.pet import Pet
 from github_tamagotchi.services.github import GitHubService
-from github_tamagotchi.services.pet_logic import (
-    calculate_experience,
-    calculate_health_delta,
-    calculate_mood,
-    get_next_stage,
-)
+from github_tamagotchi.services.pet_logic import apply_repo_health_to_pet
 
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
@@ -48,25 +43,16 @@ async def poll_repositories() -> None:
         for pet in pets:
             try:
                 health = await github.get_repo_health(pet.repo_owner, pet.repo_name)
+                changes = apply_repo_health_to_pet(pet, health)
 
-                health_delta = calculate_health_delta(health)
-                pet.health = max(0, min(100, pet.health + health_delta))
-
-                exp_gained = calculate_experience(health)
-                pet.experience += exp_gained
-
-                pet.mood = calculate_mood(health, pet.health).value
-
-                new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
-                if new_stage.value != pet.stage:
+                if changes["evolved"]:
                     logger.info(
                         "Pet evolved",
                         pet_name=pet.name,
                         repo=f"{pet.repo_owner}/{pet.repo_name}",
-                        old_stage=pet.stage,
-                        new_stage=new_stage.value,
+                        old_stage=changes["old_stage"],
+                        new_stage=changes["new_stage"].value,
                     )
-                    pet.stage = new_stage.value
 
                 logger.debug(
                     "Updated pet health",
@@ -116,7 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 # Create the MCP server app
 mcp_server = get_mcp_server()
-mcp_app = mcp_server.http_app(path="/mcp")
+mcp_app = mcp_server.http_app(path="")
 
 app = FastAPI(
     title=settings.app_name,
@@ -137,4 +123,4 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request) -> HTMLResponse:
     """Landing page."""
-    return templates.TemplateResponse("landing.html", {"request": request})
+    return templates.TemplateResponse(request, "landing.html")

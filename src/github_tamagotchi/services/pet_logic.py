@@ -1,9 +1,15 @@
 """Pet state management and evolution logic."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
+
+if TYPE_CHECKING:
+    from github_tamagotchi.models.pet import Pet
 
 # Thresholds for pet state changes
 HUNGRY_THRESHOLD_DAYS = 3  # No commits in 3 days = hungry
@@ -106,3 +112,39 @@ def get_next_stage(current_stage: PetStage, experience: int) -> PetStage:
         return next_stage
 
     return current_stage
+
+
+def apply_repo_health_to_pet(pet: Pet, health: RepoHealth) -> dict[str, Any]:
+    """Apply repository health metrics to a pet's state.
+
+    Updates the pet's health, experience, mood, and stage in place.
+
+    Returns:
+        Dict with health_delta, exp_gained, evolved, old_stage, old_mood, new_stage.
+    """
+    old_stage = pet.stage
+    old_mood = pet.mood
+
+    health_delta = calculate_health_delta(health)
+    pet.health = max(0, min(100, pet.health + health_delta))
+
+    exp_gained = calculate_experience(health)
+    pet.experience += exp_gained
+
+    pet.mood = calculate_mood(health, pet.health).value
+
+    new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
+    evolved = new_stage.value != old_stage
+    if evolved:
+        pet.stage = new_stage.value
+
+    pet.last_checked_at = datetime.now(UTC)
+
+    return {
+        "health_delta": health_delta,
+        "exp_gained": exp_gained,
+        "evolved": evolved,
+        "old_stage": old_stage,
+        "old_mood": old_mood,
+        "new_stage": new_stage,
+    }
