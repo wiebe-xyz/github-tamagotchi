@@ -7,7 +7,71 @@ import httpx
 import pytest
 import respx
 
-from github_tamagotchi.services.github import GitHubService, RepoHealth
+from github_tamagotchi.services.github import GitHubService, RateLimitError, RepoHealth
+
+
+class TestRateLimitError:
+    """Tests for RateLimitError exception."""
+
+    def test_rate_limit_error_with_reset_time(self) -> None:
+        """RateLimitError should store reset time."""
+        reset_time = datetime.now(UTC)
+        error = RateLimitError("Rate limit exceeded", reset_time=reset_time)
+        assert str(error) == "Rate limit exceeded"
+        assert error.reset_time == reset_time
+
+    def test_rate_limit_error_without_reset_time(self) -> None:
+        """RateLimitError should work without reset time."""
+        error = RateLimitError("Rate limit exceeded")
+        assert str(error) == "Rate limit exceeded"
+        assert error.reset_time is None
+
+
+class TestCheckRateLimit:
+    """Tests for rate limit checking."""
+
+    def test_does_not_raise_on_success(self) -> None:
+        """Should not raise when response is successful."""
+        service = GitHubService()
+        response = httpx.Response(200)
+        # Should not raise
+        service._check_rate_limit(response)
+
+    def test_does_not_raise_on_403_with_remaining(self) -> None:
+        """Should not raise when 403 but rate limit has remaining calls."""
+        service = GitHubService()
+        response = httpx.Response(
+            403,
+            headers={"X-RateLimit-Remaining": "10"},
+        )
+        # Should not raise
+        service._check_rate_limit(response)
+
+    def test_raises_on_403_with_zero_remaining(self) -> None:
+        """Should raise RateLimitError when rate limit is exhausted."""
+        service = GitHubService()
+        reset_timestamp = int(datetime.now(UTC).timestamp()) + 3600
+        response = httpx.Response(
+            403,
+            headers={
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(reset_timestamp),
+            },
+        )
+        with pytest.raises(RateLimitError) as exc_info:
+            service._check_rate_limit(response)
+        assert exc_info.value.reset_time is not None
+
+    def test_raises_on_403_zero_remaining_no_reset(self) -> None:
+        """Should raise RateLimitError even without reset header."""
+        service = GitHubService()
+        response = httpx.Response(
+            403,
+            headers={"X-RateLimit-Remaining": "0"},
+        )
+        with pytest.raises(RateLimitError) as exc_info:
+            service._check_rate_limit(response)
+        assert exc_info.value.reset_time is None
 
 
 class TestGitHubServiceHeaders:
@@ -75,6 +139,20 @@ class TestGetLastCommit:
 
         assert result is None
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_raises_rate_limit_error(self) -> None:
+        """Should propagate RateLimitError when rate limit is hit."""
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(
+                403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}
+            )
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(RateLimitError):
+                await service._get_last_commit(client, "owner", "repo")
+
 
 class TestGetOpenPRs:
     """Tests for fetching open pull requests."""
@@ -109,6 +187,20 @@ class TestGetOpenPRs:
 
         assert result == []
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_raises_rate_limit_error(self) -> None:
+        """Should propagate RateLimitError when rate limit is hit."""
+        respx.get("https://api.github.com/repos/owner/repo/pulls").mock(
+            return_value=httpx.Response(
+                403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}
+            )
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(RateLimitError):
+                await service._get_open_prs(client, "owner", "repo")
+
 
 class TestGetOpenIssues:
     """Tests for fetching open issues."""
@@ -137,13 +229,27 @@ class TestGetOpenIssues:
     async def test_returns_empty_on_error(self) -> None:
         """Should return empty list when API call fails."""
         respx.get("https://api.github.com/repos/owner/repo/issues").mock(
-            return_value=httpx.Response(403, json={"message": "Forbidden"})
+            return_value=httpx.Response(500, json={"message": "Server Error"})
         )
         service = GitHubService(token="test")
         async with httpx.AsyncClient() as client:
             result = await service._get_open_issues(client, "owner", "repo")
 
         assert result == []
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_raises_rate_limit_error(self) -> None:
+        """Should propagate RateLimitError when rate limit is hit."""
+        respx.get("https://api.github.com/repos/owner/repo/issues").mock(
+            return_value=httpx.Response(
+                403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}
+            )
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(RateLimitError):
+                await service._get_open_issues(client, "owner", "repo")
 
 
 class TestGetCIStatus:
@@ -201,6 +307,41 @@ class TestGetCIStatus:
             result = await service._get_ci_status(client, "owner", "repo")
 
         assert result is None
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_raises_rate_limit_error_on_repo_call(
+        self, mock_status_response_success: dict[str, Any]
+    ) -> None:
+        """Should propagate RateLimitError when rate limit is hit on repo call."""
+        respx.get("https://api.github.com/repos/owner/repo").mock(
+            return_value=httpx.Response(
+                403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}
+            )
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(RateLimitError):
+                await service._get_ci_status(client, "owner", "repo")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_raises_rate_limit_error_on_status_call(
+        self, mock_repo_response: dict[str, Any]
+    ) -> None:
+        """Should propagate RateLimitError when rate limit is hit on status call."""
+        respx.get("https://api.github.com/repos/owner/repo").mock(
+            return_value=httpx.Response(200, json=mock_repo_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/commits/main/status").mock(
+            return_value=httpx.Response(
+                403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}
+            )
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(RateLimitError):
+                await service._get_ci_status(client, "owner", "repo")
 
 
 class TestAgeCalculations:

@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
@@ -18,7 +19,7 @@ from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
-from github_tamagotchi.services.github import GitHubService
+from github_tamagotchi.services.github import GitHubService, RateLimitError
 from github_tamagotchi.services.pet_logic import (
     calculate_experience,
     calculate_health_delta,
@@ -37,54 +38,108 @@ scheduler = AsyncIOScheduler()
 
 async def poll_repositories() -> None:
     """Periodic task to check all registered repositories."""
-    logger.info("Starting repository health check poll")
+    logger.info("poll_started", message="Starting repository health check poll")
 
-    github = GitHubService()
+    github_service = GitHubService()
+    updated_count = 0
+    error_count = 0
+    evolved_count = 0
 
     async with async_session_factory() as session:
+        # Query all pets
         result = await session.execute(select(Pet))
         pets = result.scalars().all()
 
+        logger.info("poll_pets_found", pet_count=len(pets))
+
         for pet in pets:
             try:
-                health = await github.get_repo_health(pet.repo_owner, pet.repo_name)
+                # Fetch health metrics from GitHub
+                health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
 
+                # Calculate state changes
                 health_delta = calculate_health_delta(health)
-                pet.health = max(0, min(100, pet.health + health_delta))
+                experience_gained = calculate_experience(health)
+                new_health = max(0, min(100, pet.health + health_delta))
+                new_experience = pet.experience + experience_gained
+                new_mood = calculate_mood(health, new_health)
 
-                exp_gained = calculate_experience(health)
-                pet.experience += exp_gained
+                # Check for evolution
+                current_stage = PetStage(pet.stage)
+                new_stage = get_next_stage(current_stage, new_experience)
 
-                pet.mood = calculate_mood(health, pet.health).value
+                # Update pet
+                pet.health = new_health
+                pet.experience = new_experience
+                pet.mood = new_mood.value
+                pet.last_checked_at = datetime.now(UTC)
 
-                new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
-                if new_stage.value != pet.stage:
+                # Handle evolution
+                if new_stage != current_stage:
+                    pet.stage = new_stage.value
+                    evolved_count += 1
                     logger.info(
-                        "Pet evolved",
+                        "pet_evolved",
+                        pet_id=pet.id,
                         pet_name=pet.name,
                         repo=f"{pet.repo_owner}/{pet.repo_name}",
-                        old_stage=pet.stage,
+                        old_stage=current_stage.value,
                         new_stage=new_stage.value,
+                        experience=new_experience,
                     )
-                    pet.stage = new_stage.value
+
+                # Update last_fed_at if there was a recent commit
+                if health.last_commit_at:
+                    hours_since_commit = (
+                        datetime.now(UTC) - health.last_commit_at
+                    ).total_seconds() / 3600
+                    if hours_since_commit < 24:
+                        pet.last_fed_at = datetime.now(UTC)
+
+                updated_count += 1
 
                 logger.debug(
-                    "Updated pet health",
+                    "pet_updated",
+                    pet_id=pet.id,
                     pet_name=pet.name,
                     repo=f"{pet.repo_owner}/{pet.repo_name}",
-                    health=pet.health,
-                    mood=pet.mood,
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to update pet",
-                    pet_name=pet.name,
-                    repo=f"{pet.repo_owner}/{pet.repo_name}",
+                    health_delta=health_delta,
+                    new_health=new_health,
+                    experience_gained=experience_gained,
+                    new_mood=new_mood.value,
                 )
 
+            except RateLimitError as e:
+                logger.warning(
+                    "poll_rate_limited",
+                    pet_id=pet.id,
+                    repo=f"{pet.repo_owner}/{pet.repo_name}",
+                    reset_time=e.reset_time.isoformat() if e.reset_time else None,
+                    message="GitHub API rate limit reached, stopping poll cycle",
+                )
+                # Stop polling to avoid hitting rate limits further
+                break
+
+            except Exception as e:
+                error_count += 1
+                logger.error(
+                    "poll_pet_error",
+                    pet_id=pet.id,
+                    repo=f"{pet.repo_owner}/{pet.repo_name}",
+                    error=str(e),
+                )
+                # Continue with other pets
+
+        # Commit all changes
         await session.commit()
 
-    logger.info("Repository health check complete", pets_updated=len(pets))
+    logger.info(
+        "poll_completed",
+        updated_count=updated_count,
+        error_count=error_count,
+        evolved_count=evolved_count,
+        message="Repository health check complete",
+    )
 
 
 @asynccontextmanager

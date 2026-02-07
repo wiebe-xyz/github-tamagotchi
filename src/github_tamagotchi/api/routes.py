@@ -1,14 +1,17 @@
 """API routes for pet management."""
 
 import logging
+import math
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.core.database import get_session
+from github_tamagotchi.crud import pet as pet_crud
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +23,15 @@ DbSession = Annotated[AsyncSession, Depends(get_session)]
 class PetCreate(BaseModel):
     """Request model for creating a pet."""
 
-    repo_owner: str
-    repo_name: str
-    name: str
+    repo_owner: str = Field(..., min_length=1, max_length=255)
+    repo_name: str = Field(..., min_length=1, max_length=255)
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class PetResponse(BaseModel):
     """Response model for pet data."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     repo_owner: str
@@ -36,6 +41,27 @@ class PetResponse(BaseModel):
     mood: str
     health: int
     experience: int
+    created_at: datetime
+    updated_at: datetime
+    last_fed_at: datetime | None
+    last_checked_at: datetime | None
+
+
+class PetListResponse(BaseModel):
+    """Response model for paginated pet list."""
+
+    items: list[PetResponse]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+class FeedResponse(BaseModel):
+    """Response model for feed action."""
+
+    message: str
+    pet: PetResponse
 
 
 class HealthResponse(BaseModel):
@@ -75,30 +101,80 @@ async def comfyui_health_check() -> ComfyUIHealthResponse:
     from github_tamagotchi.services.comfyui import ComfyUIService
 
     service = ComfyUIService()
-    status = await service.check_health()
+    health_status = await service.check_health()
     return ComfyUIHealthResponse(
-        available=status.available,
-        queue_remaining=status.queue_remaining,
-        cuda_available=status.cuda_available,
+        available=health_status.available,
+        queue_remaining=health_status.queue_remaining,
+        cuda_available=health_status.cuda_available,
     )
 
 
-@router.post("/pets", response_model=PetResponse)
+@router.post("/pets", response_model=PetResponse, status_code=status.HTTP_201_CREATED)
 async def create_pet(pet_data: PetCreate, session: DbSession) -> PetResponse:
     """Create a new pet for a GitHub repository."""
-    # TODO: Implement database integration
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    existing = await pet_crud.get_pet_by_repo(session, pet_data.repo_owner, pet_data.repo_name)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Pet already exists for {pet_data.repo_owner}/{pet_data.repo_name}",
+        )
+    pet = await pet_crud.create_pet(session, pet_data.repo_owner, pet_data.repo_name, pet_data.name)
+    return PetResponse.model_validate(pet)
+
+
+@router.get("/pets", response_model=PetListResponse)
+async def list_pets(
+    session: DbSession,
+    page: Annotated[int, Query(ge=1)] = 1,
+    per_page: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> PetListResponse:
+    """List all pets with pagination."""
+    pets, total = await pet_crud.get_pets(session, page=page, per_page=per_page)
+    pages = math.ceil(total / per_page) if total > 0 else 1
+    return PetListResponse(
+        items=[PetResponse.model_validate(p) for p in pets],
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages,
+    )
 
 
 @router.get("/pets/{repo_owner}/{repo_name}", response_model=PetResponse)
 async def get_pet(repo_owner: str, repo_name: str, session: DbSession) -> PetResponse:
     """Get pet status for a repository."""
-    # TODO: Implement database integration
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    return PetResponse.model_validate(pet)
 
 
-@router.post("/pets/{repo_owner}/{repo_name}/feed")
-async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> PetResponse:
+@router.post("/pets/{repo_owner}/{repo_name}/feed", response_model=FeedResponse)
+async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> FeedResponse:
     """Manually feed the pet (triggered by activity)."""
-    # TODO: Implement feeding logic
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    updated_pet = await pet_crud.feed_pet(session, pet)
+    return FeedResponse(
+        message=f"{updated_pet.name} has been fed!",
+        pet=PetResponse.model_validate(updated_pet),
+    )
+
+
+@router.delete("/pets/{repo_owner}/{repo_name}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> None:
+    """Delete a pet."""
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    await pet_crud.delete_pet(session, pet)
