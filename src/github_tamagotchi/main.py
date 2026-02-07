@@ -17,6 +17,7 @@ from github_tamagotchi import __version__
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database
+from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.github import GitHubService, RateLimitError
 from github_tamagotchi.services.pet_logic import (
@@ -168,6 +169,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("GitHub Tamagotchi shutdown complete")
 
 
+# Create the MCP server app
+mcp_server = get_mcp_server()
+mcp_app = mcp_server.http_app(path="/mcp")
+
 app = FastAPI(
     title=settings.app_name,
     version=__version__,
@@ -176,6 +181,9 @@ app = FastAPI(
 )
 
 app.include_router(router)
+
+# Mount the MCP server at /mcp
+app.mount("/mcp", mcp_app)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
