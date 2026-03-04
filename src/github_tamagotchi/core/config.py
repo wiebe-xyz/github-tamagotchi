@@ -26,14 +26,21 @@ class Settings(BaseSettings):
     comfyui_url: str | None = None
     comfyui_cf_access_client_id: str | None = None
     comfyui_cf_access_client_secret: str | None = None
+    comfyui_timeout: float = 120.0
+
+    # Image generation
+    image_generation_enabled: bool = True
+
+    # MinIO/S3 storage
+    minio_endpoint: str | None = None
+    minio_access_key: str | None = None
+    minio_secret_key: str | None = None
+    minio_bucket: str = "tamagotchi"
+    minio_secure: bool = False
 
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
-
-    # ComfyUI
-    comfyui_url: str = "http://localhost:8188"
-    comfyui_timeout: float = 120.0
 
     # Alerting
     alerting_enabled: bool = True

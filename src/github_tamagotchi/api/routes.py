@@ -6,13 +6,21 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.services.image_generation import (
+    ImageGenerationService,
+    get_pet_appearance,
+)
+from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
 logger = logging.getLogger(__name__)
@@ -20,6 +28,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["pets"])
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_storage_service() -> StorageService:
+    """Dependency that provides a shared StorageService instance."""
+    return StorageService()
+
+
+StorageDep = Annotated[StorageService, Depends(get_storage_service)]
 
 
 class PetCreate(BaseModel):
@@ -87,6 +103,22 @@ class ComfyUIHealthResponse(BaseModel):
     available: bool
     queue_remaining: int | None = None
     cuda_available: bool | None = None
+
+
+class ImageGenerationResponse(BaseModel):
+    """Response for image generation endpoints."""
+
+    message: str
+    stages: list[str]
+
+
+class PetCharacteristics(BaseModel):
+    """Response model for pet appearance characteristics."""
+
+    color: str
+    accent_color: str
+    body_type: str
+    feature: str
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -187,6 +219,190 @@ async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> Non
             detail=f"Pet not found for {repo_owner}/{repo_name}",
         )
     await pet_crud.delete_pet(session, pet)
+
+
+@router.get("/pets/{repo_owner}/{repo_name}/characteristics", response_model=PetCharacteristics)
+async def get_characteristics(repo_owner: str, repo_name: str) -> PetCharacteristics:
+    """Get the deterministic appearance characteristics for a pet."""
+    appearance = get_pet_appearance(repo_owner, repo_name)
+    return PetCharacteristics(
+        color=appearance.color,
+        accent_color=appearance.accent_color,
+        body_type=appearance.body_type,
+        feature=appearance.feature,
+    )
+
+
+async def _update_images_generated_at(
+    session: AsyncSession, repo_owner: str, repo_name: str
+) -> None:
+    """Update the images_generated_at timestamp for a pet if it exists."""
+    await session.execute(
+        update(Pet)
+        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+        .values(images_generated_at=func.now())
+    )
+    await session.commit()
+
+
+@router.get(
+    "/pets/{repo_owner}/{repo_name}/image/{stage}",
+    responses={
+        200: {"content": {"image/png": {}}, "description": "Pet image"},
+        404: {"description": "Image not found"},
+        503: {"description": "Image generation not available"},
+    },
+)
+async def get_pet_image(
+    repo_owner: str,
+    repo_name: str,
+    stage: str,
+    session: DbSession,
+    storage: StorageDep,
+) -> Response:
+    """Get the pet image for a specific stage.
+
+    If the image doesn't exist and ComfyUI is configured, it will be generated.
+    If ComfyUI is not configured, returns 503.
+    """
+    valid_stages = [s.value for s in PetStage]
+    if stage not in valid_stages:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
+        )
+
+    if not settings.minio_endpoint:
+        raise HTTPException(
+            status_code=503,
+            detail="Image storage not configured",
+        )
+
+    # Try to get existing image
+    try:
+        image_data = await storage.get_image(repo_owner, repo_name, stage)
+    except Exception as e:
+        logger.error("Failed to get image from storage: %s", e)
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
+
+    if image_data:
+        return Response(
+            content=image_data,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    # If no image exists, try to generate one
+    if not settings.image_generation_enabled or not settings.comfyui_url:
+        raise HTTPException(
+            status_code=404,
+            detail="Image not found and generation not available",
+        )
+
+    try:
+        image_service = ImageGenerationService()
+        result = await image_service.generate_pet_image(repo_owner, repo_name, stage)
+        if not result.success or not result.image_data:
+            raise HTTPException(
+                status_code=503, detail=result.error or "Image generation failed"
+            )
+        await storage.upload_image(repo_owner, repo_name, stage, result.image_data)
+        await _update_images_generated_at(session, repo_owner, repo_name)
+        return Response(
+            content=result.image_data,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except HTTPException:
+        raise
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Image generation timed out") from None
+    except Exception as e:
+        logger.error("Failed to generate image: %s", e)
+        raise HTTPException(status_code=503, detail="Image generation failed") from None
+
+
+@router.post(
+    "/pets/{repo_owner}/{repo_name}/generate-images",
+    response_model=ImageGenerationResponse,
+)
+async def generate_pet_images(
+    repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
+) -> ImageGenerationResponse:
+    """Trigger generation of all stage images for a pet."""
+    if not settings.image_generation_enabled:
+        raise HTTPException(status_code=503, detail="Image generation is disabled")
+
+    if not settings.comfyui_url:
+        raise HTTPException(status_code=503, detail="ComfyUI not configured")
+
+    if not settings.minio_endpoint:
+        raise HTTPException(status_code=503, detail="Image storage not configured")
+
+    try:
+        image_service = ImageGenerationService()
+        generated_stages = []
+        for pet_stage in PetStage:
+            result = await image_service.generate_pet_image(
+                repo_owner, repo_name, pet_stage.value
+            )
+            if result.success and result.image_data:
+                await storage.upload_image(
+                    repo_owner, repo_name, pet_stage.value, result.image_data
+                )
+                generated_stages.append(pet_stage.value)
+        await _update_images_generated_at(session, repo_owner, repo_name)
+        return ImageGenerationResponse(
+            message="Images generated successfully",
+            stages=generated_stages,
+        )
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Image generation timed out") from None
+    except Exception as e:
+        logger.error("Failed to generate images: %s", e)
+        raise HTTPException(status_code=503, detail="Image generation failed") from None
+
+
+@router.post(
+    "/pets/{repo_owner}/{repo_name}/regenerate-images",
+    response_model=ImageGenerationResponse,
+)
+async def regenerate_pet_images(
+    repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
+) -> ImageGenerationResponse:
+    """Delete existing images and regenerate all stages."""
+    if not settings.image_generation_enabled:
+        raise HTTPException(status_code=503, detail="Image generation is disabled")
+
+    if not settings.comfyui_url:
+        raise HTTPException(status_code=503, detail="ComfyUI not configured")
+
+    if not settings.minio_endpoint:
+        raise HTTPException(status_code=503, detail="Image storage not configured")
+
+    try:
+        await storage.delete_images(repo_owner, repo_name)
+        image_service = ImageGenerationService()
+        generated_stages = []
+        for pet_stage in PetStage:
+            result = await image_service.generate_pet_image(
+                repo_owner, repo_name, pet_stage.value
+            )
+            if result.success and result.image_data:
+                await storage.upload_image(
+                    repo_owner, repo_name, pet_stage.value, result.image_data
+                )
+                generated_stages.append(pet_stage.value)
+        await _update_images_generated_at(session, repo_owner, repo_name)
+        return ImageGenerationResponse(
+            message="Images regenerated successfully",
+            stages=generated_stages,
+        )
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Image generation timed out") from None
+    except Exception as e:
+        logger.error("Failed to regenerate images: %s", e)
+        raise HTTPException(status_code=503, detail="Image regeneration failed") from None
 
 
 @router.post("/webhooks/github", response_model=WebhookResponse)
