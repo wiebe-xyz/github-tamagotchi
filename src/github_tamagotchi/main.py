@@ -1,5 +1,6 @@
 """Main FastAPI application entry point."""
 
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -11,14 +12,17 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi import __version__
+from github_tamagotchi.api.alerts import alert_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.github import GitHubService, RateLimitError
 from github_tamagotchi.services.pet_logic import (
     calculate_experience,
@@ -35,22 +39,29 @@ logger = structlog.get_logger()
 
 scheduler = AsyncIOScheduler()
 
+# Track consecutive poll failures for alerting
+_consecutive_poll_failures = 0
+
 
 async def poll_repositories() -> None:
     """Periodic task to check all registered repositories."""
+    global _consecutive_poll_failures  # noqa: PLW0603
+
     logger.info("poll_started", message="Starting repository health check poll")
 
     github_service = GitHubService()
     updated_count = 0
     error_count = 0
     evolved_count = 0
+    rate_limited = False
 
     async with async_session_factory() as session:
         # Query all pets
         result = await session.execute(select(Pet))
         pets = result.scalars().all()
+        total_pets = len(pets)
 
-        logger.info("poll_pets_found", pet_count=len(pets))
+        logger.info("poll_pets_found", pet_count=total_pets)
 
         for pet in pets:
             try:
@@ -110,6 +121,7 @@ async def poll_repositories() -> None:
                 )
 
             except RateLimitError as e:
+                rate_limited = True
                 logger.warning(
                     "poll_rate_limited",
                     pet_id=pet.id,
@@ -133,6 +145,16 @@ async def poll_repositories() -> None:
         # Commit all changes
         await session.commit()
 
+        # --- Alert checks ---
+        if settings.alerting_enabled:
+            await _run_alert_checks(
+                session=session,
+                total_pets=total_pets,
+                updated_count=updated_count,
+                error_count=error_count,
+                rate_limited=rate_limited,
+            )
+
     logger.info(
         "poll_completed",
         updated_count=updated_count,
@@ -140,6 +162,53 @@ async def poll_repositories() -> None:
         evolved_count=evolved_count,
         message="Repository health check complete",
     )
+
+
+async def _run_alert_checks(
+    session: AsyncSession,
+    total_pets: int,
+    updated_count: int,
+    error_count: int,
+    rate_limited: bool,
+) -> None:
+    """Run all alert condition checks after a poll cycle."""
+    global _consecutive_poll_failures  # noqa: PLW0603
+
+    checker = AlertChecker(session)
+
+    # Track consecutive poll failures
+    if error_count > 0 and updated_count == 0:
+        _consecutive_poll_failures += 1
+    else:
+        _consecutive_poll_failures = 0
+    await checker.check_poll_failures(_consecutive_poll_failures)
+
+    # Error rate check
+    total_attempted = updated_count + error_count
+    await checker.check_error_rate(error_count, total_attempted)
+
+    # Rate limit check (fire alert if rate-limited during this cycle)
+    if rate_limited:
+        await checker.check_github_rate_limit(0, 5000)
+    else:
+        await checker.check_github_rate_limit(
+            settings.alert_github_rate_limit_threshold, 5000
+        )
+
+    # Dying pets check
+    dying_result = await session.execute(
+        select(func.count()).select_from(Pet).where(Pet.health == 0)
+    )
+    dying_count = dying_result.scalar() or 0
+    await checker.check_dying_pets(dying_count, total_pets)
+
+    # Database latency check
+    start = time.monotonic()
+    await session.execute(text("SELECT 1"))
+    db_ms = (time.monotonic() - start) * 1000
+    await checker.check_database_slow(db_ms)
+
+    await session.commit()
 
 
 @asynccontextmanager
@@ -181,6 +250,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(alert_router)
 
 # Mount the MCP server at /mcp
 app.mount("/mcp", mcp_app)

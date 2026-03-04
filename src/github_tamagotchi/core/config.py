@@ -34,5 +34,17 @@ class Settings(BaseSettings):
     comfyui_url: str = "http://localhost:8188"
     comfyui_timeout: float = 120.0
 
+    # Alerting
+    alerting_enabled: bool = True
+    alert_slack_webhook: str | None = None
+    alert_discord_webhook: str | None = None
+    alert_poll_failure_threshold: int = 2
+    alert_error_rate_threshold: float = 0.05
+    alert_github_rate_limit_threshold: int = 100
+    alert_db_slow_query_ms: int = 500
+    alert_dying_pets_pct: float = 0.10
+    alert_death_spike_count: int = 5
+    alert_check_interval_minutes: int = 5
+
 
 settings = Settings()
