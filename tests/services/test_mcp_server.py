@@ -17,13 +17,14 @@ from github_tamagotchi.mcp.server import (
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
 
-# Access the underlying functions from FastMCP tool wrappers
-_register_pet = register_pet.fn
-_check_pet_status = check_pet_status.fn
-_feed_pet = feed_pet.fn
-_list_pets = list_pets.fn
-_get_pet_history = get_pet_history.fn
-_update_pet_from_repo = update_pet_from_repo.fn
+# The @mcp.tool() decorator preserves the original function,
+# so we can call them directly.
+_register_pet = register_pet
+_check_pet_status = check_pet_status
+_feed_pet = feed_pet
+_list_pets = list_pets
+_get_pet_history = get_pet_history
+_update_pet_from_repo = update_pet_from_repo
 
 
 @pytest.fixture
