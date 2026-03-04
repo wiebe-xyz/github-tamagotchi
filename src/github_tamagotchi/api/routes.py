@@ -26,6 +26,14 @@ router = APIRouter(prefix="/api/v1", tags=["pets"])
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
+def get_storage_service() -> StorageService:
+    """Dependency that provides a shared StorageService instance."""
+    return StorageService()
+
+
+StorageDep = Annotated[StorageService, Depends(get_storage_service)]
+
+
 class PetCreate(BaseModel):
     """Request model for creating a pet."""
 
@@ -142,6 +150,7 @@ async def get_pet_image(
     repo_name: str,
     stage: str,
     session: DbSession,
+    storage: StorageDep,
 ) -> Response:
     """Get the pet image for a specific stage.
 
@@ -159,8 +168,6 @@ async def get_pet_image(
             status_code=400,
             detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
         )
-
-    storage = StorageService()
 
     # Check if we have MinIO configured
     if not settings.minio_endpoint:
@@ -212,7 +219,7 @@ async def get_pet_image(
     response_model=ImageGenerationResponse,
 )
 async def generate_pet_images(
-    repo_owner: str, repo_name: str, session: DbSession
+    repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
 ) -> ImageGenerationResponse:
     """Trigger generation of all stage images for a pet.
 
@@ -229,7 +236,6 @@ async def generate_pet_images(
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
     try:
-        storage = StorageService()
         image_service = ImageGenerationService(storage=storage)
         paths = await image_service.generate_all_stages(repo_owner, repo_name)
         await _update_images_generated_at(session, repo_owner, repo_name)
@@ -249,7 +255,7 @@ async def generate_pet_images(
     response_model=ImageGenerationResponse,
 )
 async def regenerate_pet_images(
-    repo_owner: str, repo_name: str, session: DbSession
+    repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
 ) -> ImageGenerationResponse:
     """Delete existing images and regenerate all stages.
 
@@ -265,7 +271,6 @@ async def regenerate_pet_images(
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
     try:
-        storage = StorageService()
         image_service = ImageGenerationService(storage=storage)
         paths = await image_service.regenerate_images(repo_owner, repo_name)
         await _update_images_generated_at(session, repo_owner, repo_name)

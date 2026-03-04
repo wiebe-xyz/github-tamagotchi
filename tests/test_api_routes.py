@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from github_tamagotchi import __version__
+from github_tamagotchi.api.routes import get_storage_service
 
 
 class TestHealthEndpoint:
@@ -124,37 +125,43 @@ class TestImageEndpoints:
         mock_storage = AsyncMock()
         mock_storage.get_image.return_value = b"fake image data"
 
-        with (
-            patch("github_tamagotchi.api.routes.settings") as mock_settings,
-            patch("github_tamagotchi.api.routes.StorageService") as mock_storage_cls,
-        ):
-            mock_settings.minio_endpoint = "localhost:9000"
-            mock_storage_cls.return_value = mock_storage
+        from github_tamagotchi.main import app
 
-            response = client.get("/api/v1/pets/owner/repo/image/egg")
+        app.dependency_overrides[get_storage_service] = lambda: mock_storage
 
-            assert response.status_code == 200
-            assert response.content == b"fake image data"
-            assert response.headers["content-type"] == "image/png"
+        try:
+            with patch("github_tamagotchi.api.routes.settings") as mock_settings:
+                mock_settings.minio_endpoint = "localhost:9000"
+
+                response = client.get("/api/v1/pets/owner/repo/image/egg")
+
+                assert response.status_code == 200
+                assert response.content == b"fake image data"
+                assert response.headers["content-type"] == "image/png"
+        finally:
+            app.dependency_overrides.pop(get_storage_service, None)
 
     def test_get_image_no_image_no_comfyui_returns_404(self, client: TestClient) -> None:
         """Should return 404 when no image and ComfyUI not configured."""
         mock_storage = AsyncMock()
         mock_storage.get_image.return_value = None
 
-        with (
-            patch("github_tamagotchi.api.routes.settings") as mock_settings,
-            patch("github_tamagotchi.api.routes.StorageService") as mock_storage_cls,
-        ):
-            mock_settings.minio_endpoint = "localhost:9000"
-            mock_settings.image_generation_enabled = True
-            mock_settings.comfyui_url = None
-            mock_storage_cls.return_value = mock_storage
+        from github_tamagotchi.main import app
 
-            response = client.get("/api/v1/pets/owner/repo/image/baby")
+        app.dependency_overrides[get_storage_service] = lambda: mock_storage
 
-            assert response.status_code == 404
-            assert "generation not available" in response.json()["detail"]
+        try:
+            with patch("github_tamagotchi.api.routes.settings") as mock_settings:
+                mock_settings.minio_endpoint = "localhost:9000"
+                mock_settings.image_generation_enabled = True
+                mock_settings.comfyui_url = None
+
+                response = client.get("/api/v1/pets/owner/repo/image/baby")
+
+                assert response.status_code == 404
+                assert "generation not available" in response.json()["detail"]
+        finally:
+            app.dependency_overrides.pop(get_storage_service, None)
 
     def test_generate_images_disabled_returns_503(self, client: TestClient) -> None:
         """Should return 503 when generation is disabled."""
@@ -208,38 +215,75 @@ class TestImageEndpoints:
         mock_image_service = AsyncMock()
         mock_image_service.generate_stage_image.return_value = b"generated image data"
 
-        with (
-            patch("github_tamagotchi.api.routes.settings") as mock_settings,
-            patch("github_tamagotchi.api.routes.StorageService") as mock_storage_cls,
-            patch("github_tamagotchi.api.routes.ImageGenerationService") as mock_img_cls,
-            patch("github_tamagotchi.api.routes._update_images_generated_at"),
-        ):
-            mock_settings.minio_endpoint = "localhost:9000"
-            mock_settings.image_generation_enabled = True
-            mock_settings.comfyui_url = "http://localhost:8188"
-            mock_storage_cls.return_value = mock_storage
-            mock_img_cls.return_value = mock_image_service
+        from github_tamagotchi.main import app
 
-            response = client.get("/api/v1/pets/owner/repo/image/egg")
+        app.dependency_overrides[get_storage_service] = lambda: mock_storage
 
-            assert response.status_code == 200
-            assert response.content == b"generated image data"
-            assert response.headers["content-type"] == "image/png"
-            assert "max-age" in response.headers.get("cache-control", "")
+        try:
+            with (
+                patch("github_tamagotchi.api.routes.settings") as mock_settings,
+                patch("github_tamagotchi.api.routes.ImageGenerationService") as mock_img_cls,
+                patch("github_tamagotchi.api.routes._update_images_generated_at"),
+            ):
+                mock_settings.minio_endpoint = "localhost:9000"
+                mock_settings.image_generation_enabled = True
+                mock_settings.comfyui_url = "http://localhost:8188"
+                mock_img_cls.return_value = mock_image_service
+
+                response = client.get("/api/v1/pets/owner/repo/image/egg")
+
+                assert response.status_code == 200
+                assert response.content == b"generated image data"
+                assert response.headers["content-type"] == "image/png"
+                assert "max-age" in response.headers.get("cache-control", "")
+        finally:
+            app.dependency_overrides.pop(get_storage_service, None)
 
     def test_get_image_cached_has_cache_headers(self, client: TestClient) -> None:
         """Cached image response should include Cache-Control header."""
         mock_storage = AsyncMock()
         mock_storage.get_image.return_value = b"cached image"
 
-        with (
-            patch("github_tamagotchi.api.routes.settings") as mock_settings,
-            patch("github_tamagotchi.api.routes.StorageService") as mock_storage_cls,
-        ):
-            mock_settings.minio_endpoint = "localhost:9000"
-            mock_storage_cls.return_value = mock_storage
+        from github_tamagotchi.main import app
 
-            response = client.get("/api/v1/pets/owner/repo/image/egg")
+        app.dependency_overrides[get_storage_service] = lambda: mock_storage
 
-            assert response.status_code == 200
-            assert "max-age" in response.headers.get("cache-control", "")
+        try:
+            with patch("github_tamagotchi.api.routes.settings") as mock_settings:
+                mock_settings.minio_endpoint = "localhost:9000"
+
+                response = client.get("/api/v1/pets/owner/repo/image/egg")
+
+                assert response.status_code == 200
+                assert "max-age" in response.headers.get("cache-control", "")
+        finally:
+            app.dependency_overrides.pop(get_storage_service, None)
+
+    def test_get_image_timeout_returns_504(self, client: TestClient) -> None:
+        """Should return 504 when image generation times out."""
+        mock_storage = AsyncMock()
+        mock_storage.get_image.return_value = None
+
+        mock_image_service = AsyncMock()
+        mock_image_service.generate_stage_image.side_effect = TimeoutError("timed out")
+
+        from github_tamagotchi.main import app
+
+        app.dependency_overrides[get_storage_service] = lambda: mock_storage
+
+        try:
+            with (
+                patch("github_tamagotchi.api.routes.settings") as mock_settings,
+                patch("github_tamagotchi.api.routes.ImageGenerationService") as mock_img_cls,
+            ):
+                mock_settings.minio_endpoint = "localhost:9000"
+                mock_settings.image_generation_enabled = True
+                mock_settings.comfyui_url = "http://localhost:8188"
+                mock_img_cls.return_value = mock_image_service
+
+                response = client.get("/api/v1/pets/owner/repo/image/egg")
+
+                assert response.status_code == 504
+                assert "timed out" in response.json()["detail"]
+        finally:
+            app.dependency_overrides.pop(get_storage_service, None)
