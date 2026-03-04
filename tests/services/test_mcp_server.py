@@ -17,7 +17,8 @@ from github_tamagotchi.mcp.server import (
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
 
-# FastMCP tool-decorated functions are callable directly
+# The @mcp.tool() decorator preserves the original function,
+# so we can call them directly.
 _register_pet = register_pet
 _check_pet_status = check_pet_status
 _feed_pet = feed_pet
