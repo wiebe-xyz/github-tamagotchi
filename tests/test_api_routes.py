@@ -198,3 +198,48 @@ class TestImageEndpoints:
 
             assert response.status_code == 503
             assert "disabled" in response.json()["detail"]
+
+    def test_get_image_generates_when_not_cached(self, client: TestClient) -> None:
+        """Should generate and return image when not cached but ComfyUI is configured."""
+        mock_storage = AsyncMock()
+        mock_storage.get_image.return_value = None
+        mock_storage.upload_image.return_value = "pets/owner/repo/egg.png"
+
+        mock_image_service = AsyncMock()
+        mock_image_service.generate_stage_image.return_value = b"generated image data"
+
+        with (
+            patch("github_tamagotchi.api.routes.settings") as mock_settings,
+            patch("github_tamagotchi.api.routes.StorageService") as mock_storage_cls,
+            patch("github_tamagotchi.api.routes.ImageGenerationService") as mock_img_cls,
+            patch("github_tamagotchi.api.routes._update_images_generated_at"),
+        ):
+            mock_settings.minio_endpoint = "localhost:9000"
+            mock_settings.image_generation_enabled = True
+            mock_settings.comfyui_url = "http://localhost:8188"
+            mock_storage_cls.return_value = mock_storage
+            mock_img_cls.return_value = mock_image_service
+
+            response = client.get("/api/v1/pets/owner/repo/image/egg")
+
+            assert response.status_code == 200
+            assert response.content == b"generated image data"
+            assert response.headers["content-type"] == "image/png"
+            assert "max-age" in response.headers.get("cache-control", "")
+
+    def test_get_image_cached_has_cache_headers(self, client: TestClient) -> None:
+        """Cached image response should include Cache-Control header."""
+        mock_storage = AsyncMock()
+        mock_storage.get_image.return_value = b"cached image"
+
+        with (
+            patch("github_tamagotchi.api.routes.settings") as mock_settings,
+            patch("github_tamagotchi.api.routes.StorageService") as mock_storage_cls,
+        ):
+            mock_settings.minio_endpoint = "localhost:9000"
+            mock_storage_cls.return_value = mock_storage
+
+            response = client.get("/api/v1/pets/owner/repo/image/egg")
+
+            assert response.status_code == 200
+            assert "max-age" in response.headers.get("cache-control", "")

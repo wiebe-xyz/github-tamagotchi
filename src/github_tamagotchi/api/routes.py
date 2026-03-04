@@ -177,7 +177,11 @@ async def get_pet_image(
         raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     if image_data:
-        return Response(content=image_data, media_type="image/png")
+        return Response(
+            content=image_data,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     # If no image exists, try to generate one
     if not settings.image_generation_enabled or not settings.comfyui_url:
@@ -191,7 +195,11 @@ async def get_pet_image(
         image_data = await image_service.generate_stage_image(repo_owner, repo_name, stage)
         await storage.upload_image(repo_owner, repo_name, stage, image_data)
         await _update_images_generated_at(session, repo_owner, repo_name)
-        return Response(content=image_data, media_type="image/png")
+        return Response(
+            content=image_data,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
     except Exception as e:
