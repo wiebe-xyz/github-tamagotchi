@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import httpx
 import pytest
 import respx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +12,8 @@ from github_tamagotchi.services.pet_logic import (
     calculate_health_delta,
     calculate_mood,
 )
+
+from .conftest import mock_github_repo
 
 
 @pytest.mark.asyncio
@@ -25,25 +26,7 @@ class TestMoodTransitions:
     ) -> None:
         """Stale dependencies make the pet sick (highest priority mood)."""
         owner, repo = sample_pet.repo_owner, sample_pet.repo_name
-        recent = (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
-            return_value=httpx.Response(
-                200, json=[{"sha": "x", "commit": {"committer": {"date": recent}}}]
-            )
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls").mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/issues").mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
-            return_value=httpx.Response(200, json={"default_branch": "main"})
-        )
-        respx.get(
-            f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
-        ).mock(return_value=httpx.Response(200, json={"state": "success", "statuses": []}))
+        mock_github_repo(owner, repo)
 
         service = GitHubService(token="fake-token")
         health = await service.get_repo_health(owner, repo)
@@ -59,32 +42,17 @@ class TestMoodTransitions:
     ) -> None:
         """A PR open for more than 48 hours makes pet worried."""
         owner, repo = sample_pet.repo_owner, sample_pet.repo_name
-        recent = (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         old_pr = (datetime.now(UTC) - timedelta(hours=72)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
-            return_value=httpx.Response(
-                200, json=[{"sha": "x", "commit": {"committer": {"date": recent}}}]
-            )
+        mock_github_repo(
+            owner,
+            repo,
+            prs=[{
+                "id": 1, "number": 1, "title": "Old",
+                "created_at": old_pr, "state": "open",
+            }],
+            ci_state="failure",
         )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls").mock(
-            return_value=httpx.Response(
-                200,
-                json=[{
-                    "id": 1, "number": 1, "title": "Old",
-                    "created_at": old_pr, "state": "open",
-                }],
-            )
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/issues").mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
-            return_value=httpx.Response(200, json={"default_branch": "main"})
-        )
-        respx.get(
-            f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
-        ).mock(return_value=httpx.Response(200, json={"state": "failure", "statuses": []}))
 
         service = GitHubService(token="fake-token")
         health = await service.get_repo_health(owner, repo)
@@ -97,32 +65,17 @@ class TestMoodTransitions:
     ) -> None:
         """An issue unanswered for 7+ days makes pet lonely."""
         owner, repo = sample_pet.repo_owner, sample_pet.repo_name
-        recent = (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         old_issue = (datetime.now(UTC) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
-            return_value=httpx.Response(
-                200, json=[{"sha": "x", "commit": {"committer": {"date": recent}}}]
-            )
+        mock_github_repo(
+            owner,
+            repo,
+            issues=[{
+                "id": 1, "number": 5, "title": "Old issue",
+                "created_at": old_issue, "state": "open",
+            }],
+            ci_state="failure",
         )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls").mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/issues").mock(
-            return_value=httpx.Response(
-                200,
-                json=[{
-                    "id": 1, "number": 5, "title": "Old issue",
-                    "created_at": old_issue, "state": "open",
-                }],
-            )
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
-            return_value=httpx.Response(200, json={"default_branch": "main"})
-        )
-        respx.get(
-            f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
-        ).mock(return_value=httpx.Response(200, json={"state": "failure", "statuses": []}))
 
         service = GitHubService(token="fake-token")
         health = await service.get_repo_health(owner, repo)
@@ -180,38 +133,20 @@ class TestHealthClamping:
     ) -> None:
         """Multiple poll cycles accumulate health and experience changes."""
         owner, repo = sample_pet.repo_owner, sample_pet.repo_name
-        old_commit = (datetime.now(UTC) - timedelta(days=5)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
         old_pr = (datetime.now(UTC) - timedelta(hours=72)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
 
-        # Set up mocks for an unhealthy repo
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
-            return_value=httpx.Response(
-                200,
-                json=[{"sha": "old", "commit": {"committer": {"date": old_commit}}}],
-            )
+        mock_github_repo(
+            owner,
+            repo,
+            commit_age_hours=120,  # 5 days old
+            prs=[{
+                "id": 1, "number": 1, "title": "Stale",
+                "created_at": old_pr, "state": "open",
+            }],
+            ci_state="failure",
         )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls").mock(
-            return_value=httpx.Response(
-                200,
-                json=[{
-                    "id": 1, "number": 1, "title": "Stale",
-                    "created_at": old_pr, "state": "open",
-                }],
-            )
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/issues").mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
-            return_value=httpx.Response(200, json={"default_branch": "main"})
-        )
-        respx.get(
-            f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
-        ).mock(return_value=httpx.Response(200, json={"state": "failure", "statuses": []}))
 
         service = GitHubService(token="fake-token")
 

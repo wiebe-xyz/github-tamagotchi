@@ -2,8 +2,11 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
+import respx
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -80,3 +83,39 @@ async def sample_pet(e2e_db: AsyncSession) -> Pet:
     await e2e_db.commit()
     await e2e_db.refresh(pet)
     return pet
+
+
+def mock_github_repo(
+    owner: str,
+    repo: str,
+    *,
+    commit_age_hours: int = 1,
+    prs: list[dict[str, object]] | None = None,
+    issues: list[dict[str, object]] | None = None,
+    ci_state: str = "success",
+) -> None:
+    """Register respx mocks for a GitHub repository with configurable state."""
+    recent = (datetime.now(UTC) - timedelta(hours=commit_age_hours)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
+        return_value=httpx.Response(
+            200, json=[{"sha": "abc", "commit": {"committer": {"date": recent}}}]
+        )
+    )
+    respx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls").mock(
+        return_value=httpx.Response(200, json=prs or [])
+    )
+    respx.get(f"https://api.github.com/repos/{owner}/{repo}/issues").mock(
+        return_value=httpx.Response(200, json=issues or [])
+    )
+    respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
+        return_value=httpx.Response(200, json={"default_branch": "main"})
+    )
+    respx.get(
+        f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"state": ci_state, "statuses": []}
+        )
+    )

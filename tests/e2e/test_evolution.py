@@ -1,8 +1,5 @@
 """E2E: Pet evolution through stages via accumulated experience."""
 
-from datetime import UTC, datetime, timedelta
-
-import httpx
 import pytest
 import respx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,27 +12,7 @@ from github_tamagotchi.services.pet_logic import (
     get_next_stage,
 )
 
-
-def _mock_healthy_repo(owner: str, repo: str) -> None:
-    """Register respx mocks for a healthy, active repository."""
-    recent = (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
-        return_value=httpx.Response(
-            200, json=[{"sha": "abc", "commit": {"committer": {"date": recent}}}]
-        )
-    )
-    respx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls").mock(
-        return_value=httpx.Response(200, json=[])
-    )
-    respx.get(f"https://api.github.com/repos/{owner}/{repo}/issues").mock(
-        return_value=httpx.Response(200, json=[])
-    )
-    respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
-        return_value=httpx.Response(200, json={"default_branch": "main"})
-    )
-    respx.get(
-        f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
-    ).mock(return_value=httpx.Response(200, json={"state": "success", "statuses": []}))
+from .conftest import mock_github_repo
 
 
 @pytest.mark.asyncio
@@ -91,9 +68,12 @@ class TestEvolution:
             (15000, PetStage.ELDER),
         ]
 
-        for exp, _expected_stage in expected_stages:
+        for exp, expected_stage in expected_stages:
             pet.experience = exp
             new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
+            assert new_stage == expected_stage, (
+                f"At exp={exp}, expected {expected_stage} got {new_stage}"
+            )
             pet.stage = new_stage.value
 
         await e2e_db.commit()
@@ -137,7 +117,7 @@ class TestEvolution:
         e2e_db.add(pet)
         await e2e_db.commit()
 
-        _mock_healthy_repo("owner", "poll-evolve")
+        mock_github_repo("owner", "poll-evolve")
         service = GitHubService(token="fake-token")
 
         # Each healthy poll gives 30 exp (CI success=10 + recent commit=20)
@@ -163,3 +143,13 @@ class TestEvolution:
         thresholds = [EVOLUTION_THRESHOLDS[s] for s in stages]
         for i in range(1, len(thresholds)):
             assert thresholds[i] > thresholds[i - 1]
+
+    async def test_high_xp_does_not_skip_stages(self) -> None:
+        """get_next_stage only advances one stage even with XP far beyond threshold."""
+        # EGG with enough XP for CHILD (500) should still only go to BABY
+        result = get_next_stage(PetStage.EGG, 500)
+        assert result == PetStage.BABY
+
+        # BABY with enough XP for ADULT (5000) should still only go to CHILD
+        result = get_next_stage(PetStage.BABY, 5000)
+        assert result == PetStage.CHILD

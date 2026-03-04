@@ -16,18 +16,7 @@ from github_tamagotchi.services.pet_logic import (
     get_next_stage,
 )
 
-
-def _github_api(owner: str, repo: str) -> dict[str, list[dict[str, object]]]:
-    """Build respx mocks for a healthy GitHub repository."""
-    now = datetime.now(UTC)
-    recent_commit = (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {
-        "commits": [{"sha": "abc", "commit": {"committer": {"date": recent_commit}}}],
-        "pulls": [],
-        "issues": [],
-        "repo": [{"default_branch": "main"}],
-        "status": [{"state": "success", "statuses": []}],
-    }
+from .conftest import mock_github_repo
 
 
 @pytest.mark.asyncio
@@ -40,23 +29,7 @@ class TestHealthPolling:
     ) -> None:
         """A healthy repo increases pet health and experience."""
         owner, repo = sample_pet.repo_owner, sample_pet.repo_name
-        mocks = _github_api(owner, repo)
-
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
-            return_value=httpx.Response(200, json=mocks["commits"])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/pulls").mock(
-            return_value=httpx.Response(200, json=mocks["pulls"])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}/issues").mock(
-            return_value=httpx.Response(200, json=mocks["issues"])
-        )
-        respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
-            return_value=httpx.Response(200, json={"default_branch": "main"})
-        )
-        respx.get(
-            f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
-        ).mock(return_value=httpx.Response(200, json={"state": "success", "statuses": []}))
+        mock_github_repo(owner, repo, commit_age_hours=2)
 
         service = GitHubService(token="fake-token")
         health = await service.get_repo_health(owner, repo)
