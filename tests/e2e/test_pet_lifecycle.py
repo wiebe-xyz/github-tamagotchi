@@ -64,7 +64,6 @@ class TestPetLifecycle:
         self, e2e_client: AsyncClient
     ) -> None:
         """Feeding a pet increases its health."""
-        # Create a pet via DB fixture with low health
         await e2e_client.post(
             "/api/v1/pets",
             json={"repo_owner": "feedtest", "repo_name": "repo", "name": "Hungry"},
@@ -79,7 +78,6 @@ class TestPetLifecycle:
         self, e2e_client: AsyncClient
     ) -> None:
         """List pets returns paginated results."""
-        # Create 3 pets
         for i in range(3):
             await e2e_client.post(
                 "/api/v1/pets",
