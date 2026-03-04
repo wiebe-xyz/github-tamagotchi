@@ -1,23 +1,27 @@
 """API routes for pet management."""
 
 import logging
+import math
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
+from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.image_generation import (
     ImageGenerationService,
-    get_pet_characteristics,
+    get_pet_appearance,
 )
 from github_tamagotchi.services.storage import StorageService
+from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +41,15 @@ StorageDep = Annotated[StorageService, Depends(get_storage_service)]
 class PetCreate(BaseModel):
     """Request model for creating a pet."""
 
-    repo_owner: str
-    repo_name: str
-    name: str
+    repo_owner: str = Field(..., min_length=1, max_length=255)
+    repo_name: str = Field(..., min_length=1, max_length=255)
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class PetResponse(BaseModel):
     """Response model for pet data."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: int
     repo_owner: str
@@ -53,6 +59,34 @@ class PetResponse(BaseModel):
     mood: str
     health: int
     experience: int
+    created_at: datetime
+    updated_at: datetime
+    last_fed_at: datetime | None
+    last_checked_at: datetime | None
+
+
+class PetListResponse(BaseModel):
+    """Response model for paginated pet list."""
+
+    items: list[PetResponse]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+class FeedResponse(BaseModel):
+    """Response model for feed action."""
+
+    message: str
+    pet: PetResponse
+
+
+class WebhookResponse(BaseModel):
+    """Response for webhook processing."""
+
+    status: str
+    message: str
 
 
 class HealthResponse(BaseModel):
@@ -61,6 +95,30 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     database: str
+
+
+class ComfyUIHealthResponse(BaseModel):
+    """ComfyUI health check response."""
+
+    available: bool
+    queue_remaining: int | None = None
+    cuda_available: bool | None = None
+
+
+class ImageGenerationResponse(BaseModel):
+    """Response for image generation endpoints."""
+
+    message: str
+    stages: list[str]
+
+
+class PetCharacteristics(BaseModel):
+    """Response model for pet appearance characteristics."""
+
+    color: str
+    accent_color: str
+    body_type: str
+    feature: str
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -78,51 +136,101 @@ async def health_check(session: DbSession) -> HealthResponse:
     return HealthResponse(status="healthy", version=__version__, database=db_status)
 
 
-@router.post("/pets", response_model=PetResponse)
+@router.get("/health/comfyui", response_model=ComfyUIHealthResponse)
+async def comfyui_health_check() -> ComfyUIHealthResponse:
+    """Check ComfyUI availability."""
+    from github_tamagotchi.services.comfyui import ComfyUIService
+
+    service = ComfyUIService()
+    health_status = await service.check_health()
+    return ComfyUIHealthResponse(
+        available=health_status.available,
+        queue_remaining=health_status.queue_remaining,
+        cuda_available=health_status.cuda_available,
+    )
+
+
+@router.post("/pets", response_model=PetResponse, status_code=status.HTTP_201_CREATED)
 async def create_pet(pet_data: PetCreate, session: DbSession) -> PetResponse:
     """Create a new pet for a GitHub repository."""
-    # TODO: Implement database integration
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    existing = await pet_crud.get_pet_by_repo(session, pet_data.repo_owner, pet_data.repo_name)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Pet already exists for {pet_data.repo_owner}/{pet_data.repo_name}",
+        )
+    pet = await pet_crud.create_pet(session, pet_data.repo_owner, pet_data.repo_name, pet_data.name)
+    return PetResponse.model_validate(pet)
+
+
+@router.get("/pets", response_model=PetListResponse)
+async def list_pets(
+    session: DbSession,
+    page: Annotated[int, Query(ge=1)] = 1,
+    per_page: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> PetListResponse:
+    """List all pets with pagination."""
+    pets, total = await pet_crud.get_pets(session, page=page, per_page=per_page)
+    pages = math.ceil(total / per_page) if total > 0 else 1
+    return PetListResponse(
+        items=[PetResponse.model_validate(p) for p in pets],
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages,
+    )
 
 
 @router.get("/pets/{repo_owner}/{repo_name}", response_model=PetResponse)
 async def get_pet(repo_owner: str, repo_name: str, session: DbSession) -> PetResponse:
     """Get pet status for a repository."""
-    # TODO: Implement database integration
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    return PetResponse.model_validate(pet)
 
 
-@router.post("/pets/{repo_owner}/{repo_name}/feed")
-async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> PetResponse:
+@router.post("/pets/{repo_owner}/{repo_name}/feed", response_model=FeedResponse)
+async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> FeedResponse:
     """Manually feed the pet (triggered by activity)."""
-    # TODO: Implement feeding logic
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    updated_pet = await pet_crud.feed_pet(session, pet)
+    return FeedResponse(
+        message=f"{updated_pet.name} has been fed!",
+        pet=PetResponse.model_validate(updated_pet),
+    )
 
 
-class ImageGenerationResponse(BaseModel):
-    """Response for image generation endpoints."""
-
-    message: str
-    stages: list[str]
-
-
-class PetCharacteristics(BaseModel):
-    """Response model for pet appearance characteristics."""
-
-    color: str
-    pattern: str
-    species: str
+@router.delete("/pets/{repo_owner}/{repo_name}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> None:
+    """Delete a pet."""
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    await pet_crud.delete_pet(session, pet)
 
 
 @router.get("/pets/{repo_owner}/{repo_name}/characteristics", response_model=PetCharacteristics)
 async def get_characteristics(repo_owner: str, repo_name: str) -> PetCharacteristics:
-    """Get the deterministic appearance characteristics for a pet.
-
-    These characteristics are derived from the repository hash and are
-    consistent across all image generations for this pet.
-    """
-    chars = get_pet_characteristics(repo_owner, repo_name)
-    return PetCharacteristics(**chars)
+    """Get the deterministic appearance characteristics for a pet."""
+    appearance = get_pet_appearance(repo_owner, repo_name)
+    return PetCharacteristics(
+        color=appearance.color,
+        accent_color=appearance.accent_color,
+        body_type=appearance.body_type,
+        feature=appearance.feature,
+    )
 
 
 async def _update_images_generated_at(
@@ -156,11 +264,6 @@ async def get_pet_image(
 
     If the image doesn't exist and ComfyUI is configured, it will be generated.
     If ComfyUI is not configured, returns 503.
-
-    Args:
-        repo_owner: GitHub repository owner
-        repo_name: GitHub repository name
-        stage: Pet stage (egg, baby, child, teen, adult, elder)
     """
     valid_stages = [s.value for s in PetStage]
     if stage not in valid_stages:
@@ -169,7 +272,6 @@ async def get_pet_image(
             detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
         )
 
-    # Check if we have MinIO configured
     if not settings.minio_endpoint:
         raise HTTPException(
             status_code=503,
@@ -198,15 +300,21 @@ async def get_pet_image(
         )
 
     try:
-        image_service = ImageGenerationService(storage=storage)
-        image_data = await image_service.generate_stage_image(repo_owner, repo_name, stage)
-        await storage.upload_image(repo_owner, repo_name, stage, image_data)
+        image_service = ImageGenerationService()
+        result = await image_service.generate_pet_image(repo_owner, repo_name, stage)
+        if not result.success or not result.image_data:
+            raise HTTPException(
+                status_code=503, detail=result.error or "Image generation failed"
+            )
+        await storage.upload_image(repo_owner, repo_name, stage, result.image_data)
         await _update_images_generated_at(session, repo_owner, repo_name)
         return Response(
-            content=image_data,
+            content=result.image_data,
             media_type="image/png",
             headers={"Cache-Control": "public, max-age=86400"},
         )
+    except HTTPException:
+        raise
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
     except Exception as e:
@@ -221,11 +329,7 @@ async def get_pet_image(
 async def generate_pet_images(
     repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
 ) -> ImageGenerationResponse:
-    """Trigger generation of all stage images for a pet.
-
-    This generates images for all 6 stages (egg, baby, child, teen, adult, elder)
-    and stores them in MinIO. Existing images are preserved.
-    """
+    """Trigger generation of all stage images for a pet."""
     if not settings.image_generation_enabled:
         raise HTTPException(status_code=503, detail="Image generation is disabled")
 
@@ -236,12 +340,21 @@ async def generate_pet_images(
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
     try:
-        image_service = ImageGenerationService(storage=storage)
-        paths = await image_service.generate_all_stages(repo_owner, repo_name)
+        image_service = ImageGenerationService()
+        generated_stages = []
+        for pet_stage in PetStage:
+            result = await image_service.generate_pet_image(
+                repo_owner, repo_name, pet_stage.value
+            )
+            if result.success and result.image_data:
+                await storage.upload_image(
+                    repo_owner, repo_name, pet_stage.value, result.image_data
+                )
+                generated_stages.append(pet_stage.value)
         await _update_images_generated_at(session, repo_owner, repo_name)
         return ImageGenerationResponse(
             message="Images generated successfully",
-            stages=list(paths.keys()),
+            stages=generated_stages,
         )
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
@@ -257,10 +370,7 @@ async def generate_pet_images(
 async def regenerate_pet_images(
     repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
 ) -> ImageGenerationResponse:
-    """Delete existing images and regenerate all stages.
-
-    Use this to force regeneration if ComfyUI settings or prompts have changed.
-    """
+    """Delete existing images and regenerate all stages."""
     if not settings.image_generation_enabled:
         raise HTTPException(status_code=503, detail="Image generation is disabled")
 
@@ -271,15 +381,64 @@ async def regenerate_pet_images(
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
     try:
-        image_service = ImageGenerationService(storage=storage)
-        paths = await image_service.regenerate_images(repo_owner, repo_name)
+        await storage.delete_images(repo_owner, repo_name)
+        image_service = ImageGenerationService()
+        generated_stages = []
+        for pet_stage in PetStage:
+            result = await image_service.generate_pet_image(
+                repo_owner, repo_name, pet_stage.value
+            )
+            if result.success and result.image_data:
+                await storage.upload_image(
+                    repo_owner, repo_name, pet_stage.value, result.image_data
+                )
+                generated_stages.append(pet_stage.value)
         await _update_images_generated_at(session, repo_owner, repo_name)
         return ImageGenerationResponse(
             message="Images regenerated successfully",
-            stages=list(paths.keys()),
+            stages=generated_stages,
         )
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
     except Exception as e:
         logger.error("Failed to regenerate images: %s", e)
         raise HTTPException(status_code=503, detail="Image regeneration failed") from None
+
+
+@router.post("/webhooks/github", response_model=WebhookResponse)
+async def github_webhook(request: Request, session: DbSession) -> WebhookResponse:
+    """Receive GitHub webhook events and update pet state."""
+    body = await request.body()
+
+    # Verify signature if webhook secret is configured
+    if settings.github_webhook_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not signature or not verify_signature(
+            body, signature, settings.github_webhook_secret
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature",
+            )
+
+    event_type = request.headers.get("X-GitHub-Event", "")
+    if not event_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing X-GitHub-Event header",
+        )
+
+    # Handle ping event (sent when webhook is first configured)
+    if event_type == "ping":
+        return WebhookResponse(status="ok", message="pong")
+
+    handler = EVENT_HANDLERS.get(event_type)
+    if not handler:
+        return WebhookResponse(
+            status="ignored",
+            message=f"event type '{event_type}' is not handled",
+        )
+
+    payload = await request.json()
+    message = await handler(payload, session)
+    return WebhookResponse(status="processed", message=message)

@@ -1,7 +1,9 @@
-"""ComfyUI image generation service for pet images."""
+"""ComfyUI image generation service for pet sprites."""
 
-import asyncio
 import hashlib
+import json
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -9,364 +11,315 @@ import structlog
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.models.pet import PetStage
-from github_tamagotchi.services.storage import StorageService
 
 logger = structlog.get_logger()
 
-# Pet appearance options derived from repo hash
-COLORS = [
-    "blue",
-    "pink",
-    "green",
-    "purple",
-    "orange",
-    "yellow",
-    "teal",
-    "red",
-    "lavender",
-    "mint",
-]
-
-PATTERNS = [
-    "spotted",
-    "striped",
-    "solid",
-    "gradient",
-    "polka-dotted",
-    "star-patterned",
-    "swirled",
-    "checkered",
-]
-
-SPECIES = [
-    "blob",
-    "bird",
-    "cat-like",
-    "bunny",
-    "dragon",
-    "slime",
-    "ghost",
-    "fox",
-    "bear",
-    "penguin",
-]
-
-STAGE_DESCRIPTIONS = {
-    PetStage.EGG.value: "egg with small crack and inner glow",
-    PetStage.BABY.value: "tiny newborn blob with huge eyes",
-    PetStage.CHILD.value: "small round creature with stubby limbs",
-    PetStage.TEEN.value: "growing creature with defined features",
-    PetStage.ADULT.value: "fully grown, confident pose",
-    PetStage.ELDER.value: "wise ancient creature with crown or beard",
+# Stage-specific prompt descriptions for visual evolution
+STAGE_PROMPTS: dict[str, str] = {
+    PetStage.EGG.value: "oval egg shape with subtle crack pattern, soft inner glow",
+    PetStage.BABY.value: "tiny blob creature, oversized head, huge sparkly eyes, stubby limbs",
+    PetStage.CHILD.value: "small round body, short arms and legs, curious expression, playful",
+    PetStage.TEEN.value: "medium sized, more defined limbs, energetic pose, slightly taller",
+    PetStage.ADULT.value: "full grown creature, balanced proportions, confident stance, mature",
+    PetStage.ELDER.value: "wise ancient creature, small crown or halo, kind eyes, dignified",
 }
 
+# Color palettes for pet variation (primary, accent)
+COLOR_PALETTES: list[tuple[str, str]] = [
+    ("sky blue", "white"),
+    ("pink", "lavender"),
+    ("mint green", "yellow"),
+    ("coral orange", "cream"),
+    ("lavender", "periwinkle"),
+    ("peach", "coral"),
+    ("soft yellow", "orange"),
+    ("teal", "aquamarine"),
+    ("rose pink", "magenta"),
+    ("lime green", "chartreuse"),
+    ("baby blue", "navy"),
+    ("violet", "plum"),
+    ("salmon", "pink"),
+    ("turquoise", "cyan"),
+    ("apricot", "gold"),
+    ("seafoam", "emerald"),
+]
 
-def get_repo_hash(owner: str, repo: str) -> bytes:
-    """Get deterministic hash bytes for a repository."""
-    return hashlib.sha256(f"{owner}/{repo}".encode()).digest()
+# Body types for creature variation
+BODY_TYPES: list[str] = [
+    "round blob",
+    "oval",
+    "pear-shaped",
+    "bean-shaped",
+    "star-shaped",
+    "cloud-like",
+    "teardrop",
+    "mushroom-shaped",
+]
+
+# Special features for uniqueness
+FEATURES: list[str] = [
+    "small antenna",
+    "tiny wings",
+    "fluffy tail",
+    "pointed ears",
+    "polka dot spots",
+    "striped pattern",
+    "heart-shaped marking",
+    "star-shaped eyes",
+    "rosy cheeks",
+    "sparkle effects",
+]
+
+# Base prompt templates
+POSITIVE_PROMPT_TEMPLATE = (
+    "cute pixel art tamagotchi creature, {color} and {accent_color} coloring, "
+    "{body_type} body shape, {feature} features, {stage_description}, "
+    "kawaii style, game sprite, white background, centered composition, "
+    "clean lines, simple shading, full body visible, adorable, chibi"
+)
+
+NEGATIVE_PROMPT = (
+    "blurry, low quality, realistic, photograph, complex background, "
+    "multiple creatures, text, watermark, signature, cropped, "
+    "scary, horror, dark, gritty, nsfw, violent, blood"
+)
 
 
-def get_seed_from_hash(hash_bytes: bytes) -> int:
-    """Get a seed value from hash bytes for reproducible generation."""
-    return int.from_bytes(hash_bytes[:4], "big")
+@dataclass
+class PetAppearance:
+    """Visual characteristics for a pet based on repository identity."""
+
+    color: str
+    accent_color: str
+    body_type: str
+    feature: str
+    seed: int
 
 
-def get_pet_characteristics(owner: str, repo: str) -> dict[str, str]:
-    """Derive pet appearance characteristics from repo hash."""
-    hash_bytes = get_repo_hash(owner, repo)
+@dataclass
+class GenerationResult:
+    """Result of image generation."""
 
-    return {
-        "color": COLORS[hash_bytes[0] % len(COLORS)],
-        "pattern": PATTERNS[hash_bytes[1] % len(PATTERNS)],
-        "species": SPECIES[hash_bytes[2] % len(SPECIES)],
-    }
+    success: bool
+    image_data: bytes | None = None
+    filename: str | None = None
+    error: str | None = None
 
 
-def generate_pet_prompt(owner: str, repo: str, stage: str) -> str:
-    """Generate a ComfyUI prompt for a pet image.
+def repo_to_seed(owner: str, repo: str) -> int:
+    """Generate a deterministic seed from repository identity.
+
+    Same owner/repo always produces the same seed for consistent appearance.
+    """
+    identity = f"{owner.lower()}/{repo.lower()}"
+    hash_bytes = hashlib.sha256(identity.encode()).digest()
+    # Use first 4 bytes for seed (32-bit integer)
+    return int.from_bytes(hash_bytes[:4], byteorder="big")
+
+
+def get_pet_appearance(owner: str, repo: str) -> PetAppearance:
+    """Derive consistent visual characteristics from repository identity.
+
+    The same repository will always have the same appearance.
+    """
+    seed = repo_to_seed(owner, repo)
+
+    # Use different portions of seed for each attribute
+    color_idx = seed % len(COLOR_PALETTES)
+    body_idx = (seed >> 8) % len(BODY_TYPES)
+    feature_idx = (seed >> 16) % len(FEATURES)
+
+    primary, accent = COLOR_PALETTES[color_idx]
+
+    return PetAppearance(
+        color=primary,
+        accent_color=accent,
+        body_type=BODY_TYPES[body_idx],
+        feature=FEATURES[feature_idx],
+        seed=seed,
+    )
+
+
+def build_prompt(appearance: PetAppearance, stage: str) -> str:
+    """Build the positive prompt for image generation."""
+    stage_desc = STAGE_PROMPTS.get(stage, STAGE_PROMPTS[PetStage.ADULT.value])
+
+    return POSITIVE_PROMPT_TEMPLATE.format(
+        color=appearance.color,
+        accent_color=appearance.accent_color,
+        body_type=appearance.body_type,
+        feature=appearance.feature,
+        stage_description=stage_desc,
+    )
+
+
+def load_base_workflow() -> dict[str, Any]:
+    """Load the base ComfyUI workflow from JSON file."""
+    workflow_path = Path(__file__).parent.parent / "workflows" / "pet_generation.json"
+    with open(workflow_path) as f:
+        workflow: dict[str, Any] = json.load(f)
+    return workflow
+
+
+def build_workflow(owner: str, repo: str, stage: str) -> dict[str, Any]:
+    """Build a complete ComfyUI workflow for pet generation.
 
     Args:
         owner: Repository owner
         repo: Repository name
-        stage: Pet stage (egg, baby, child, teen, adult, elder)
+        stage: Pet evolution stage
 
     Returns:
-        Prompt string for image generation
+        Complete workflow dictionary ready for ComfyUI API
     """
-    characteristics = get_pet_characteristics(owner, repo)
-    stage_desc = STAGE_DESCRIPTIONS.get(stage, "cute creature")
+    workflow = load_base_workflow()
+    appearance = get_pet_appearance(owner, repo)
+    prompt = build_prompt(appearance, stage)
 
-    color = characteristics["color"]
-    species = characteristics["species"]
-    pattern = characteristics["pattern"]
+    # Update KSampler seed
+    workflow["3"]["inputs"]["seed"] = appearance.seed
 
-    return f"""cute pixel art tamagotchi pet, {color} {species} creature,
-{pattern} pattern, {stage_desc},
-kawaii style, white background, game sprite, centered"""
+    # Update positive prompt
+    workflow["6"]["inputs"]["text"] = prompt
 
+    # Update filename prefix
+    workflow["10"]["inputs"]["filename_prefix"] = f"{owner}_{repo}_{stage}"
 
-def build_comfyui_workflow(
-    owner: str, repo: str, stage: str
-) -> dict[str, Any]:
-    """Build a ComfyUI workflow for pet image generation.
-
-    This creates a basic txt2img workflow using the KSampler node.
-    The workflow structure should match your ComfyUI setup.
-    """
-    hash_bytes = get_repo_hash(owner, repo)
-    seed = get_seed_from_hash(hash_bytes)
-    prompt = generate_pet_prompt(owner, repo, stage)
-
-    return {
-        "3": {
-            "class_type": "KSampler",
-            "inputs": {
-                "cfg": 7.0,
-                "denoise": 1.0,
-                "latent_image": ["5", 0],
-                "model": ["4", 0],
-                "negative": ["7", 0],
-                "positive": ["6", 0],
-                "sampler_name": "euler",
-                "scheduler": "normal",
-                "seed": seed,
-                "steps": 20,
-            },
-        },
-        "4": {
-            "class_type": "CheckpointLoaderSimple",
-            "inputs": {
-                "ckpt_name": settings.comfyui_checkpoint_model,
-            },
-        },
-        "5": {
-            "class_type": "EmptyLatentImage",
-            "inputs": {
-                "batch_size": 1,
-                "height": 512,
-                "width": 512,
-            },
-        },
-        "6": {
-            "class_type": "CLIPTextEncode",
-            "inputs": {
-                "clip": ["4", 1],
-                "text": prompt,
-            },
-        },
-        "7": {
-            "class_type": "CLIPTextEncode",
-            "inputs": {
-                "clip": ["4", 1],
-                "text": "blurry, low quality, ugly, deformed, text, watermark",
-            },
-        },
-        "8": {
-            "class_type": "VAEDecode",
-            "inputs": {
-                "samples": ["3", 0],
-                "vae": ["4", 2],
-            },
-        },
-        "9": {
-            "class_type": "SaveImage",
-            "inputs": {
-                "filename_prefix": f"tamagotchi_{owner}_{repo}_{stage}",
-                "images": ["8", 0],
-            },
-        },
-    }
+    return workflow
 
 
 class ImageGenerationService:
-    """Service for generating pet images using ComfyUI."""
+    """Service for generating pet images via ComfyUI API."""
 
-    def __init__(
-        self,
-        comfyui_url: str | None = None,
-        timeout: int | None = None,
-        storage: StorageService | None = None,
-    ) -> None:
-        """Initialize with ComfyUI configuration."""
+    def __init__(self, comfyui_url: str | None = None) -> None:
+        """Initialize the image generation service.
+
+        Args:
+            comfyui_url: ComfyUI server URL (defaults to settings)
+        """
         self.comfyui_url = comfyui_url or settings.comfyui_url
-        self.timeout = timeout or settings.comfyui_timeout_seconds
-        self.storage = storage or StorageService()
+        self.timeout = settings.comfyui_timeout
 
-    async def _queue_prompt(
-        self, client: httpx.AsyncClient, workflow: dict[str, Any], client_id: str
-    ) -> str:
-        """Queue a prompt in ComfyUI and return the prompt_id."""
-        response = await client.post(
-            f"{self.comfyui_url}/prompt",
-            json={"prompt": workflow, "client_id": client_id},
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        result: dict[str, str] = response.json()
-        return result["prompt_id"]
-
-    async def _wait_for_completion(
-        self, client: httpx.AsyncClient, prompt_id: str, poll_interval: float = 2.0
-    ) -> dict[str, Any]:
-        """Poll for prompt completion and return the history entry."""
-        elapsed = 0.0
-        while elapsed < self.timeout:
-            response = await client.get(
-                f"{self.comfyui_url}/history/{prompt_id}",
-                timeout=10.0,
-            )
-            response.raise_for_status()
-            history: dict[str, Any] = response.json()
-
-            if prompt_id in history:
-                entry: dict[str, Any] = history[prompt_id]
-                status = entry.get("status", {})
-                if status.get("completed", False):
-                    return entry
-                if status.get("status_str") == "error":
-                    raise RuntimeError(f"ComfyUI generation failed: {status}")
-
-            await asyncio.sleep(poll_interval)
-            elapsed += poll_interval
-
-        raise TimeoutError(f"Image generation timed out after {self.timeout}s")
-
-    async def _download_image(
-        self, client: httpx.AsyncClient, filename: str, subfolder: str, image_type: str
-    ) -> bytes:
-        """Download a generated image from ComfyUI."""
-        response = await client.get(
-            f"{self.comfyui_url}/view",
-            params={
-                "filename": filename,
-                "subfolder": subfolder,
-                "type": image_type,
-            },
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        return response.content
-
-    async def generate_stage_image(
-        self, owner: str, repo: str, stage: str
-    ) -> bytes:
-        """Generate a single stage image for a pet.
+    async def generate_pet_image(self, owner: str, repo: str, stage: str) -> GenerationResult:
+        """Generate a pet image for the given repository and stage.
 
         Args:
             owner: Repository owner
             repo: Repository name
-            stage: Pet stage
+            stage: Pet evolution stage (egg, baby, child, teen, adult, elder)
 
         Returns:
-            PNG image bytes
+            GenerationResult with image data or error
         """
-        if not self.comfyui_url:
-            raise ValueError("ComfyUI URL not configured")
+        try:
+            workflow = build_workflow(owner, repo, stage)
+            prompt_id = await self._queue_prompt(workflow)
 
-        workflow = build_comfyui_workflow(owner, repo, stage)
-        client_id = f"{owner}_{repo}_{stage}"
+            if not prompt_id:
+                return GenerationResult(success=False, error="Failed to queue prompt in ComfyUI")
 
-        async with httpx.AsyncClient() as client:
-            logger.info(
-                "Queueing image generation",
+            # Wait for completion and get image
+            image_data = await self._wait_for_image(prompt_id)
+
+            if image_data:
+                return GenerationResult(
+                    success=True,
+                    image_data=image_data,
+                    filename=f"{owner}_{repo}_{stage}.png",
+                )
+            return GenerationResult(success=False, error="Failed to retrieve generated image")
+
+        except httpx.TimeoutException:
+            logger.error(
+                "ComfyUI request timed out",
                 owner=owner,
                 repo=repo,
                 stage=stage,
             )
+            return GenerationResult(success=False, error="Image generation timed out")
+        except Exception as e:
+            logger.error(
+                "Image generation failed",
+                owner=owner,
+                repo=repo,
+                stage=stage,
+                error=str(e),
+            )
+            return GenerationResult(success=False, error=str(e))
 
-            prompt_id = await self._queue_prompt(client, workflow, client_id)
-            logger.debug("Prompt queued", prompt_id=prompt_id)
+    async def _queue_prompt(self, workflow: dict[str, Any]) -> str | None:
+        """Queue a prompt in ComfyUI and return the prompt ID."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                f"{self.comfyui_url}/prompt",
+                json={"prompt": workflow},
+            )
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+            prompt_id: str | None = data.get("prompt_id")
+            return prompt_id
 
-            history = await self._wait_for_completion(client, prompt_id)
-
-            outputs = history.get("outputs", {})
-            for node_output in outputs.values():
-                images = node_output.get("images", [])
-                if images:
-                    img_info = images[0]
-                    image_data = await self._download_image(
-                        client,
-                        img_info["filename"],
-                        img_info.get("subfolder", ""),
-                        img_info.get("type", "output"),
-                    )
-                    logger.info(
-                        "Generated image",
-                        owner=owner,
-                        repo=repo,
-                        stage=stage,
-                        size=len(image_data),
-                    )
-                    return image_data
-
-            raise RuntimeError("No images found in ComfyUI output")
-
-    async def _generate_and_upload_stage(
-        self, owner: str, repo: str, stage: str
-    ) -> tuple[str, str]:
-        """Generate and upload a single stage image, returning (stage, path)."""
-        image_data = await self.generate_stage_image(owner, repo, stage)
-        path = await self.storage.upload_image(owner, repo, stage, image_data)
-        return stage, path
-
-    async def generate_all_stages(
-        self, owner: str, repo: str
-    ) -> dict[str, str]:
-        """Generate images for all pet stages in parallel.
+    async def _wait_for_image(self, prompt_id: str, max_attempts: int = 60) -> bytes | None:
+        """Poll ComfyUI for completion and retrieve the generated image.
 
         Args:
-            owner: Repository owner
-            repo: Repository name
+            prompt_id: The prompt ID to wait for
+            max_attempts: Maximum polling attempts (default 60 = ~60 seconds)
 
         Returns:
-            Dictionary mapping stage names to storage paths
+            Image data as bytes or None if failed
         """
-        stages = [stage.value for stage in PetStage]
+        import asyncio
 
-        results = await asyncio.gather(
-            *(self._generate_and_upload_stage(owner, repo, stage) for stage in stages)
-        )
-        paths = dict(results)
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            for _ in range(max_attempts):
+                # Check history for completion
+                response = await client.get(f"{self.comfyui_url}/history/{prompt_id}")
+                response.raise_for_status()
+                history: dict[str, Any] = response.json()
 
-        logger.info(
-            "Generated all stage images",
-            owner=owner,
-            repo=repo,
-            stages=list(paths.keys()),
-        )
-        return paths
+                if prompt_id in history:
+                    outputs = history[prompt_id].get("outputs", {})
+                    # Find SaveImage node output (node "10")
+                    save_output = outputs.get("10", {})
+                    images = save_output.get("images", [])
 
-    async def get_or_generate_image(
-        self, owner: str, repo: str, stage: str
+                    if images:
+                        # Get the first image
+                        image_info = images[0]
+                        return await self._fetch_image(
+                            client,
+                            image_info["filename"],
+                            image_info.get("subfolder", ""),
+                            image_info.get("type", "output"),
+                        )
+
+                await asyncio.sleep(1)
+
+        return None
+
+    async def _fetch_image(
+        self,
+        client: httpx.AsyncClient,
+        filename: str,
+        subfolder: str,
+        image_type: str,
     ) -> bytes:
-        """Get an existing image or generate a new one.
+        """Fetch an image from ComfyUI output directory."""
+        params = {
+            "filename": filename,
+            "subfolder": subfolder,
+            "type": image_type,
+        }
+        response = await client.get(f"{self.comfyui_url}/view", params=params)
+        response.raise_for_status()
+        return response.content
 
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            stage: Pet stage
-
-        Returns:
-            PNG image bytes
-        """
-        existing = await self.storage.get_image(owner, repo, stage)
-        if existing:
-            logger.debug("Using cached image", owner=owner, repo=repo, stage=stage)
-            return existing
-
-        image_data = await self.generate_stage_image(owner, repo, stage)
-        await self.storage.upload_image(owner, repo, stage, image_data)
-        return image_data
-
-    async def regenerate_images(self, owner: str, repo: str) -> dict[str, str]:
-        """Delete existing images and regenerate all stages.
-
-        Args:
-            owner: Repository owner
-            repo: Repository name
-
-        Returns:
-            Dictionary mapping stage names to storage paths
-        """
-        await self.storage.delete_images(owner, repo)
-        return await self.generate_all_stages(owner, repo)
+    async def check_health(self) -> bool:
+        """Check if ComfyUI server is reachable and healthy."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{self.comfyui_url}/system_stats")
+                return response.status_code == 200
+        except Exception:
+            return False

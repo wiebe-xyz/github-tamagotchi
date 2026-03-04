@@ -1,0 +1,69 @@
+{
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "cfg": 7.5,
+      "denoise": 1.0,
+      "latent_image": ["5", 0],
+      "model": ["4", 0],
+      "negative": ["7", 0],
+      "positive": ["6", 0],
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "seed": 0,
+      "steps": 25
+    }
+  },
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "sd_xl_base_1.0.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "batch_size": 1,
+      "height": 1024,
+      "width": 1024
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "cute pixel art tamagotchi creature, kawaii style, game sprite, white background, centered composition, clean lines, simple shading, full body visible"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "blurry, low quality, realistic, photograph, complex background, multiple creatures, text, watermark, signature, cropped, scary, horror, dark, gritty"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["4", 2]
+    }
+  },
+  "9": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "crop": "center",
+      "height": 512,
+      "image": ["8", 0],
+      "upscale_method": "lanczos",
+      "width": 512
+    }
+  },
+  "10": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "pet",
+      "images": ["9", 0]
+    }
+  }
+}
