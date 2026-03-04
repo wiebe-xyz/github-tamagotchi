@@ -45,12 +45,31 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Run tests with coverage
-        run: pytest --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=70
+      - name: Run unit tests
+        run: pytest tests/ --ignore=tests/e2e --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=70
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run E2E tests
+        run: pytest tests/e2e -v --tb=short
 
   build:
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, e2e]
     steps:
       - uses: actions/checkout@v4
 
