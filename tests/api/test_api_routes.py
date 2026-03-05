@@ -184,7 +184,9 @@ class TestQueueStatsEndpoint:
         assert "completed" in data
         assert "failed" in data
 
-    async def test_queue_stats_returns_zero_for_empty_queue(self, async_client: AsyncClient) -> None:
+    async def test_queue_stats_returns_zero_for_empty_queue(
+        self, async_client: AsyncClient
+    ) -> None:
         """Queue stats should return zeros when no jobs exist."""
         response = await async_client.get("/api/v1/admin/queue/stats")
         data = response.json()
