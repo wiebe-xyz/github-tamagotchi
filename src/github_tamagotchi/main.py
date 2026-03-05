@@ -1,5 +1,7 @@
 """Main FastAPI application entry point."""
 
+import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -22,6 +24,7 @@ from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.github import GitHubService, RateLimitError
 from github_tamagotchi.services.pet_logic import (
@@ -230,9 +233,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         poll_interval_minutes=settings.github_poll_interval_minutes,
     )
 
+    # Start image generation queue worker
+    worker_stop_event = asyncio.Event()
+    worker_task = asyncio.create_task(
+        image_queue.run_worker(async_session_factory, worker_stop_event)
+    )
+    logger.info("Image generation queue worker started")
+
     yield
 
     # Shutdown
+    # Stop image queue worker
+    worker_stop_event.set()
+    worker_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await worker_task
+    logger.info("Image generation queue worker stopped")
+
     scheduler.shutdown()
     await close_database()
     logger.info("GitHub Tamagotchi shutdown complete")

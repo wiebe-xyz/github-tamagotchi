@@ -165,3 +165,32 @@ class TestPetsEndpointsAsync:
         response = await async_client.delete("/api/v1/pets/nobody/nowhere")
 
         assert response.status_code == 404
+
+
+class TestQueueStatsEndpoint:
+    """Tests for the queue stats endpoint."""
+
+    async def test_queue_stats_returns_200(self, async_client: AsyncClient) -> None:
+        """Queue stats endpoint should return 200 OK."""
+        response = await async_client.get("/api/v1/admin/queue/stats")
+        assert response.status_code == 200
+
+    async def test_queue_stats_returns_expected_fields(self, async_client: AsyncClient) -> None:
+        """Queue stats endpoint should return all expected fields."""
+        response = await async_client.get("/api/v1/admin/queue/stats")
+        data = response.json()
+        assert "pending" in data
+        assert "processing" in data
+        assert "completed" in data
+        assert "failed" in data
+
+    async def test_queue_stats_returns_zero_for_empty_queue(
+        self, async_client: AsyncClient
+    ) -> None:
+        """Queue stats should return zeros when no jobs exist."""
+        response = await async_client.get("/api/v1/admin/queue/stats")
+        data = response.json()
+        assert data["pending"] == 0
+        assert data["processing"] == 0
+        assert data["completed"] == 0
+        assert data["failed"] == 0

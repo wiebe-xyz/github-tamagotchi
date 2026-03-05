@@ -2,9 +2,13 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Integer, String, UniqueConstraint, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from github_tamagotchi.models.image_job import ImageGenerationJob
 
 
 class Base(DeclarativeBase):
@@ -60,4 +64,9 @@ class Pet(Base):
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     images_generated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships
+    image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
+        "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"
     )

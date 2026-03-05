@@ -27,7 +27,6 @@ class TestPetStageEnum:
     def test_stage_string_representation(self) -> None:
         """PetStage should have proper string representation."""
         assert PetStage.EGG.value == "egg"
-        # StrEnum returns the value as the string representation
         assert str(PetStage.EGG) == "egg"
 
 
