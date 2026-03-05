@@ -123,7 +123,7 @@ def client() -> Iterator[TestClient]:
     import github_tamagotchi.services.image_queue
 
     # Create database tables
-    asyncio.get_event_loop().run_until_complete(_create_tables())
+    asyncio.run(_create_tables())
 
     # Mock run_worker to wait for stop event or cancellation
     async def mock_run_worker(
@@ -166,7 +166,7 @@ def client() -> Iterator[TestClient]:
     github_tamagotchi.services.image_queue.run_worker = original_run_worker
 
     # Drop database tables
-    asyncio.get_event_loop().run_until_complete(_drop_tables())
+    asyncio.run(_drop_tables())
 
 
 @pytest.fixture(scope="session", autouse=True)

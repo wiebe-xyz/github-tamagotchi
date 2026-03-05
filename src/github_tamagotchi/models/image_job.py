@@ -1,7 +1,7 @@
 """Image generation job model for queue management."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from github_tamagotchi.models.pet import Base
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     """Status of an image generation job."""
 
     PENDING = "pending"
