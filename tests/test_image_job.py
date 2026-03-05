@@ -25,7 +25,7 @@ class TestJobStatusEnum:
     def test_status_string_representation(self) -> None:
         """JobStatus should have proper string representation."""
         assert JobStatus.PENDING.value == "pending"
-        assert str(JobStatus.PENDING) == "JobStatus.PENDING"
+        assert str(JobStatus.PENDING) == "pending"
 
 
 class TestImageGenerationJobModel:

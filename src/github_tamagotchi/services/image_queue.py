@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
@@ -202,11 +202,11 @@ async def get_queue_stats(session: AsyncSession) -> dict[str, int]:
 
     for status in JobStatus:
         result = await session.execute(
-            select(ImageGenerationJob).where(
-                ImageGenerationJob.status == status.value
-            )
+            select(func.count())
+            .select_from(ImageGenerationJob)
+            .where(ImageGenerationJob.status == status.value)
         )
-        stats[status.value] = len(result.scalars().all())
+        stats[status.value] = result.scalar() or 0
 
     return stats
 
