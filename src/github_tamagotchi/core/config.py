@@ -20,19 +20,39 @@ class Settings(BaseSettings):
     # GitHub
     github_token: str | None = None
     github_poll_interval_minutes: int = 30
+    github_webhook_secret: str | None = None
 
     # ComfyUI
     comfyui_url: str | None = None
     comfyui_cf_access_client_id: str | None = None
     comfyui_cf_access_client_secret: str | None = None
+    comfyui_timeout: float = 120.0
+
+    # Image generation
+    image_generation_enabled: bool = True
+
+    # MinIO/S3 storage
+    minio_endpoint: str | None = None
+    minio_access_key: str | None = None
+    minio_secret_key: str | None = None
+    minio_bucket: str = "tamagotchi"
+    minio_secure: bool = False
 
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # ComfyUI
-    comfyui_url: str = "http://localhost:8188"
-    comfyui_timeout: float = 120.0
+    # Alerting
+    alerting_enabled: bool = True
+    alert_slack_webhook: str | None = None
+    alert_discord_webhook: str | None = None
+    alert_poll_failure_threshold: int = 2
+    alert_error_rate_threshold: float = 0.05
+    alert_github_rate_limit_threshold: int = 100
+    alert_db_slow_query_ms: int = 500
+    alert_dying_pets_pct: float = 0.10
+    alert_death_spike_count: int = 5
+    alert_check_interval_minutes: int = 5
 
 
 settings = Settings()

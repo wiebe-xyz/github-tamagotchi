@@ -30,9 +30,7 @@ class ComfyUIService:
     ) -> None:
         """Initialize with ComfyUI URL and optional Cloudflare Access credentials."""
         self.url = url or settings.comfyui_url
-        self.cf_access_client_id = (
-            cf_access_client_id or settings.comfyui_cf_access_client_id
-        )
+        self.cf_access_client_id = cf_access_client_id or settings.comfyui_cf_access_client_id
         self.cf_access_client_secret = (
             cf_access_client_secret or settings.comfyui_cf_access_client_secret
         )
@@ -61,9 +59,7 @@ class ComfyUIService:
                 data = resp.json()
 
                 devices = data.get("devices", [])
-                cuda_available = any(
-                    d.get("type") == "cuda" for d in devices
-                ) if devices else None
+                cuda_available = any(d.get("type") == "cuda" for d in devices) if devices else None
 
                 return ComfyUIStatus(
                     available=True,

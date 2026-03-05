@@ -200,9 +200,7 @@ class ImageGenerationService:
         self.comfyui_url = comfyui_url or settings.comfyui_url
         self.timeout = settings.comfyui_timeout
 
-    async def generate_pet_image(
-        self, owner: str, repo: str, stage: str
-    ) -> GenerationResult:
+    async def generate_pet_image(self, owner: str, repo: str, stage: str) -> GenerationResult:
         """Generate a pet image for the given repository and stage.
 
         Args:
@@ -218,9 +216,7 @@ class ImageGenerationService:
             prompt_id = await self._queue_prompt(workflow)
 
             if not prompt_id:
-                return GenerationResult(
-                    success=False, error="Failed to queue prompt in ComfyUI"
-                )
+                return GenerationResult(success=False, error="Failed to queue prompt in ComfyUI")
 
             # Wait for completion and get image
             image_data = await self._wait_for_image(prompt_id)
@@ -231,9 +227,7 @@ class ImageGenerationService:
                     image_data=image_data,
                     filename=f"{owner}_{repo}_{stage}.png",
                 )
-            return GenerationResult(
-                success=False, error="Failed to retrieve generated image"
-            )
+            return GenerationResult(success=False, error="Failed to retrieve generated image")
 
         except httpx.TimeoutException:
             logger.error(
@@ -265,9 +259,7 @@ class ImageGenerationService:
             prompt_id: str | None = data.get("prompt_id")
             return prompt_id
 
-    async def _wait_for_image(
-        self, prompt_id: str, max_attempts: int = 60
-    ) -> bytes | None:
+    async def _wait_for_image(self, prompt_id: str, max_attempts: int = 60) -> bytes | None:
         """Poll ComfyUI for completion and retrieve the generated image.
 
         Args:
@@ -282,9 +274,7 @@ class ImageGenerationService:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for _ in range(max_attempts):
                 # Check history for completion
-                response = await client.get(
-                    f"{self.comfyui_url}/history/{prompt_id}"
-                )
+                response = await client.get(f"{self.comfyui_url}/history/{prompt_id}")
                 response.raise_for_status()
                 history: dict[str, Any] = response.json()
 

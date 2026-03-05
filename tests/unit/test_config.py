@@ -21,9 +21,12 @@ class TestSettingsDefaults:
 
     def test_default_database_url(self) -> None:
         """Default database URL should use localhost."""
-        settings = Settings()
-        assert "localhost" in settings.database_url
-        assert "tamagotchi" in settings.database_url
+        # Clear DATABASE_URL if set to test the actual default
+        with patch.dict(os.environ, {"DATABASE_URL": ""}, clear=False):
+            os.environ.pop("DATABASE_URL", None)
+            settings = Settings()
+            assert "localhost" in settings.database_url
+            assert "tamagotchi" in settings.database_url
 
     def test_default_github_token_none(self) -> None:
         """GitHub token should be None by default."""
