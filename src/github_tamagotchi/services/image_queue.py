@@ -25,7 +25,9 @@ def get_image_provider() -> ImageProvider:
     """Get the configured image generation provider."""
     if settings.image_generation_provider == "comfyui":
         return ImageGenerationService()
-    return OpenRouterService()
+    if settings.image_generation_provider == "openrouter":
+        return OpenRouterService()
+    raise ValueError(f"Unknown image provider: {settings.image_generation_provider}")
 
 
 async def create_job(
@@ -238,7 +240,8 @@ async def get_pet_by_id(session: AsyncSession, pet_id: int) -> Pet | None:
 async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
     """Process a single image generation job.
 
-    Generates pet images via ComfyUI for the specified stage (or all stages if None).
+    Generates pet images via the configured provider for the specified stage
+    (or all stages if None).
 
     Args:
         session: Database session

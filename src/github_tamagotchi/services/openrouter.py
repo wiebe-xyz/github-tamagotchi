@@ -1,6 +1,8 @@
 """OpenRouter image generation service for pet sprites."""
 
 import base64
+import binascii
+from typing import Any
 
 import httpx
 import structlog
@@ -27,14 +29,19 @@ class OpenRouterService:
         model: str | None = None,
         timeout: float | None = None,
     ) -> None:
-        self.api_key = api_key or settings.openrouter_api_key
-        self.model = model or settings.openrouter_model
-        self.timeout = timeout or settings.openrouter_timeout
+        self.api_key = api_key if api_key is not None else settings.openrouter_api_key
+        self.model = model if model is not None else settings.openrouter_model
+        self.timeout = timeout if timeout is not None else settings.openrouter_timeout
 
     async def generate_pet_image(
         self, owner: str, repo: str, stage: str
     ) -> GenerationResult:
         """Generate a pet image using OpenRouter's image generation API."""
+        if not self.api_key:
+            return GenerationResult(
+                success=False, error="OpenRouter API key not configured"
+            )
+
         try:
             appearance = get_pet_appearance(owner, repo)
             prompt = build_prompt(appearance, stage)
@@ -106,7 +113,7 @@ class OpenRouterService:
 
         return self._extract_image(data)
 
-    def _extract_image(self, data: dict) -> bytes | None:  # type: ignore[type-arg]
+    def _extract_image(self, data: dict[str, Any]) -> bytes | None:
         """Extract image bytes from OpenRouter response."""
         choices = data.get("choices", [])
         if not choices:
@@ -127,7 +134,7 @@ class OpenRouterService:
         try:
             _, encoded = image_url.split(",", 1)
             return base64.b64decode(encoded)
-        except (ValueError, Exception):
+        except (ValueError, binascii.Error):
             logger.error("Failed to decode base64 image data")
             return None
 

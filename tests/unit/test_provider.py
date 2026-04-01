@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from github_tamagotchi.services.image_generation import ImageGenerationService
 from github_tamagotchi.services.image_queue import get_image_provider
 from github_tamagotchi.services.openrouter import OpenRouterService
@@ -48,3 +50,12 @@ class TestGetImageProvider:
             mock_settings.comfyui_timeout = 120.0
             provider = get_image_provider()
         assert isinstance(provider, ImageGenerationService)
+
+    def test_unknown_provider_raises_error(self) -> None:
+        """Should raise ValueError for unknown provider."""
+        with patch(
+            "github_tamagotchi.services.image_queue.settings"
+        ) as mock_settings:
+            mock_settings.image_generation_provider = "dalle"
+            with pytest.raises(ValueError, match="Unknown image provider: dalle"):
+                get_image_provider()

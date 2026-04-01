@@ -189,6 +189,15 @@ class TestOpenRouterService:
         assert result is False
 
     @pytest.mark.asyncio
+    async def test_generate_no_api_key(self) -> None:
+        """Should return error when API key is not configured."""
+        service = OpenRouterService(api_key=None)
+        result = await service.generate_pet_image("owner", "repo", "adult")
+
+        assert result.success is False
+        assert "API key not configured" in result.error
+
+    @pytest.mark.asyncio
     async def test_prompt_includes_appearance(
         self, service: OpenRouterService
     ) -> None:
