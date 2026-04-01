@@ -312,11 +312,11 @@ class TestProcessJob:
         )
 
         with patch(
-            "github_tamagotchi.services.image_queue.ImageGenerationService"
-        ) as mock_service_class:
+            "github_tamagotchi.services.image_queue.get_image_provider"
+        ) as mock_get_provider:
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
-            mock_service_class.return_value = mock_service
+            mock_get_provider.return_value = mock_service
 
             await image_queue.process_job(db_session, job)
 
@@ -337,11 +337,11 @@ class TestProcessJob:
         )
 
         with patch(
-            "github_tamagotchi.services.image_queue.ImageGenerationService"
-        ) as mock_service_class:
+            "github_tamagotchi.services.image_queue.get_image_provider"
+        ) as mock_get_provider:
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
-            mock_service_class.return_value = mock_service
+            mock_get_provider.return_value = mock_service
 
             await image_queue.process_job(db_session, job)
 
@@ -367,11 +367,11 @@ class TestProcessJob:
         )
 
         with patch(
-            "github_tamagotchi.services.image_queue.ImageGenerationService"
-        ) as mock_service_class:
+            "github_tamagotchi.services.image_queue.get_image_provider"
+        ) as mock_get_provider:
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
-            mock_service_class.return_value = mock_service
+            mock_get_provider.return_value = mock_service
 
             await image_queue.process_job(db_session, job)
 
@@ -390,11 +390,11 @@ class TestProcessJob:
         )
 
         with patch(
-            "github_tamagotchi.services.image_queue.ImageGenerationService"
-        ) as mock_service_class:
+            "github_tamagotchi.services.image_queue.get_image_provider"
+        ) as mock_get_provider:
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
-            mock_service_class.return_value = mock_service
+            mock_get_provider.return_value = mock_service
 
             with pytest.raises(RuntimeError, match="Image generation failed"):
                 await image_queue.process_job(db_session, job)
@@ -461,11 +461,11 @@ class TestRunWorker:
             stop_event.set()
 
         with patch(
-            "github_tamagotchi.services.image_queue.ImageGenerationService"
-        ) as mock_service_class:
+            "github_tamagotchi.services.image_queue.get_image_provider"
+        ) as mock_get_provider:
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
-            mock_service_class.return_value = mock_service
+            mock_get_provider.return_value = mock_service
 
             await asyncio.gather(
                 image_queue.run_worker(

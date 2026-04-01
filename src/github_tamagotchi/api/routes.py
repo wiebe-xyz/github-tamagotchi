@@ -17,10 +17,8 @@ from github_tamagotchi.core.database import get_session
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services import image_queue
-from github_tamagotchi.services.image_generation import (
-    ImageGenerationService,
-    get_pet_appearance,
-)
+from github_tamagotchi.services.image_generation import get_pet_appearance
+from github_tamagotchi.services.image_queue import get_image_provider
 from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
@@ -98,12 +96,11 @@ class HealthResponse(BaseModel):
     database: str
 
 
-class ComfyUIHealthResponse(BaseModel):
-    """ComfyUI health check response."""
+class ImageProviderHealthResponse(BaseModel):
+    """Image provider health check response."""
 
+    provider: str
     available: bool
-    queue_remaining: int | None = None
-    cuda_available: bool | None = None
 
 
 class QueueStatsResponse(BaseModel):
@@ -146,17 +143,14 @@ async def health_check(session: DbSession) -> HealthResponse:
     return HealthResponse(status="healthy", version=__version__, database=db_status)
 
 
-@router.get("/health/comfyui", response_model=ComfyUIHealthResponse)
-async def comfyui_health_check() -> ComfyUIHealthResponse:
-    """Check ComfyUI availability."""
-    from github_tamagotchi.services.comfyui import ComfyUIService
-
-    service = ComfyUIService()
-    health_status = await service.check_health()
-    return ComfyUIHealthResponse(
-        available=health_status.available,
-        queue_remaining=health_status.queue_remaining,
-        cuda_available=health_status.cuda_available,
+@router.get("/health/image-provider", response_model=ImageProviderHealthResponse)
+async def image_provider_health_check() -> ImageProviderHealthResponse:
+    """Check image generation provider availability."""
+    provider = get_image_provider()
+    available = await provider.check_health()
+    return ImageProviderHealthResponse(
+        provider=settings.image_generation_provider,
+        available=available,
     )
 
 
@@ -315,14 +309,14 @@ async def get_pet_image(
         )
 
     # If no image exists, try to generate one
-    if not settings.image_generation_enabled or not settings.comfyui_url:
+    if not settings.image_generation_enabled:
         raise HTTPException(
             status_code=404,
             detail="Image not found and generation not available",
         )
 
     try:
-        image_service = ImageGenerationService()
+        image_service = get_image_provider()
         result = await image_service.generate_pet_image(repo_owner, repo_name, stage)
         if not result.success or not result.image_data:
             raise HTTPException(
@@ -355,14 +349,11 @@ async def generate_pet_images(
     if not settings.image_generation_enabled:
         raise HTTPException(status_code=503, detail="Image generation is disabled")
 
-    if not settings.comfyui_url:
-        raise HTTPException(status_code=503, detail="ComfyUI not configured")
-
     if not settings.minio_endpoint:
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
     try:
-        image_service = ImageGenerationService()
+        image_service = get_image_provider()
         generated_stages = []
         for pet_stage in PetStage:
             result = await image_service.generate_pet_image(
@@ -396,15 +387,12 @@ async def regenerate_pet_images(
     if not settings.image_generation_enabled:
         raise HTTPException(status_code=503, detail="Image generation is disabled")
 
-    if not settings.comfyui_url:
-        raise HTTPException(status_code=503, detail="ComfyUI not configured")
-
     if not settings.minio_endpoint:
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
     try:
         await storage.delete_images(repo_owner, repo_name)
-        image_service = ImageGenerationService()
+        image_service = get_image_provider()
         generated_stages = []
         for pet_stage in PetStage:
             result = await image_service.generate_pet_image(
