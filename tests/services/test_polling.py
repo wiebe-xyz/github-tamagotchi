@@ -5,9 +5,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from github_tamagotchi.main import poll_repositories
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import RateLimitError, RepoHealth
+
+
+async def poll_repositories() -> None:
+    """Import and call poll_repositories from the current module state."""
+    from github_tamagotchi.main import poll_repositories as _poll
+
+    await _poll()
 
 
 class TestPollRepositories:

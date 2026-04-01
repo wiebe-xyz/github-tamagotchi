@@ -30,6 +30,12 @@ class Settings(BaseSettings):
 
     # Image generation
     image_generation_enabled: bool = True
+    image_generation_provider: str = "openrouter"  # "openrouter" or "comfyui"
+
+    # OpenRouter
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "google/gemini-2.5-flash-image"
+    openrouter_timeout: float = 60.0
 
     # MinIO/S3 storage
     minio_endpoint: str | None = None

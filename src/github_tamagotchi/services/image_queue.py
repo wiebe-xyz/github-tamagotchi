@@ -7,15 +7,27 @@ import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from github_tamagotchi.core.config import settings
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.image_generation import ImageGenerationService
+from github_tamagotchi.services.openrouter import OpenRouterService
+from github_tamagotchi.services.provider import ImageProvider
 
 logger = structlog.get_logger()
 
 # Queue configuration
 MAX_ATTEMPTS = 3
 POLL_INTERVAL_SECONDS = 10
+
+
+def get_image_provider() -> ImageProvider:
+    """Get the configured image generation provider."""
+    if settings.image_generation_provider == "comfyui":
+        return ImageGenerationService()
+    if settings.image_generation_provider == "openrouter":
+        return OpenRouterService()
+    raise ValueError(f"Unknown image provider: {settings.image_generation_provider}")
 
 
 async def create_job(
@@ -228,7 +240,8 @@ async def get_pet_by_id(session: AsyncSession, pet_id: int) -> Pet | None:
 async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
     """Process a single image generation job.
 
-    Generates pet images via ComfyUI for the specified stage (or all stages if None).
+    Generates pet images via the configured provider for the specified stage
+    (or all stages if None).
 
     Args:
         session: Database session
@@ -254,7 +267,7 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
         stages = [job.stage] if job.stage else [stage.value for stage in PetStage]
 
         # Generate images for each stage
-        image_service = ImageGenerationService()
+        image_service = get_image_provider()
         for stage in stages:
             logger.info(
                 "Generating image for stage",
