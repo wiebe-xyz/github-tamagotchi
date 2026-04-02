@@ -1,0 +1,167 @@
+version: "3"
+
+vars:
+  SOPS_FILE: .env.encrypted
+  ENV_FILE: .env
+  PYTHON: uv run
+  IMAGE_NAME: github-tamagotchi
+
+tasks:
+  # --- Secrets management ---
+
+  secrets:decrypt:
+    desc: Decrypt .env.encrypted to .env
+    cmds:
+      - sops decrypt --input-type dotenv --output-type dotenv --output {{.ENV_FILE}} {{.SOPS_FILE}}
+    generates:
+      - "{{.ENV_FILE}}"
+    sources:
+      - "{{.SOPS_FILE}}"
+
+  secrets:encrypt:
+    desc: Encrypt .env to .env.encrypted
+    cmds:
+      - sops encrypt --input-type dotenv --output-type dotenv --output {{.SOPS_FILE}} {{.ENV_FILE}}
+    sources:
+      - "{{.ENV_FILE}}"
+    generates:
+      - "{{.SOPS_FILE}}"
+
+  secrets:edit:
+    desc: Open .env.encrypted in $EDITOR for inline editing
+    cmds:
+      - EDITOR={{.EDITOR | default "vim"}} sops edit --input-type dotenv --output-type dotenv {{.SOPS_FILE}}
+
+  # --- Development ---
+
+  setup:
+    desc: Set up development environment
+    cmds:
+      - uv sync --extra dev
+      - task: secrets:decrypt
+      - echo "Ready. Run 'task dev' to start the server."
+
+  dev:
+    desc: Run development server with auto-reload
+    deps: [secrets:decrypt]
+    cmds:
+      - "{{.PYTHON}} uvicorn github_tamagotchi.main:app --reload --host 0.0.0.0 --port 8000"
+
+  # --- Quality ---
+
+  lint:
+    desc: Run ruff linter
+    cmds:
+      - "{{.PYTHON}} ruff check ."
+
+  fmt:
+    desc: Format code with ruff
+    cmds:
+      - "{{.PYTHON}} ruff format ."
+      - "{{.PYTHON}} ruff check --fix ."
+
+  typecheck:
+    desc: Run mypy type checker
+    cmds:
+      - "{{.PYTHON}} mypy src/"
+
+  check:
+    desc: Run all quality checks (lint + typecheck)
+    cmds:
+      - task: lint
+      - task: typecheck
+
+  # --- Testing ---
+
+  test:
+    desc: Run test suite with coverage (excludes e2e)
+    cmds:
+      - "{{.PYTHON}} pytest tests/ --ignore=tests/e2e --cov=src --cov-report=term-missing --cov-fail-under=70 --timeout=60"
+
+  test:unit:
+    desc: Run unit tests only
+    cmds:
+      - "{{.PYTHON}} pytest tests/unit -v"
+
+  test:services:
+    desc: Run service integration tests
+    cmds:
+      - "{{.PYTHON}} pytest tests/services -v"
+
+  test:api:
+    desc: Run API tests
+    cmds:
+      - "{{.PYTHON}} pytest tests/api -v"
+
+  test:e2e:
+    desc: Run end-to-end tests
+    cmds:
+      - "{{.PYTHON}} pytest tests/e2e -v"
+
+  test:fast:
+    desc: Run tests without coverage (faster, excludes e2e)
+    cmds:
+      - "{{.PYTHON}} pytest tests/ --ignore=tests/e2e -q"
+
+  # --- Build & Deploy ---
+
+  build:
+    desc: Build Docker image
+    cmds:
+      - docker build -t {{.IMAGE_NAME}} .
+
+  build:push:
+    desc: Build and push to GHCR
+    cmds:
+      - docker build -t ghcr.io/wiebe-xyz/{{.IMAGE_NAME}}:latest .
+      - docker push ghcr.io/wiebe-xyz/{{.IMAGE_NAME}}:latest
+
+  # --- Database ---
+
+  db:migrate:
+    desc: Run database migrations
+    cmds:
+      - "{{.PYTHON}} alembic upgrade head"
+
+  db:rollback:
+    desc: Rollback last database migration
+    cmds:
+      - "{{.PYTHON}} alembic downgrade -1"
+
+  db:revision:
+    desc: Create a new migration revision
+    cmds:
+      - '{{.PYTHON}} alembic revision --autogenerate -m "{{.CLI_ARGS}}"'
+
+  db:history:
+    desc: Show migration history
+    cmds:
+      - "{{.PYTHON}} alembic history --verbose"
+
+  # --- Cleanup ---
+
+  clean:
+    desc: Remove build artifacts and caches
+    cmds:
+      - find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null || true
+      - find . -name "*.pyc" -delete 2>/dev/null || true
+      - rm -rf .coverage htmlcov coverage.xml .ruff_cache
+
+  clean:all:
+    desc: Full clean including venv
+    deps: [clean]
+    cmds:
+      - rm -rf .venv
+
+  # --- CI simulation ---
+
+  ci:
+    desc: Run the full CI pipeline locally (mirrors GitHub Actions)
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+      - task: test:e2e
+      - task: build
