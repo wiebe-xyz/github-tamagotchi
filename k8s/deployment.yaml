@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: github-tamagotchi-blue
-  namespace: nijmegen-test
+  namespace: nijmegen-testing
   labels:
     app: github-tamagotchi
     version: blue
@@ -87,7 +87,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: github-tamagotchi-green
-  namespace: nijmegen-test
+  namespace: nijmegen-testing
   labels:
     app: github-tamagotchi
     version: green
@@ -172,7 +172,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: github-tamagotchi
-  namespace: nijmegen-test
+  namespace: nijmegen-testing
 spec:
   selector:
     app: github-tamagotchi
@@ -186,7 +186,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: github-tamagotchi
-  namespace: nijmegen-test
+  namespace: nijmegen-testing
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
