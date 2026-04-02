@@ -34,6 +34,15 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-token
+            - name: IMAGE_GENERATION_PROVIDER
+              value: "openrouter"
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: openrouter-api-key
+            - name: OPENROUTER_MODEL
+              value: "google/gemini-2.5-flash-image"
             - name: COMFYUI_URL
               valueFrom:
                 secretKeyRef:
@@ -110,6 +119,15 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-token
+            - name: IMAGE_GENERATION_PROVIDER
+              value: "openrouter"
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: openrouter-api-key
+            - name: OPENROUTER_MODEL
+              value: "google/gemini-2.5-flash-image"
             - name: COMFYUI_URL
               valueFrom:
                 secretKeyRef:
