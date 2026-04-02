@@ -41,9 +41,15 @@ htmlcov/
 # Type checking
 .mypy_cache/
 
+# Linting
+.ruff_cache/
+
 # Environment
 .env
 .env.local
+
+# Task
+.task/
 
 # uv
 .uv/
