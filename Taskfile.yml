@@ -5,7 +5,6 @@ vars:
   ENV_FILE: .env
   PYTHON: uv run
   IMAGE_NAME: github-tamagotchi
-  K8S_NAMESPACE: nijmegen-test
 
 tasks:
   # --- Secrets management ---
@@ -75,9 +74,9 @@ tasks:
   # --- Testing ---
 
   test:
-    desc: Run full test suite with coverage
+    desc: Run test suite with coverage (excludes e2e)
     cmds:
-      - "{{.PYTHON}} pytest --cov=src --cov-report=term-missing --cov-fail-under=70"
+      - "{{.PYTHON}} pytest tests/ --ignore=tests/e2e --cov=src --cov-report=term-missing --cov-fail-under=70 --timeout=60"
 
   test:unit:
     desc: Run unit tests only
@@ -99,15 +98,10 @@ tasks:
     cmds:
       - "{{.PYTHON}} pytest tests/e2e -v"
 
-  test:watch:
-    desc: Run tests in watch mode (re-run on file changes)
-    cmds:
-      - "{{.PYTHON}} pytest-watch -- --cov=src --cov-report=term-missing -q"
-
   test:fast:
-    desc: Run tests without coverage (faster)
+    desc: Run tests without coverage (faster, excludes e2e)
     cmds:
-      - "{{.PYTHON}} pytest -q"
+      - "{{.PYTHON}} pytest tests/ --ignore=tests/e2e -q"
 
   # --- Build & Deploy ---
 
@@ -164,9 +158,10 @@ tasks:
   # --- CI simulation ---
 
   ci:
-    desc: Run the full CI pipeline locally
+    desc: Run the full CI pipeline locally (mirrors GitHub Actions)
     cmds:
       - task: lint
       - task: typecheck
       - task: test
+      - task: test:e2e
       - task: build
