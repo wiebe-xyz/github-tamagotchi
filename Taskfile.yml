@@ -138,6 +138,40 @@ tasks:
     cmds:
       - "{{.PYTHON}} alembic history --verbose"
 
+  # --- Kubernetes ---
+
+  k8s:secrets:
+    desc: Decrypt and apply k8s secrets to the cluster
+    cmds:
+      - sops decrypt k8s/secrets.yaml | ssh deployer@k3s1 "kubectl apply -f -"
+
+  k8s:init:
+    desc: Run init jobs (database + MinIO bucket provisioning)
+    cmds:
+      - ssh deployer@k3s1 "kubectl delete job github-tamagotchi-init-db github-tamagotchi-init-minio -n nijmegen-testing --ignore-not-found"
+      - cat k8s/init-db.yaml | ssh deployer@k3s1 "kubectl apply -f -"
+      - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n nijmegen-testing --timeout=60s"
+      - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n nijmegen-testing --timeout=60s"
+
+  k8s:deploy:
+    desc: Apply all k8s manifests and restart the deployment
+    cmds:
+      - task: k8s:secrets
+      - task: k8s:init
+      - cat k8s/deployment.yaml | ssh deployer@k3s1 "kubectl apply -f -"
+      - ssh deployer@k3s1 "kubectl rollout restart deployment/github-tamagotchi-blue -n nijmegen-testing"
+      - ssh deployer@k3s1 "kubectl rollout status deployment/github-tamagotchi-blue -n nijmegen-testing --timeout=120s"
+
+  k8s:status:
+    desc: Show pod status for github-tamagotchi
+    cmds:
+      - ssh deployer@k3s1 "kubectl get pods -n nijmegen-testing -l app=github-tamagotchi -o wide"
+
+  k8s:logs:
+    desc: Tail logs from the running pod
+    cmds:
+      - ssh deployer@k3s1 "kubectl logs -n nijmegen-testing -l app=github-tamagotchi,version=blue --tail=50"
+
   # --- Cleanup ---
 
   clean:

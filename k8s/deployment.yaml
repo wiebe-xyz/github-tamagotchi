@@ -45,24 +45,22 @@ spec:
                   key: openrouter-api-key
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
-            - name: COMFYUI_URL
+            - name: MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
-                  key: comfyui-url
-                  optional: true
-            - name: COMFYUI_CF_ACCESS_CLIENT_ID
+                  key: minio-access-key
+            - name: MINIO_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
-                  key: comfyui-cf-access-client-id
-                  optional: true
-            - name: COMFYUI_CF_ACCESS_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: github-tamagotchi-secrets
-                  key: comfyui-cf-access-client-secret
-                  optional: true
+                  key: minio-secret-key
+            - name: MINIO_BUCKET
+              value: "tamagotchi"
+            - name: MINIO_SECURE
+              value: "false"
           resources:
             requests:
               memory: "128Mi"
@@ -132,24 +130,22 @@ spec:
                   key: openrouter-api-key
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
-            - name: COMFYUI_URL
+            - name: MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
-                  key: comfyui-url
-                  optional: true
-            - name: COMFYUI_CF_ACCESS_CLIENT_ID
+                  key: minio-access-key
+            - name: MINIO_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
-                  key: comfyui-cf-access-client-id
-                  optional: true
-            - name: COMFYUI_CF_ACCESS_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: github-tamagotchi-secrets
-                  key: comfyui-cf-access-client-secret
-                  optional: true
+                  key: minio-secret-key
+            - name: MINIO_BUCKET
+              value: "tamagotchi"
+            - name: MINIO_SECURE
+              value: "false"
           resources:
             requests:
               memory: "128Mi"
