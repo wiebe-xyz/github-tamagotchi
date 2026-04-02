@@ -18,6 +18,8 @@ spec:
         app: github-tamagotchi
         version: blue
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: github-tamagotchi
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
@@ -103,6 +105,8 @@ spec:
         app: github-tamagotchi
         version: green
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: github-tamagotchi
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
