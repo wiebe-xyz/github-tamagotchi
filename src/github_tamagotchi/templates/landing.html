@@ -14,7 +14,7 @@
             <span class="logo">GitHub Tamagotchi</span>
             <div class="user-info">
                 {% if user.github_avatar_url %}
-                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar">
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
                 {% endif %}
                 <span class="user-name">{{ user.github_login }}</span>
                 <button class="logout-button" id="logout-btn">Log out</button>
@@ -30,25 +30,15 @@
                 <h1>Your Repository Has a <span class="highlight">Pet</span></h1>
                 <p class="tagline">A virtual pet that reflects your GitHub repository's health. Keep coding, keep it happy.</p>
                 {% if user %}
-                <a href="/docs" class="cta-button">View Your Pets</a>
+                <a href="/api/v1/me/pets" class="cta-button">View Your Pets</a>
                 {% else %}
                 <a href="/auth/github" class="cta-button">Login with GitHub</a>
                 {% endif %}
             </div>
             <div class="hero-pet">
                 <div class="pet-container">
-                    <div class="pet" id="animated-pet">
-                        <div class="pet-body">
-                            <div class="pet-face">
-                                <div class="eyes">
-                                    <div class="eye left"></div>
-                                    <div class="eye right"></div>
-                                </div>
-                                <div class="mouth happy"></div>
-                            </div>
-                        </div>
-                        <div class="pet-shadow"></div>
-                    </div>
+                    <img src="/api/v1/pets/wiebe-xyz/github-tamagotchi/image/egg" alt="Gotchi the Tamagotchi" class="hero-pet-image" id="animated-pet">
+                    <div class="pet-shadow"></div>
                     <div class="status-badge">Happy</div>
                 </div>
             </div>
@@ -131,45 +121,30 @@
                     <p>Making repository health visible and fun.</p>
                 </div>
                 <div class="footer-links">
-                    <a href="https://github.com/wbgn/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
                     <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Docs</a>
                     <a href="/docs">API Docs</a>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2025 GitHub Tamagotchi. Open Source.</p>
+                <p>&copy; 2025-2026 GitHub Tamagotchi. Open Source.</p>
             </div>
         </div>
     </footer>
 
     <script>
-        // Simple bounce animation for the pet
+        // Bounce animation for the pet image
         const pet = document.getElementById('animated-pet');
-        let bouncing = true;
 
         function animatePet() {
-            if (bouncing) {
-                pet.classList.add('bounce');
-                setTimeout(() => {
-                    pet.classList.remove('bounce');
-                }, 500);
-            }
-            setTimeout(animatePet, 2000);
+            pet.classList.add('bounce');
+            setTimeout(() => {
+                pet.classList.remove('bounce');
+            }, 500);
+            setTimeout(animatePet, 2000 + Math.random() * 1000);
         }
 
         animatePet();
-
-        // Blink animation
-        function blink() {
-            const eyes = document.querySelectorAll('.eye');
-            eyes.forEach(eye => eye.classList.add('blink'));
-            setTimeout(() => {
-                eyes.forEach(eye => eye.classList.remove('blink'));
-            }, 150);
-            setTimeout(blink, 3000 + Math.random() * 2000);
-        }
-
-        blink();
 
         // Logout handler
         const logoutBtn = document.getElementById('logout-btn');
