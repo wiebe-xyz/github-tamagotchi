@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi import __version__
 from github_tamagotchi.api.alerts import alert_router
+from github_tamagotchi.api.auth import auth_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database
@@ -194,9 +195,7 @@ async def _run_alert_checks(
     if rate_limited:
         await checker.check_github_rate_limit(0, 5000)
     else:
-        await checker.check_github_rate_limit(
-            settings.alert_github_rate_limit_threshold, 5000
-        )
+        await checker.check_github_rate_limit(settings.alert_github_rate_limit_threshold, 5000)
 
     # Dying pets check
     dying_result = await session.execute(
@@ -268,6 +267,7 @@ app = FastAPI(
 
 app.include_router(router)
 app.include_router(alert_router)
+app.include_router(auth_router)
 
 # Mount the MCP server at /mcp
 app.mount("/mcp", mcp_app)

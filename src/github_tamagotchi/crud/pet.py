@@ -8,12 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from github_tamagotchi.models.pet import Pet, PetMood
 
 
-async def create_pet(db: AsyncSession, repo_owner: str, repo_name: str, name: str) -> Pet:
+async def create_pet(
+    db: AsyncSession,
+    repo_owner: str,
+    repo_name: str,
+    name: str,
+    user_id: int | None = None,
+) -> Pet:
     """Create a new pet."""
     pet = Pet(
         repo_owner=repo_owner,
         repo_name=repo_name,
         name=name,
+        user_id=user_id,
     )
     db.add(pet)
     await db.commit()
@@ -27,15 +34,23 @@ async def get_pet_by_repo(db: AsyncSession, owner: str, repo: str) -> Pet | None
     return result.scalar_one_or_none()
 
 
-async def get_pets(db: AsyncSession, page: int = 1, per_page: int = 10) -> tuple[list[Pet], int]:
-    """Get all pets with pagination."""
+async def get_pets(
+    db: AsyncSession, page: int = 1, per_page: int = 10, user_id: int | None = None
+) -> tuple[list[Pet], int]:
+    """Get pets with pagination, optionally filtered by user."""
     offset = (page - 1) * per_page
 
-    count_result = await db.execute(select(func.count()).select_from(Pet))
+    base_query = select(Pet)
+    count_query = select(func.count()).select_from(Pet)
+    if user_id is not None:
+        base_query = base_query.where(Pet.user_id == user_id)
+        count_query = count_query.where(Pet.user_id == user_id)
+
+    count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
 
     result = await db.execute(
-        select(Pet).order_by(Pet.created_at.desc()).offset(offset).limit(per_page)
+        base_query.order_by(Pet.created_at.desc()).offset(offset).limit(per_page)
     )
     pets = list(result.scalars().all())
 
