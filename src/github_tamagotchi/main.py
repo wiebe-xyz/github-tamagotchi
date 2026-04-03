@@ -7,10 +7,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -19,12 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi import __version__
 from github_tamagotchi.api.alerts import alert_router
-from github_tamagotchi.api.auth import auth_router
+from github_tamagotchi.api.auth import auth_router, get_optional_user
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.models.user import User
 from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.github import GitHubService, RateLimitError
@@ -276,7 +278,10 @@ app.mount("/mcp", mcp_app)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
+
+
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request) -> HTMLResponse:
+async def root(request: Request, user: OptionalUser) -> HTMLResponse:
     """Landing page."""
-    return templates.TemplateResponse(request, "landing.html")
+    return templates.TemplateResponse(request, "landing.html", {"user": user})

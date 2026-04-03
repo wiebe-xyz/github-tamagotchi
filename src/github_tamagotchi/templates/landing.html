@@ -7,13 +7,33 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+    {% if user %}
+    <!-- Logged-in Header -->
+    <nav class="user-nav">
+        <div class="container">
+            <span class="logo">GitHub Tamagotchi</span>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
     <!-- Hero Section -->
     <section class="hero">
         <div class="container">
             <div class="hero-content">
                 <h1>Your Repository Has a <span class="highlight">Pet</span></h1>
                 <p class="tagline">A virtual pet that reflects your GitHub repository's health. Keep coding, keep it happy.</p>
+                {% if user %}
+                <a href="/docs" class="cta-button">View Your Pets</a>
+                {% else %}
                 <a href="/auth/github" class="cta-button">Login with GitHub</a>
+                {% endif %}
             </div>
             <div class="hero-pet">
                 <div class="pet-container">
@@ -90,9 +110,15 @@
     <!-- CTA Section -->
     <section class="cta-section">
         <div class="container">
+            {% if user %}
+            <h2>Welcome Back, {{ user.github_login }}!</h2>
+            <p>Your pets are waiting for you.</p>
+            <a href="/docs" class="cta-button large">View Your Pets</a>
+            {% else %}
             <h2>Ready to Adopt Your Pet?</h2>
             <p>Connect your GitHub account and bring your repository to life.</p>
             <a href="/auth/github" class="cta-button large">Login with GitHub</a>
+            {% endif %}
         </div>
     </section>
 
@@ -144,6 +170,15 @@
         }
 
         blink();
+
+        // Logout handler
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async () => {
+                await fetch('/auth/logout', { method: 'POST' });
+                window.location.reload();
+            });
+        }
     </script>
 </body>
 </html>
