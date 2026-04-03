@@ -22,6 +22,19 @@ class Settings(BaseSettings):
     github_poll_interval_minutes: int = 30
     github_webhook_secret: str | None = None
 
+    # GitHub OAuth
+    github_oauth_client_id: str | None = None
+    github_oauth_client_secret: str | None = None
+    oauth_redirect_uri: str = "http://localhost:8000/auth/callback"
+
+    # JWT / Session
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24  # 24 hours
+
+    # Token encryption key (Fernet, base64-encoded 32 bytes)
+    token_encryption_key: str | None = None
+
     # ComfyUI
     comfyui_url: str | None = None
     comfyui_cf_access_client_id: str | None = None

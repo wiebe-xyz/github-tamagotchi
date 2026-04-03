@@ -14,13 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.models.pet import Base, Pet, PetMood, PetStage
+from github_tamagotchi.models.user import User  # noqa: F401
 
 E2E_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 e2e_engine = create_async_engine(E2E_DATABASE_URL, echo=False)
-e2e_session_factory = async_sessionmaker(
-    e2e_engine, class_=AsyncSession, expire_on_commit=False
-)
+e2e_session_factory = async_sessionmaker(e2e_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def get_e2e_session() -> AsyncIterator[AsyncSession]:
@@ -95,9 +94,7 @@ def mock_github_repo(
     ci_state: str = "success",
 ) -> None:
     """Register respx mocks for a GitHub repository with configurable state."""
-    recent = (datetime.now(UTC) - timedelta(hours=commit_age_hours)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    recent = (datetime.now(UTC) - timedelta(hours=commit_age_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits").mock(
         return_value=httpx.Response(
             200, json=[{"sha": "abc", "commit": {"committer": {"date": recent}}}]
@@ -112,10 +109,6 @@ def mock_github_repo(
     respx.get(f"https://api.github.com/repos/{owner}/{repo}").mock(
         return_value=httpx.Response(200, json={"default_branch": "main"})
     )
-    respx.get(
-        f"https://api.github.com/repos/{owner}/{repo}/commits/main/status"
-    ).mock(
-        return_value=httpx.Response(
-            200, json={"state": ci_state, "statuses": []}
-        )
+    respx.get(f"https://api.github.com/repos/{owner}/{repo}/commits/main/status").mock(
+        return_value=httpx.Response(200, json={"state": ci_state, "statuses": []})
     )

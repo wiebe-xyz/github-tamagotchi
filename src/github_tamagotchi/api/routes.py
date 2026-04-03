@@ -12,10 +12,12 @@ from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
+from github_tamagotchi.api.auth import get_current_user, get_optional_user
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.models.user import User
 from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.image_generation import get_pet_appearance
 from github_tamagotchi.services.image_queue import get_image_provider
@@ -167,7 +169,11 @@ async def get_queue_stats(session: DbSession) -> QueueStatsResponse:
 
 
 @router.post("/pets", response_model=PetResponse, status_code=status.HTTP_201_CREATED)
-async def create_pet(pet_data: PetCreate, session: DbSession) -> PetResponse:
+async def create_pet(
+    pet_data: PetCreate,
+    session: DbSession,
+    user: Annotated[User | None, Depends(get_optional_user)] = None,
+) -> PetResponse:
     """Create a new pet for a GitHub repository."""
     existing = await pet_crud.get_pet_by_repo(session, pet_data.repo_owner, pet_data.repo_name)
     if existing:
@@ -175,7 +181,13 @@ async def create_pet(pet_data: PetCreate, session: DbSession) -> PetResponse:
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Pet already exists for {pet_data.repo_owner}/{pet_data.repo_name}",
         )
-    pet = await pet_crud.create_pet(session, pet_data.repo_owner, pet_data.repo_name, pet_data.name)
+    pet = await pet_crud.create_pet(
+        session,
+        pet_data.repo_owner,
+        pet_data.repo_name,
+        pet_data.name,
+        user_id=user.id if user else None,
+    )
     return PetResponse.model_validate(pet)
 
 
@@ -319,9 +331,7 @@ async def get_pet_image(
         image_service = get_image_provider()
         result = await image_service.generate_pet_image(repo_owner, repo_name, stage)
         if not result.success or not result.image_data:
-            raise HTTPException(
-                status_code=503, detail=result.error or "Image generation failed"
-            )
+            raise HTTPException(status_code=503, detail=result.error or "Image generation failed")
         await storage.upload_image(repo_owner, repo_name, stage, result.image_data)
         await _update_images_generated_at(session, repo_owner, repo_name)
         return Response(
@@ -356,9 +366,7 @@ async def generate_pet_images(
         image_service = get_image_provider()
         generated_stages = []
         for pet_stage in PetStage:
-            result = await image_service.generate_pet_image(
-                repo_owner, repo_name, pet_stage.value
-            )
+            result = await image_service.generate_pet_image(repo_owner, repo_name, pet_stage.value)
             if result.success and result.image_data:
                 await storage.upload_image(
                     repo_owner, repo_name, pet_stage.value, result.image_data
@@ -395,9 +403,7 @@ async def regenerate_pet_images(
         image_service = get_image_provider()
         generated_stages = []
         for pet_stage in PetStage:
-            result = await image_service.generate_pet_image(
-                repo_owner, repo_name, pet_stage.value
-            )
+            result = await image_service.generate_pet_image(repo_owner, repo_name, pet_stage.value)
             if result.success and result.image_data:
                 await storage.upload_image(
                     repo_owner, repo_name, pet_stage.value, result.image_data
@@ -415,6 +421,25 @@ async def regenerate_pet_images(
         raise HTTPException(status_code=503, detail="Image regeneration failed") from None
 
 
+@router.get("/me/pets", response_model=PetListResponse)
+async def list_my_pets(
+    session: DbSession,
+    user: Annotated[User, Depends(get_current_user)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    per_page: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> PetListResponse:
+    """List pets belonging to the authenticated user."""
+    pets, total = await pet_crud.get_pets(session, page=page, per_page=per_page, user_id=user.id)
+    pages = math.ceil(total / per_page) if total > 0 else 1
+    return PetListResponse(
+        items=[PetResponse.model_validate(p) for p in pets],
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages,
+    )
+
+
 @router.post("/webhooks/github", response_model=WebhookResponse)
 async def github_webhook(request: Request, session: DbSession) -> WebhookResponse:
     """Receive GitHub webhook events and update pet state."""
@@ -423,9 +448,7 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
     # Verify signature if webhook secret is configured
     if settings.github_webhook_secret:
         signature = request.headers.get("X-Hub-Signature-256", "")
-        if not signature or not verify_signature(
-            body, signature, settings.github_webhook_secret
-        ):
+        if not signature or not verify_signature(body, signature, settings.github_webhook_secret):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid webhook signature",

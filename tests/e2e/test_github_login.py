@@ -6,6 +6,7 @@ OAuth flow rather than a 404.
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -61,48 +62,35 @@ class TestGitHubLoginFlow:
         ) as client:
             yield client
 
-    async def test_landing_page_has_login_link(
-        self, full_client: AsyncClient
-    ) -> None:
+    async def test_landing_page_has_login_link(self, full_client: AsyncClient) -> None:
         """Landing page should contain a login link."""
         response = await full_client.get("/")
         assert response.status_code == 200
-        assert '/auth/github' in response.text
+        assert "/auth/github" in response.text
 
-    @pytest.mark.xfail(reason="GitHub OAuth not implemented yet (issue #8)")
-    async def test_login_endpoint_exists(
-        self, full_client: AsyncClient
-    ) -> None:
-        """GET /auth/github should not return 404.
-
-        It should either redirect to GitHub OAuth or return a meaningful
-        response — but never a bare 404.
-        """
-        response = await full_client.get("/auth/github")
+    async def test_login_endpoint_exists(self, full_client: AsyncClient) -> None:
+        """GET /auth/github should not return 404."""
+        with patch("github_tamagotchi.api.auth.settings") as mock_settings:
+            mock_settings.github_oauth_client_id = "test-client-id"
+            mock_settings.oauth_redirect_uri = "http://e2e/auth/callback"
+            response = await full_client.get("/auth/github")
         assert response.status_code != 404, (
-            "/auth/github returns 404 — GitHub OAuth flow is not implemented. "
-            "See issue #8."
+            "/auth/github returns 404 — GitHub OAuth flow is not implemented. See issue #8."
         )
 
-    @pytest.mark.xfail(reason="GitHub OAuth not implemented yet (issue #8)")
-    async def test_login_redirects_to_github(
-        self, full_client: AsyncClient
-    ) -> None:
+    async def test_login_redirects_to_github(self, full_client: AsyncClient) -> None:
         """GET /auth/github should redirect to GitHub's OAuth authorize URL."""
-        response = await full_client.get("/auth/github")
+        with patch("github_tamagotchi.api.auth.settings") as mock_settings:
+            mock_settings.github_oauth_client_id = "test-client-id"
+            mock_settings.oauth_redirect_uri = "http://e2e/auth/callback"
+            response = await full_client.get("/auth/github")
         assert response.status_code in (302, 307), (
-            f"/auth/github should redirect to GitHub OAuth, "
-            f"got status {response.status_code}"
+            f"/auth/github should redirect to GitHub OAuth, got status {response.status_code}"
         )
         location = response.headers.get("location", "")
-        assert "github.com" in location, (
-            f"Expected redirect to github.com, got: {location}"
-        )
+        assert "github.com" in location, f"Expected redirect to github.com, got: {location}"
 
-    @pytest.mark.xfail(reason="GitHub OAuth not implemented yet (issue #8)")
-    async def test_oauth_callback_endpoint_exists(
-        self, full_client: AsyncClient
-    ) -> None:
+    async def test_oauth_callback_endpoint_exists(self, full_client: AsyncClient) -> None:
         """GET /auth/callback should exist for the OAuth return flow."""
         response = await full_client.get("/auth/callback")
         # Without a valid code param it should return 400/422, not 404
