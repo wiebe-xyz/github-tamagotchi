@@ -168,73 +168,12 @@ body {
     align-items: center;
 }
 
-.pet {
-    position: relative;
-}
-
-.pet-body {
-    width: 180px;
-    height: 180px;
-    background: linear-gradient(145deg, var(--secondary), #059669);
-    border-radius: 50% 50% 45% 45%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    box-shadow:
-        0 20px 40px rgba(16, 185, 129, 0.3),
-        inset 0 -10px 30px rgba(0, 0, 0, 0.2);
-}
-
-.pet-face {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
-}
-
-.eyes {
-    display: flex;
-    gap: 30px;
-}
-
-.eye {
-    width: 24px;
-    height: 24px;
-    background: var(--background);
-    border-radius: 50%;
-    position: relative;
-}
-
-.eye::after {
-    content: '';
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    background: white;
-    border-radius: 50%;
-    top: 4px;
-    left: 4px;
-}
-
-.eye.blink {
-    height: 4px;
-    border-radius: 4px;
-}
-
-.eye.blink::after {
-    display: none;
-}
-
-.mouth {
-    width: 40px;
-    height: 20px;
-    border: 4px solid var(--background);
-    border-top: none;
-    border-radius: 0 0 40px 40px;
-}
-
-.mouth.happy {
-    border-color: var(--background);
+.hero-pet-image {
+    width: 280px;
+    height: 280px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 20px 40px rgba(16, 185, 129, 0.3));
 }
 
 .pet-shadow {
@@ -472,28 +411,9 @@ footer {
         justify-content: center;
     }
 
-    .pet-body {
-        width: 140px;
-        height: 140px;
-    }
-
-    .eyes {
-        gap: 20px;
-    }
-
-    .eye {
-        width: 18px;
-        height: 18px;
-    }
-
-    .eye::after {
-        width: 6px;
-        height: 6px;
-    }
-
-    .mouth {
-        width: 30px;
-        height: 15px;
+    .hero-pet-image {
+        width: 200px;
+        height: 200px;
     }
 }
 

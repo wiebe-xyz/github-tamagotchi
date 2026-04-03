@@ -37,18 +37,8 @@
             </div>
             <div class="hero-pet">
                 <div class="pet-container">
-                    <div class="pet" id="animated-pet">
-                        <div class="pet-body">
-                            <div class="pet-face">
-                                <div class="eyes">
-                                    <div class="eye left"></div>
-                                    <div class="eye right"></div>
-                                </div>
-                                <div class="mouth happy"></div>
-                            </div>
-                        </div>
-                        <div class="pet-shadow"></div>
-                    </div>
+                    <img src="/api/v1/pets/wiebe-xyz/github-tamagotchi/image/egg" alt="Gotchi the Tamagotchi" class="hero-pet-image" id="animated-pet">
+                    <div class="pet-shadow"></div>
                     <div class="status-badge">Happy</div>
                 </div>
             </div>
@@ -143,33 +133,18 @@
     </footer>
 
     <script>
-        // Simple bounce animation for the pet
+        // Bounce animation for the pet image
         const pet = document.getElementById('animated-pet');
-        let bouncing = true;
 
         function animatePet() {
-            if (bouncing) {
-                pet.classList.add('bounce');
-                setTimeout(() => {
-                    pet.classList.remove('bounce');
-                }, 500);
-            }
-            setTimeout(animatePet, 2000);
+            pet.classList.add('bounce');
+            setTimeout(() => {
+                pet.classList.remove('bounce');
+            }, 500);
+            setTimeout(animatePet, 2000 + Math.random() * 1000);
         }
 
         animatePet();
-
-        // Blink animation
-        function blink() {
-            const eyes = document.querySelectorAll('.eye');
-            eyes.forEach(eye => eye.classList.add('blink'));
-            setTimeout(() => {
-                eyes.forEach(eye => eye.classList.remove('blink'));
-            }, 150);
-            setTimeout(blink, 3000 + Math.random() * 2000);
-        }
-
-        blink();
 
         // Logout handler
         const logoutBtn = document.getElementById('logout-btn');
