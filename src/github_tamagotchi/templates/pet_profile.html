@@ -268,6 +268,14 @@
             </section>
             {% endif %}
 
+            <!-- Achievements Section -->
+            <section class="profile-section" id="achievements-section" style="margin-top: 2rem;">
+                <h2>Achievements</h2>
+                <div id="achievements-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 1rem;">
+                    <p id="achievements-loading" style="color: rgba(255,255,255,0.5); font-size: 0.9rem; grid-column: 1/-1;">Loading achievements&#8230;</p>
+                </div>
+            </section>
+
             <!-- Comments Section -->
             <section class="profile-section" id="comments-section" style="margin-top: 2rem;">
                 <h2>Discussion</h2>
@@ -514,6 +522,60 @@
                 }
             });
         }
+
+        // Achievements
+        const ACHIEVEMENTS_API = '/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/achievements';
+
+        function renderAchievement(a) {
+            const card = document.createElement('div');
+            const opacity = a.unlocked ? '1' : '0.35';
+            card.style.cssText = `
+                background: rgba(255,255,255,0.05);
+                border: 1px solid rgba(255,255,255,${a.unlocked ? '0.15' : '0.06'});
+                border-radius: 10px;
+                padding: 0.75rem;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 0.3rem;
+                opacity: ${opacity};
+            `;
+            const iconEl = document.createElement('div');
+            iconEl.style.cssText = 'font-size: 1.75rem; line-height: 1;';
+            iconEl.textContent = a.unlocked ? a.icon : '\uD83D\uDD12';
+            const nameEl = document.createElement('div');
+            nameEl.style.cssText = 'font-size: 0.78rem; font-weight: 600; color: rgba(255,255,255,0.9);';
+            nameEl.textContent = a.name;
+            card.appendChild(iconEl);
+            card.appendChild(nameEl);
+            if (a.unlocked && a.unlocked_at) {
+                const dateEl = document.createElement('div');
+                dateEl.style.cssText = 'font-size: 0.68rem; color: rgba(255,255,255,0.45);';
+                const d = new Date(a.unlocked_at);
+                dateEl.textContent = d.toLocaleDateString();
+                card.appendChild(dateEl);
+            }
+            card.title = a.description;
+            return card;
+        }
+
+        async function loadAchievements() {
+            const grid = document.getElementById('achievements-grid');
+            const loading = document.getElementById('achievements-loading');
+            try {
+                const resp = await fetch(ACHIEVEMENTS_API);
+                if (!resp.ok) throw new Error('Failed to load');
+                const data = await resp.json();
+                if (loading) loading.remove();
+                grid.innerHTML = '';
+                data.achievements.forEach(a => grid.appendChild(renderAchievement(a)));
+            } catch {
+                if (loading) loading.textContent = 'Could not load achievements.';
+            }
+        }
+
+        loadAchievements();
     </script>
 </body>
 </html>
