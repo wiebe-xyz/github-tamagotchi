@@ -353,7 +353,9 @@ OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, user: OptionalUser) -> HTMLResponse:
     """Landing page."""
-    return templates.TemplateResponse(request, "landing.html", {"user": user})
+    return templates.TemplateResponse(
+        request, "landing.html", {"user": user, "base_url": settings.base_url}
+    )
 
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
@@ -465,6 +467,7 @@ async def pet_profile(
             "page_url": page_url,
             "repo_owner": repo_owner,
             "repo_name": repo_name,
+            "base_url": settings.base_url,
         },
         headers={"Cache-Control": "public, max-age=60"},
     )

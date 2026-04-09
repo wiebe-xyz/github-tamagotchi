@@ -6,18 +6,28 @@
     <title>{{ pet.name }} — {{ repo_owner }}/{{ repo_name }} | GitHub Tamagotchi</title>
 
     <!-- OpenGraph / Social Sharing -->
-    <meta property="og:title" content="{{ pet.name }} — {{ repo_owner }}/{{ repo_name }}">
-    <meta property="og:description" content="{{ pet.name }} is a {{ pet.stage }} feeling {{ pet.mood }}. Health: {{ pet.health }}%, XP: {{ pet.experience }}. Age: {{ age_days }} days.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="{{ page_url }}">
-    <meta property="og:image" content="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}">
     <meta property="og:site_name" content="GitHub Tamagotchi">
+    <meta property="og:title" content="{{ pet.name }} the {{ pet.stage | capitalize }} · GitHub Tamagotchi">
+    {% if pet.is_dead %}
+    <meta property="og:description" content="{{ pet.name }} has passed away. 🪦 {{ repo_owner }}/{{ repo_name }} needs some love.">
+    {% else %}
+    <meta property="og:description" content="{{ pet.name }} is a {{ pet.mood }} {{ pet.stage }} with {{ pet.health }}HP, watching over {{ repo_owner }}/{{ repo_name }}.">
+    {% endif %}
+    <meta property="og:image" content="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg">
+    <meta property="og:image:width" content="120">
+    <meta property="og:image:height" content="80">
+    <meta property="og:url" content="{{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }}">
 
     <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ pet.name }} — {{ repo_owner }}/{{ repo_name }}">
-    <meta name="twitter:description" content="{{ pet.name }} is a {{ pet.stage }} feeling {{ pet.mood }}. Health: {{ pet.health }}%, XP: {{ pet.experience }}. Age: {{ age_days }} days.">
-    <meta name="twitter:image" content="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{ pet.name }} the {{ pet.stage | capitalize }} · GitHub Tamagotchi">
+    {% if pet.is_dead %}
+    <meta name="twitter:description" content="{{ pet.name }} has passed away. 🪦 {{ repo_owner }}/{{ repo_name }} needs some love.">
+    {% else %}
+    <meta name="twitter:description" content="{{ pet.name }} is a {{ pet.mood }} {{ pet.stage }} with {{ pet.health }}HP, watching over {{ repo_owner }}/{{ repo_name }}.">
+    {% endif %}
+    <meta name="twitter:image" content="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg">
 
     <link rel="stylesheet" href="/static/css/style.css">
 </head>

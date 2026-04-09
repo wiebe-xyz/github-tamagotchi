@@ -125,6 +125,20 @@ class TestPetProfilePage:
         assert 'name="twitter:card"' in response.text
         assert 'name="twitter:title"' in response.text
 
+    def test_meta_tags_use_absolute_urls_with_badge_svg(self, client: TestClient) -> None:
+        """Profile page meta image tags should use absolute URLs pointing to the badge SVG."""
+        _create_pet(repo_owner="testowner", repo_name="testrepo")
+        response = client.get("/pet/testowner/testrepo")
+        assert response.status_code == 200
+        # og:image must point to badge.svg (not image endpoint), with an absolute URL
+        assert "/api/v1/pets/testowner/testrepo/badge.svg" in response.text
+        # og:url must be an absolute URL (starts with http)
+        og_url_line = next(
+            (line for line in response.text.splitlines() if 'property="og:url"' in line),
+            "",
+        )
+        assert "http" in og_url_line
+
     def test_not_found_returns_404(self, client: TestClient) -> None:
         """Non-existent pet should return 404."""
         response = client.get("/pet/nobody/nonexistent")

@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     minio_bucket: str = "tamagotchi"
     minio_secure: bool = False
 
+    # Public base URL (used for absolute URLs in meta tags, embeds, etc.)
+    base_url: str = "https://tamagotchi.nijmegen.wiebe.xyz"
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
