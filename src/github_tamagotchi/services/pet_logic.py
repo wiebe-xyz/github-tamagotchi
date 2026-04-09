@@ -70,6 +70,12 @@ def calculate_health_delta(health: RepoHealth) -> int:
         if hours_since_commit < 24:
             delta += 10  # Recent commit = feeding
 
+    # Release frequency bonus: +2 per release in last 30d, capped at +10
+    delta += min(health.release_count_30d * 2, 10)
+
+    # Contributor count bonus: +1 per unique contributor in last 90d, capped at +8
+    delta += min(health.contributor_count, 8)
+
     # Negative effects
     if health.has_stale_dependencies:
         delta -= 10

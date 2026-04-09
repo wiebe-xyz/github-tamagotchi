@@ -1,7 +1,7 @@
 """GitHub API service for repository health metrics."""
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -31,6 +31,8 @@ class RepoHealth:
     oldest_issue_age_days: float | None
     last_ci_success: bool | None
     has_stale_dependencies: bool
+    release_count_30d: int = field(default=0)
+    contributor_count: int = field(default=0)
 
 
 class GitHubService:
@@ -81,6 +83,12 @@ class GitHubService:
             # Get CI status
             last_ci_success = await self._get_ci_status(client, owner, repo)
 
+            # Get release frequency (last 30 days)
+            release_count_30d = await self._get_release_count_30d(client, owner, repo)
+
+            # Get contributor count (last 90 days)
+            contributor_count = await self._get_contributor_count_90d(client, owner, repo)
+
             return RepoHealth(
                 last_commit_at=last_commit_at,
                 open_prs_count=open_prs_count,
@@ -89,6 +97,8 @@ class GitHubService:
                 oldest_issue_age_days=oldest_issue_age,
                 last_ci_success=last_ci_success,
                 has_stale_dependencies=False,  # TODO: Check dependabot
+                release_count_30d=release_count_30d,
+                contributor_count=contributor_count,
             )
 
     async def _get_last_commit(
@@ -192,6 +202,61 @@ class GitHubService:
     def _get_oldest_age_days(self, items: list[dict[str, Any]]) -> float:
         """Get age in days of the oldest item."""
         return self._get_oldest_age_hours(items) / 24
+
+    async def _get_release_count_30d(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> int:
+        """Get the number of releases published in the last 30 days (capped at 10)."""
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/releases",
+                headers=self._get_headers(),
+                params={"per_page": 100},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            releases: list[dict[str, Any]] = resp.json()
+            cutoff = datetime.now(UTC) - timedelta(days=30)
+            count = sum(
+                1
+                for r in releases
+                if r.get("published_at")
+                and datetime.fromisoformat(
+                    r["published_at"].replace("Z", "+00:00")
+                ) >= cutoff
+            )
+            return min(count, 10)
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get releases", error=str(e))
+        return 0
+
+    async def _get_contributor_count_90d(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> int:
+        """Get the number of unique commit authors in the last 90 days (capped at 20)."""
+        try:
+            since = (datetime.now(UTC) - timedelta(days=90)).isoformat()
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits",
+                headers=self._get_headers(),
+                params={"since": since, "per_page": 100},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            commits: list[dict[str, Any]] = resp.json()
+            authors = {
+                c["author"]["login"]
+                for c in commits
+                if c.get("author") and c["author"].get("login")
+            }
+            return min(len(authors), 20)
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get contributor count", error=str(e))
+        return 0
 
     async def list_user_repos(
         self, page: int = 1, per_page: int = 100

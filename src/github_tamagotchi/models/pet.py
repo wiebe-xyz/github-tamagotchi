@@ -98,6 +98,14 @@ class Pet(Base):
         Integer, nullable=False, default=1, server_default="1"
     )
 
+    # Last-known health metric snapshots
+    last_release_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_contributor_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"

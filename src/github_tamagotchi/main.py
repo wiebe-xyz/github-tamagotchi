@@ -144,6 +144,10 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                             experience=new_experience,
                         )
 
+                    # Store last-known release and contributor snapshots
+                    pet.last_release_count = health.release_count_30d
+                    pet.last_contributor_count = health.contributor_count
+
                     # Update last_fed_at if there was a recent commit
                     if health.last_commit_at:
                         hours_since_commit = (
@@ -635,3 +639,5 @@ async def admin_trigger_poll(
     triggered_by = f"manual:{user.github_login}"
     background_tasks.add_task(poll_repositories, triggered_by=triggered_by)
     return RedirectResponse(url="/admin/jobs", status_code=303)
+
+
