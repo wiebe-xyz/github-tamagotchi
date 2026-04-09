@@ -11,7 +11,7 @@ from typing import Annotated
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -24,6 +24,7 @@ from github_tamagotchi.api.auth import auth_router, get_optional_user
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
+from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
@@ -31,6 +32,7 @@ from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.github import GitHubService, RateLimitError
 from github_tamagotchi.services.pet_logic import (
+    EVOLUTION_THRESHOLDS,
     calculate_experience,
     calculate_health_delta,
     calculate_mood,
@@ -325,4 +327,68 @@ async def register_complete_page(
             "embed_image_url": embed_image_url,
             "pet_page_url": pet_page_url,
         },
+    )
+
+@app.get("/pet/{repo_owner}/{repo_name}", response_class=HTMLResponse)
+async def pet_profile(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    user: OptionalUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Public pet profile page."""
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    # Build evolution timeline
+    stages = list(PetStage)
+    current_stage_idx = stages.index(PetStage(pet.stage))
+    evolution_timeline = [
+        {
+            "stage": stage.value,
+            "threshold": EVOLUTION_THRESHOLDS[stage],
+            "reached": i <= current_stage_idx,
+            "current": i == current_stage_idx,
+        }
+        for i, stage in enumerate(stages)
+    ]
+
+    # Build activity feed from available timestamps
+    now = datetime.now(UTC)
+    raw_activity: list[tuple[datetime, str, str]] = []
+    if pet.last_fed_at:
+        raw_activity.append((pet.last_fed_at, "Fed", "&#127858;"))
+    if pet.last_checked_at:
+        raw_activity.append((pet.last_checked_at, "Health checked", "&#129657;"))
+    raw_activity.append((pet.created_at, "Pet created", "&#129381;"))
+    raw_activity.sort(key=lambda x: x[0], reverse=True)
+    activity_items = [
+        {"event": ev, "timestamp": ts, "icon": icon}
+        for ts, ev, icon in raw_activity[:10]
+    ]
+
+    # Calculate age in days (handle both tz-aware and naive datetimes from DB)
+    created = pet.created_at
+    if created.tzinfo is None:
+        age_days = (now.replace(tzinfo=None) - created).days
+    else:
+        age_days = (now - created).days
+
+    page_url = str(request.url)
+    return templates.TemplateResponse(
+        request,
+        "pet_profile.html",
+        {
+            "user": user,
+            "pet": pet,
+            "age_days": age_days,
+            "evolution_timeline": evolution_timeline,
+            "activity_items": activity_items,
+            "page_url": page_url,
+            "repo_owner": repo_owner,
+            "repo_name": repo_name,
+        },
+        headers={"Cache-Control": "public, max-age=60"},
     )

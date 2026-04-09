@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ pet.name }} — {{ repo_owner }}/{{ repo_name }} | GitHub Tamagotchi</title>
+
+    <!-- OpenGraph / Social Sharing -->
+    <meta property="og:title" content="{{ pet.name }} — {{ repo_owner }}/{{ repo_name }}">
+    <meta property="og:description" content="{{ pet.name }} is a {{ pet.stage }} feeling {{ pet.mood }}. Health: {{ pet.health }}%, XP: {{ pet.experience }}. Age: {{ age_days }} days.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ page_url }}">
+    <meta property="og:image" content="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}">
+    <meta property="og:site_name" content="GitHub Tamagotchi">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ pet.name }} — {{ repo_owner }}/{{ repo_name }}">
+    <meta name="twitter:description" content="{{ pet.name }} is a {{ pet.stage }} feeling {{ pet.mood }}. Health: {{ pet.health }}%, XP: {{ pet.experience }}. Age: {{ age_days }} days.">
+    <meta name="twitter:image" content="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}">
+
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="user-info">
+                {% if user %}
+                    {% if user.github_avatar_url %}
+                    <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                    {% endif %}
+                    <span class="user-name">{{ user.github_login }}</span>
+                    <button class="logout-button" id="logout-btn">Log out</button>
+                {% else %}
+                    <a href="/auth/github" class="cta-button" style="padding: 0.4rem 1rem; font-size: 0.875rem;">Login with GitHub</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Profile -->
+    <main class="profile-page">
+        <div class="container">
+
+            <!-- Hero row: sprite + core stats -->
+            <section class="profile-hero">
+                <div class="profile-sprite-wrap">
+                    <img
+                        src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}"
+                        alt="{{ pet.name }}"
+                        class="profile-sprite"
+                        id="profile-pet"
+                        onerror="this.style.display='none'; document.getElementById('pet-emoji-fallback').style.display='flex';"
+                    >
+                    <div id="pet-emoji-fallback" class="pet-emoji-fallback" style="display:none;">&#128049;</div>
+                    <div class="pet-shadow"></div>
+                    <div class="status-badge mood-{{ pet.mood }}">{{ pet.mood | capitalize }}</div>
+                </div>
+
+                <div class="profile-meta">
+                    <div class="profile-repo-label">
+                        <a href="https://github.com/{{ repo_owner }}/{{ repo_name }}" target="_blank" rel="noopener" class="repo-link">
+                            {{ repo_owner }}/{{ repo_name }}
+                        </a>
+                    </div>
+                    <h1 class="profile-name">{{ pet.name }}</h1>
+                    <p class="profile-stage-label">{{ pet.stage | capitalize }}</p>
+
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Health</div>
+                            <div class="stat-bar-wrap">
+                                <div class="stat-bar health-bar" style="width: {{ pet.health }}%"></div>
+                            </div>
+                            <div class="stat-value">{{ pet.health }}%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Experience</div>
+                            <div class="stat-value xp-value">{{ pet.experience }} XP</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Stage</div>
+                            <div class="stat-value">{{ pet.stage | capitalize }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Age</div>
+                            <div class="stat-value">{{ age_days }} day{% if age_days != 1 %}s{% endif %}</div>
+                        </div>
+                    </div>
+
+                    <!-- Share buttons -->
+                    <div class="share-row">
+                        <a
+                            href="https://twitter.com/intent/tweet?text={{ pet.name | urlencode }}+is+a+{{ pet.stage | urlencode }}+on+{{ repo_owner | urlencode }}%2F{{ repo_name | urlencode }}+%F0%9F%90%BE&url={{ page_url | urlencode }}"
+                            target="_blank"
+                            rel="noopener"
+                            class="share-btn share-twitter"
+                        >&#120143; Share</a>
+                        <button class="share-btn share-copy" id="copy-link-btn" data-url="{{ page_url }}">&#128279; Copy link</button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="profile-columns">
+                <!-- Evolution Timeline -->
+                <section class="profile-section">
+                    <h2>Evolution Timeline</h2>
+                    <div class="evolution-timeline">
+                        {% for item in evolution_timeline %}
+                        <div class="evo-step {% if item.reached %}reached{% endif %} {% if item.current %}current{% endif %}">
+                            <div class="evo-dot"></div>
+                            <div class="evo-info">
+                                <span class="evo-stage">{{ item.stage | capitalize }}</span>
+                                <span class="evo-threshold">
+                                    {% if item.threshold == 0 %}
+                                        Start
+                                    {% else %}
+                                        {{ item.threshold }} XP
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <!-- Activity Feed -->
+                <section class="profile-section">
+                    <h2>Recent Activity</h2>
+                    {% if activity_items %}
+                    <ul class="activity-feed">
+                        {% for item in activity_items %}
+                        <li class="activity-item">
+                            <span class="activity-icon">{{ item.icon }}</span>
+                            <span class="activity-event">{{ item.event }}</span>
+                            <span class="activity-time">{{ item.timestamp.strftime('%Y-%m-%d %H:%M') }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="no-activity">No activity recorded yet.</p>
+                    {% endif %}
+                </section>
+            </div>
+
+            <!-- CTA for visitors -->
+            {% if not user %}
+            <section class="profile-cta">
+                <h2>Get your own pet</h2>
+                <p>Connect your GitHub repository and hatch a virtual pet that reflects your project's health.</p>
+                <a href="/auth/github" class="cta-button large">Login with GitHub</a>
+            </section>
+            {% endif %}
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025-2026 GitHub Tamagotchi. Open Source.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Bounce animation
+        const pet = document.getElementById('profile-pet');
+        if (pet) {
+            function animatePet() {
+                pet.classList.add('bounce');
+                setTimeout(() => pet.classList.remove('bounce'), 500);
+                setTimeout(animatePet, 3000 + Math.random() * 2000);
+            }
+            animatePet();
+        }
+
+        // Copy link
+        const copyBtn = document.getElementById('copy-link-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(copyBtn.dataset.url).then(() => {
+                    const original = copyBtn.textContent;
+                    copyBtn.textContent = '&#10003; Copied!';
+                    setTimeout(() => { copyBtn.innerHTML = '&#128279; Copy link'; }, 2000);
+                });
+            });
+        }
+
+        // Logout
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async () => {
+                await fetch('/auth/logout', { method: 'POST' });
+                window.location.reload();
+            });
+        }
+    </script>
+</body>
+</html>
