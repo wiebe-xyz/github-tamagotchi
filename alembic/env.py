@@ -9,6 +9,13 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from github_tamagotchi.core.config import settings
+from github_tamagotchi.models import (  # noqa: F401 — ensure all models register with metadata
+    Alert,
+    ImageGenerationJob,
+    Pet,
+    PetComment,
+    User,
+)
 from github_tamagotchi.models.pet import Base
 
 config = context.config
