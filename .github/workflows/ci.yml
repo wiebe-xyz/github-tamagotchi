@@ -107,6 +107,21 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
 
+      - name: Open SSH tunnel to k3s API
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H k3s-main.nijmegen.wiebe.xyz >> ~/.ssh/known_hosts
+          # Tunnel: localhost:6443 -> k3s1.nijmegen.wiebe.xyz:6443 via jumphost
+          ssh -fNL 6443:k3s1.nijmegen.wiebe.xyz:6443 \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o ExitOnForwardFailure=yes \
+            deploy@k3s-main.nijmegen.wiebe.xyz
+
       - name: Deploy to k3s
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
