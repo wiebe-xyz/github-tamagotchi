@@ -39,11 +39,16 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: database-url
+      terminationGracePeriodSeconds: 30
       containers:
         - name: github-tamagotchi
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
           ports:
             - containerPort: 8000
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -174,11 +179,16 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: database-url
+      terminationGracePeriodSeconds: 30
       containers:
         - name: github-tamagotchi
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
           ports:
             - containerPort: 8000
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           env:
             - name: DATABASE_URL
               valueFrom:
