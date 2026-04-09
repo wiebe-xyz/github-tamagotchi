@@ -41,7 +41,8 @@
             </div>
             <div class="hero-pet">
                 <div class="pet-container">
-                    <img src="/api/v1/pets/wiebe-xyz/github-tamagotchi/image/egg" alt="Gotchi the Tamagotchi" class="hero-pet-image" id="animated-pet">
+                    <img src="/api/v1/pets/wiebe-xyz/github-tamagotchi/image/egg" alt="Gotchi the Tamagotchi" class="hero-pet-image" id="animated-pet" onerror="this.style.display='none'; document.getElementById('hero-emoji').style.display='block';">
+                    <div id="hero-emoji" style="display:none; font-size:6rem; line-height:1;">🐣</div>
                     <div class="pet-shadow"></div>
                     <div class="status-badge">Happy</div>
                 </div>
