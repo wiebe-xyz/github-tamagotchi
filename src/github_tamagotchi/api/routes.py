@@ -144,6 +144,29 @@ class RepoItem(BaseModel):
     pet_name: str | None
 
 
+class CommentResponse(BaseModel):
+    """Response model for a single comment."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    author_name: str
+    body: str
+    created_at: datetime
+
+
+class CommentsListResponse(BaseModel):
+    """Response model for a list of comments."""
+
+    comments: list[CommentResponse]
+
+
+class CommentCreate(BaseModel):
+    """Request body for creating a comment."""
+
+    body: str = Field(..., min_length=1, max_length=500)
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(session: DbSession) -> HealthResponse:
     """Health check endpoint."""
@@ -302,6 +325,58 @@ async def get_characteristics(repo_owner: str, repo_name: str) -> PetCharacteris
         body_type=appearance.body_type,
         feature=appearance.feature,
     )
+
+
+@router.get("/pets/{repo_owner}/{repo_name}/comments", response_model=CommentsListResponse)
+async def list_comments(
+    repo_owner: str,
+    repo_name: str,
+    session: DbSession,
+    _user: Annotated[User | None, Depends(get_optional_user)] = None,
+) -> CommentsListResponse:
+    """Return the newest 50 comments for a pet profile."""
+    from sqlalchemy import select as sa_select
+
+    from github_tamagotchi.models.comment import PetComment
+
+    result = await session.execute(
+        sa_select(PetComment)
+        .where(PetComment.repo_owner == repo_owner, PetComment.repo_name == repo_name)
+        .order_by(PetComment.created_at.desc())
+        .limit(50)
+    )
+    comments = result.scalars().all()
+    return CommentsListResponse(
+        comments=[CommentResponse.model_validate(c) for c in comments]
+    )
+
+
+@router.post(
+    "/pets/{repo_owner}/{repo_name}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_comment(
+    repo_owner: str,
+    repo_name: str,
+    comment_data: CommentCreate,
+    session: DbSession,
+    user: Annotated[User, Depends(get_current_user)],
+) -> CommentResponse:
+    """Post a comment on a pet profile. Requires authentication."""
+    from github_tamagotchi.models.comment import PetComment
+
+    comment = PetComment(
+        repo_owner=repo_owner,
+        repo_name=repo_name,
+        user_id=user.id,
+        author_name=user.github_login,
+        body=comment_data.body,
+    )
+    session.add(comment)
+    await session.commit()
+    await session.refresh(comment)
+    return CommentResponse.model_validate(comment)
 
 
 async def _update_images_generated_at(
