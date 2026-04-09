@@ -331,6 +331,9 @@ async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> 
         pet.stage,
         pet.mood,
         pet.health,
+        is_dead=pet.is_dead,
+        died_at=pet.died_at,
+        created_at=pet.created_at,
         commit_streak=pet.commit_streak,
     )
     return Response(

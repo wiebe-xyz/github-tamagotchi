@@ -44,8 +44,10 @@ from github_tamagotchi.services.pet_logic import (
     calculate_experience,
     calculate_health_delta,
     calculate_mood,
+    check_death_conditions,
     get_next_stage,
     update_commit_streak,
+    update_grace_period,
 )
 
 # Set up paths for templates and static files
@@ -102,6 +104,12 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                 try:
                     now = datetime.now(UTC)
 
+                    # Dead pets: still poll (grave page stays current) but skip health updates
+                    if pet.is_dead:
+                        pet.last_checked_at = now
+                        updated_count += 1
+                        continue
+
                     # Fetch health metrics from GitHub
                     health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
 
@@ -146,6 +154,21 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
 
                     # Update commit streak
                     update_commit_streak(pet, health, now)
+
+                    # Update grace period tracker and check death conditions
+                    update_grace_period(pet, now)
+                    should_die, cause = check_death_conditions(pet, now)
+                    if should_die:
+                        pet.is_dead = True
+                        pet.died_at = now
+                        pet.cause_of_death = cause
+                        logger.info(
+                            "pet_died",
+                            pet_id=pet.id,
+                            pet_name=pet.name,
+                            repo=f"{pet.repo_owner}/{pet.repo_name}",
+                            cause=cause,
+                        )
 
                     updated_count += 1
 

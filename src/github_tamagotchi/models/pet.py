@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -80,6 +80,16 @@ class Pet(Base):
     last_fed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     images_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Death state
+    is_dead: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    died_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cause_of_death: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    grace_period_started: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
