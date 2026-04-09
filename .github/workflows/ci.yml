@@ -117,4 +117,4 @@ jobs:
           sed -i "s|ghcr.io/${{ github.repository }}:latest|${IMAGE}|g" k8s/deployment.yaml
 
           kubectl apply -f k8s/deployment.yaml
-          kubectl rollout status deployment/github-tamagotchi-blue -n nijmegen-testing --timeout=300s
+          kubectl rollout status deployment/github-tamagotchi-blue -n nijmegen-testing --timeout=600s
