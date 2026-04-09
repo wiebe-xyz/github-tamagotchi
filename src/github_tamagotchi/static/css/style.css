@@ -1148,6 +1148,68 @@ footer {
     color: var(--text-muted);
 }
 
+.webhook-section {
+    text-align: left;
+    margin-bottom: 2rem;
+    border: 1px solid var(--surface-light);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.webhook-summary {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    list-style: none;
+    user-select: none;
+}
+
+.webhook-summary::-webkit-details-marker {
+    display: none;
+}
+
+.webhook-summary::before {
+    content: '▸ ';
+    font-size: 0.75rem;
+}
+
+details[open] .webhook-summary::before {
+    content: '▾ ';
+}
+
+.webhook-content {
+    padding: 0 1rem 1rem;
+    border-top: 1px solid var(--surface-light);
+}
+
+.webhook-content p {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin: 0.75rem 0 0.5rem;
+}
+
+.webhook-content ol {
+    font-size: 0.9rem;
+    padding-left: 1.25rem;
+    margin: 0.5rem 0;
+}
+
+.webhook-content ol li {
+    margin-bottom: 0.4rem;
+    color: var(--text-muted);
+}
+
+.webhook-content ol li strong {
+    color: var(--text);
+}
+
+.webhook-note {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.75rem;
+}
+
 .complete-actions {
     display: flex;
     gap: 0.75rem;
