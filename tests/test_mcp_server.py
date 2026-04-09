@@ -17,13 +17,13 @@ from github_tamagotchi.mcp.server import (
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
 
-# Access the underlying functions from FastMCP tool wrappers
-_register_pet = register_pet.fn
-_check_pet_status = check_pet_status.fn
-_feed_pet = feed_pet.fn
-_list_pets = list_pets.fn
-_get_pet_history = get_pet_history.fn
-_update_pet_from_repo = update_pet_from_repo.fn
+# In FastMCP 3.x, @mcp.tool() returns the original function directly
+_register_pet = register_pet
+_check_pet_status = check_pet_status
+_feed_pet = feed_pet
+_list_pets = list_pets
+_get_pet_history = get_pet_history
+_update_pet_from_repo = update_pet_from_repo
 
 
 @pytest.fixture
@@ -45,9 +45,7 @@ class TestRegisterPet:
 
     async def test_register_pet_creates_new_pet(self, test_db: AsyncSession) -> None:
         """Should create a new pet for a repository."""
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -73,9 +71,7 @@ class TestRegisterPet:
         test_db.add(pet)
         await test_db.commit()
 
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -105,18 +101,12 @@ class TestCheckPetStatus:
         await test_db.commit()
 
         with (
-            patch(
-                "github_tamagotchi.mcp.server.async_session_factory"
-            ) as mock_factory,
-            patch(
-                "github_tamagotchi.mcp.server.GitHubService"
-            ) as mock_github,
+            patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory,
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
-            mock_github.return_value.get_repo_health = AsyncMock(
-                return_value=mock_repo_health
-            )
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
 
             result = await _check_pet_status("owner", "repo")
 
@@ -127,9 +117,7 @@ class TestCheckPetStatus:
 
     async def test_check_pet_status_no_pet(self, test_db: AsyncSession) -> None:
         """Should return error when no pet exists."""
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -156,9 +144,7 @@ class TestFeedPet:
         test_db.add(pet)
         await test_db.commit()
 
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -183,9 +169,7 @@ class TestFeedPet:
         test_db.add(pet)
         await test_db.commit()
 
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -196,9 +180,7 @@ class TestFeedPet:
 
     async def test_feed_pet_no_pet(self, test_db: AsyncSession) -> None:
         """Should return error when no pet exists."""
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -212,9 +194,7 @@ class TestListPets:
 
     async def test_list_pets_empty(self, test_db: AsyncSession) -> None:
         """Should return empty list when no pets exist."""
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -246,9 +226,7 @@ class TestListPets:
         test_db.add_all([pet1, pet2])
         await test_db.commit()
 
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -264,9 +242,7 @@ class TestListPets:
 class TestGetPetHistory:
     """Tests for the get_pet_history MCP tool."""
 
-    async def test_get_pet_history_shows_evolution(
-        self, test_db: AsyncSession
-    ) -> None:
+    async def test_get_pet_history_shows_evolution(self, test_db: AsyncSession) -> None:
         """Should show pet evolution history."""
         pet = Pet(
             repo_owner="owner",
@@ -280,9 +256,7 @@ class TestGetPetHistory:
         test_db.add(pet)
         await test_db.commit()
 
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -296,9 +270,7 @@ class TestGetPetHistory:
 
     async def test_get_pet_history_no_pet(self, test_db: AsyncSession) -> None:
         """Should return error when no pet exists."""
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
@@ -327,18 +299,12 @@ class TestUpdatePetFromRepo:
         await test_db.commit()
 
         with (
-            patch(
-                "github_tamagotchi.mcp.server.async_session_factory"
-            ) as mock_factory,
-            patch(
-                "github_tamagotchi.mcp.server.GitHubService"
-            ) as mock_github,
+            patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory,
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
-            mock_github.return_value.get_repo_health = AsyncMock(
-                return_value=mock_repo_health
-            )
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
 
             result = await _update_pet_from_repo("owner", "repo")
 
@@ -348,9 +314,7 @@ class TestUpdatePetFromRepo:
 
     async def test_update_pet_from_repo_no_pet(self, test_db: AsyncSession) -> None:
         """Should return error when no pet exists."""
-        with patch(
-            "github_tamagotchi.mcp.server.async_session_factory"
-        ) as mock_factory:
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
