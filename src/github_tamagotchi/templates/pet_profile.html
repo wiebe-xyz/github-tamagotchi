@@ -169,6 +169,14 @@
                             <div class="stat-label">Age</div>
                             <div class="stat-value">{{ age_days }} day{% if age_days != 1 %}s{% endif %}</div>
                         </div>
+                        <div class="stat-card">
+                            <div class="stat-label">&#128640; Releases (30d)</div>
+                            <div class="stat-value">{{ pet.last_release_count }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">&#128101; Contributors</div>
+                            <div class="stat-value">{{ pet.last_contributor_count }}</div>
+                        </div>
                     </div>
 
                     <!-- Commit Streak -->

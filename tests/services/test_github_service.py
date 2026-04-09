@@ -425,6 +425,9 @@ class TestGetRepoHealth:
             return_value=httpx.Response(500)
         )
         respx.get("https://api.github.com/repos/owner/repo").mock(return_value=httpx.Response(500))
+        respx.get("https://api.github.com/repos/owner/repo/releases").mock(
+            return_value=httpx.Response(500)
+        )
 
         service = GitHubService(token="test")
         result = await service.get_repo_health("owner", "repo")
@@ -434,3 +437,129 @@ class TestGetRepoHealth:
         assert result.open_prs_count == 0
         assert result.open_issues_count == 0
         assert result.last_ci_success is None
+        assert result.release_count_30d == 0
+        assert result.contributor_count == 0
+
+
+class TestGetReleaseCount30d:
+    """Tests for fetching release count in last 30 days."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_counts_recent_releases(self) -> None:
+        """Should count only releases published in the last 30 days."""
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        releases = [
+            {"published_at": (now - timedelta(days=5)).isoformat()},   # within 30d
+            {"published_at": (now - timedelta(days=15)).isoformat()},  # within 30d
+            {"published_at": (now - timedelta(days=40)).isoformat()},  # older than 30d
+        ]
+        respx.get("https://api.github.com/repos/owner/repo/releases").mock(
+            return_value=httpx.Response(200, json=releases)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_release_count_30d(client, "owner", "repo")
+
+        assert result == 2
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_caps_at_ten(self) -> None:
+        """Should cap result at 10 regardless of actual count."""
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        releases = [
+            {"published_at": (now - timedelta(days=i)).isoformat()} for i in range(1, 16)
+        ]
+        respx.get("https://api.github.com/repos/owner/repo/releases").mock(
+            return_value=httpx.Response(200, json=releases)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_release_count_30d(client, "owner", "repo")
+
+        assert result == 10
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_zero_on_api_error(self) -> None:
+        """Should return 0 when the releases API returns an error."""
+        respx.get("https://api.github.com/repos/owner/repo/releases").mock(
+            return_value=httpx.Response(500)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_release_count_30d(client, "owner", "repo")
+
+        assert result == 0
+
+
+class TestGetContributorCount90d:
+    """Tests for fetching unique contributor count in last 90 days."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_counts_unique_authors(self) -> None:
+        """Should count unique author logins from commits."""
+        commits = [
+            {"author": {"login": "alice"}},
+            {"author": {"login": "bob"}},
+            {"author": {"login": "alice"}},  # duplicate, should not count twice
+        ]
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(200, json=commits)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_contributor_count_90d(client, "owner", "repo")
+
+        assert result == 2
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_caps_at_twenty(self) -> None:
+        """Should cap result at 20 regardless of actual count."""
+        commits = [{"author": {"login": f"user{i}"}} for i in range(25)]
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(200, json=commits)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_contributor_count_90d(client, "owner", "repo")
+
+        assert result == 20
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_zero_on_api_error(self) -> None:
+        """Should return 0 when the commits API returns an error."""
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(500)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_contributor_count_90d(client, "owner", "repo")
+
+        assert result == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_skips_commits_without_author(self) -> None:
+        """Should skip commits where author or login is missing."""
+        commits = [
+            {"author": {"login": "alice"}},
+            {"author": None},
+            {},
+        ]
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(200, json=commits)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_contributor_count_90d(client, "owner", "repo")
+
+        assert result == 1

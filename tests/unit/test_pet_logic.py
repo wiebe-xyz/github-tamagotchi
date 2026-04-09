@@ -261,6 +261,86 @@ class TestCalculateHealthDelta:
         )
         assert calculate_health_delta(health) == 0
 
+    def test_release_count_adds_bonus(self) -> None:
+        """Each release in last 30d adds +2 health, up to +10."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            release_count_30d=3,
+        )
+        assert calculate_health_delta(health) == 6  # 3 * 2
+
+    def test_release_count_capped_at_ten(self) -> None:
+        """Release bonus should be capped at +10 regardless of count."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            release_count_30d=10,
+        )
+        assert calculate_health_delta(health) == 10
+
+    def test_contributor_count_adds_bonus(self) -> None:
+        """Each contributor in last 90d adds +1 health, up to +8."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            contributor_count=5,
+        )
+        assert calculate_health_delta(health) == 5
+
+    def test_contributor_count_capped_at_eight(self) -> None:
+        """Contributor bonus should be capped at +8 regardless of count."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            contributor_count=20,
+        )
+        assert calculate_health_delta(health) == 8
+
+    def test_releases_and_contributors_higher_than_absent(self) -> None:
+        """Delta with releases+contributors should exceed delta without them."""
+        base_health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+        )
+        active_health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            release_count_30d=2,
+            contributor_count=4,
+        )
+        assert calculate_health_delta(active_health) > calculate_health_delta(base_health)
+
 
 class TestCalculateExperience:
     """Tests for calculate_experience function."""
