@@ -102,6 +102,11 @@ spec:
                   key: token-encryption-key
             - name: OAUTH_REDIRECT_URI
               value: "https://tamagotchi.nijmegen.wiebe.xyz/auth/callback"
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: sentry-dsn
           resources:
             requests:
               memory: "128Mi"
@@ -232,6 +237,11 @@ spec:
                   key: token-encryption-key
             - name: OAUTH_REDIRECT_URI
               value: "https://tamagotchi.nijmegen.wiebe.xyz/auth/callback"
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: sentry-dsn
           resources:
             requests:
               memory: "128Mi"

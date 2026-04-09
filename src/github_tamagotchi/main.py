@@ -2,6 +2,8 @@
 
 import asyncio
 import contextlib
+import logging
+import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,12 +11,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
+import sentry_sdk
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -222,6 +228,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan manager."""
     # Startup
     logger.info("Starting GitHub Tamagotchi", version=__version__)
+
+    if settings.sentry_dsn:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=os.getenv("ENVIRONMENT", "production"),
+            traces_sample_rate=0.1,
+            integrations=[
+                FastApiIntegration(),
+                SqlalchemyIntegration(),
+                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            ],
+            send_default_pii=False,
+        )
+        logger.info("Sentry initialized")
 
     # Start scheduler for periodic polling
     scheduler.add_job(
