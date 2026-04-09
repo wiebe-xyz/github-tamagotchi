@@ -292,6 +292,15 @@ async def root(request: Request, user: OptionalUser) -> HTMLResponse:
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request, user: OptionalUser, session: DbSession) -> Response:
+    """My Pets dashboard page."""
+    if not user:
+        return RedirectResponse(url="/auth/github", status_code=302)
+    pets, _ = await pet_crud.get_pets(session, per_page=100, user_id=user.id)
+    return templates.TemplateResponse(request, "dashboard.html", {"user": user, "pets": pets})
+
+
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request, user: OptionalUser) -> Response:
     """Repo selection page for pet registration."""
@@ -312,7 +321,7 @@ async def register_complete_page(
     if not user:
         return RedirectResponse(url="/auth/github", status_code=302)
     base_url = str(request.base_url).rstrip("/")
-    embed_image_url = f"{base_url}/api/v1/pets/{owner}/{repo}/image/egg"
+    embed_image_url = f"{base_url}/api/v1/pets/{owner}/{repo}/badge.svg"
     pet_page_url = f"{base_url}/pet/{owner}/{repo}"
     embed_code = f"[![{pet_name}]({embed_image_url})]({pet_page_url})"
     return templates.TemplateResponse(

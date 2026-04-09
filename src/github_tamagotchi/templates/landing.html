@@ -30,7 +30,7 @@
                 <h1>Your Repository Has a <span class="highlight">Pet</span></h1>
                 <p class="tagline">A virtual pet that reflects your GitHub repository's health. Keep coding, keep it happy.</p>
                 {% if user %}
-                <a href="/api/v1/me/pets" class="cta-button">View Your Pets</a>
+                <a href="/dashboard" class="cta-button">View Your Pets</a>
                 {% else %}
                 <a href="/auth/github" class="cta-button">Login with GitHub</a>
                 {% endif %}
@@ -103,7 +103,7 @@
             {% if user %}
             <h2>Welcome Back, {{ user.github_login }}!</h2>
             <p>Your pets are waiting for you.</p>
-            <a href="/docs" class="cta-button large">View Your Pets</a>
+            <a href="/dashboard" class="cta-button large">View Your Pets</a>
             {% else %}
             <h2>Ready to Adopt Your Pet?</h2>
             <p>Connect your GitHub account and bring your repository to life.</p>

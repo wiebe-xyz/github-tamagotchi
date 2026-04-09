@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Pets - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+                <h1 style="font-size: 1.75rem; font-weight: 700;">My Pets</h1>
+                <a href="/register" class="cta-button" style="padding: 0.5rem 1.25rem; font-size: 0.9rem;">+ Register Repo</a>
+            </div>
+
+            {% if pets %}
+            <div class="feature-grid">
+                {% for pet in pets %}
+                <div class="feature" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span style="font-size: 2rem;">
+                            {% if pet.stage == "egg" %}&#129361;
+                            {% elif pet.stage == "baby" %}&#128049;
+                            {% elif pet.stage == "child" %}&#128008;
+                            {% elif pet.stage == "teen" %}&#128047;
+                            {% elif pet.stage == "adult" %}&#129409;
+                            {% elif pet.stage == "elder" %}&#129426;
+                            {% else %}&#128049;
+                            {% endif %}
+                        </span>
+                        <div>
+                            <div style="font-weight: 600; font-size: 1.05rem;">{{ pet.name }}</div>
+                            <div style="color: var(--text-muted); font-size: 0.85rem;">{{ pet.repo_owner }}/{{ pet.repo_name }}</div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem;">
+                        <span style="background: var(--surface-light); padding: 0.2rem 0.6rem; border-radius: 99px;">{{ pet.stage | capitalize }}</span>
+                        <span style="background: var(--surface-light); padding: 0.2rem 0.6rem; border-radius: 99px;">{{ pet.mood | capitalize }}</span>
+                    </div>
+
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.25rem;">
+                            <span style="color: var(--text-muted);">Health</span>
+                            <span>{{ pet.health }}%</span>
+                        </div>
+                        <div style="background: var(--surface-light); border-radius: 4px; height: 6px; overflow: hidden;">
+                            <div style="background: {% if pet.health >= 70 %}var(--secondary){% elif pet.health >= 30 %}var(--accent){% else %}#ef4444{% endif %}; width: {{ pet.health }}%; height: 100%;"></div>
+                        </div>
+                    </div>
+
+                    <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}" class="secondary-btn" style="text-align: center; margin-top: 0.25rem;">View Profile</a>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="text-align: center; padding: 4rem 0; color: var(--text-muted);">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">&#129361;</div>
+                <p style="font-size: 1.1rem; margin-bottom: 1.5rem;">You haven't registered any repos yet.</p>
+                <a href="/register" class="cta-button">Register Your First Repo</a>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>
