@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook Event Log - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .events-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        .events-table th,
+        .events-table td {
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--surface-light);
+        }
+        .events-table th {
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .events-table tr:hover td {
+            background: var(--surface-light);
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            background: var(--surface-light);
+        }
+        .processed-yes { color: #22c55e; }
+        .processed-no  { color: #ef4444; }
+        .empty-state {
+            text-align: center;
+            padding: 4rem 0;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                <a href="/admin/webhooks" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Webhook Log</a>
+            </div>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+                <h1 style="font-size: 1.75rem; font-weight: 700;">Webhook Event Log</h1>
+                <span style="color: var(--text-muted); font-size: 0.875rem;">Last 100 events</span>
+            </div>
+
+            {% if events %}
+            <div style="overflow-x: auto;">
+                <table class="events-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Repo</th>
+                            <th>Event type</th>
+                            <th>Action</th>
+                            <th>Summary</th>
+                            <th>Processed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for event in events %}
+                        <tr>
+                            <td style="white-space: nowrap; color: var(--text-muted);">
+                                {{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') if event.created_at else '—' }}
+                            </td>
+                            <td>
+                                {% if event.repo_owner and event.repo_name %}
+                                <a href="/pet/{{ event.repo_owner }}/{{ event.repo_name }}"
+                                   style="color: var(--primary); text-decoration: none;">
+                                    {{ event.repo_owner }}/{{ event.repo_name }}
+                                </a>
+                                {% else %}
+                                <span style="color: var(--text-muted);">—</span>
+                                {% endif %}
+                            </td>
+                            <td><span class="badge">{{ event.event_type }}</span></td>
+                            <td>{{ event.action or '—' }}</td>
+                            <td style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                {{ event.payload_summary or '—' }}
+                            </td>
+                            <td style="text-align: center;">
+                                {% if event.processed %}
+                                <span class="processed-yes" title="Processed">&#10003;</span>
+                                {% else %}
+                                <span class="processed-no" title="Not processed">&#10007;</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">&#128268;</div>
+                <p style="font-size: 1.1rem;">No webhook events logged yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Overview - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem; font-weight:600;">Admin</a>
+                <a href="/admin/pets" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Pets</a>
+            </div>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <h1 style="font-size: 1.75rem; font-weight: 700; margin-bottom: 2rem;">Admin Overview</h1>
+
+            <!-- Summary stats -->
+            <div class="feature-grid" style="margin-bottom: 2.5rem;">
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--primary);">{{ total_users }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Total Users</div>
+                </div>
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--secondary);">{{ total_pets }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Total Pets</div>
+                </div>
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: #4caf50;">{{ health_healthy }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Healthy (&ge;70%)</div>
+                </div>
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">{{ health_warning }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Warning (40–69%)</div>
+                </div>
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: #ef4444;">{{ health_critical }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Critical (&lt;40%)</div>
+                </div>
+            </div>
+
+            <!-- Stage distribution -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2.5rem;">
+                <div class="feature" style="padding: 1.5rem;">
+                    <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">Stage Distribution</h2>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="text-align: left; padding: 0.4rem 0; color: var(--text-muted); font-weight: 500;">Stage</th>
+                                <th style="text-align: right; padding: 0.4rem 0; color: var(--text-muted); font-weight: 500;">Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stage, count in stage_counts.items() %}
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.5rem 0;">
+                                    {% if stage == "egg" %}&#x1F95A;
+                                    {% elif stage == "baby" %}&#x1F423;
+                                    {% elif stage == "child" %}&#x1F425;
+                                    {% elif stage == "teen" %}&#x1F426;
+                                    {% elif stage == "adult" %}&#x1F989;
+                                    {% elif stage == "elder" %}&#x1F985;
+                                    {% else %}&#x1F95A;
+                                    {% endif %}
+                                    {{ stage | capitalize }}
+                                </td>
+                                <td style="text-align: right; padding: 0.5rem 0; font-weight: 600;">{{ count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Health distribution bar -->
+                <div class="feature" style="padding: 1.5rem;">
+                    <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">Health Distribution</h2>
+                    {% if total_pets > 0 %}
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem;">
+                            <span style="color: #4caf50;">Healthy</span>
+                            <span>{{ health_healthy }} ({{ ((health_healthy / total_pets) * 100) | round(1) }}%)</span>
+                        </div>
+                        <div style="background: var(--surface-light); border-radius: 4px; height: 10px; overflow: hidden;">
+                            <div style="background: #4caf50; width: {{ ((health_healthy / total_pets) * 100) | round(1) }}%; height: 100%;"></div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem;">
+                            <span style="color: var(--accent);">Warning</span>
+                            <span>{{ health_warning }} ({{ ((health_warning / total_pets) * 100) | round(1) }}%)</span>
+                        </div>
+                        <div style="background: var(--surface-light); border-radius: 4px; height: 10px; overflow: hidden;">
+                            <div style="background: var(--accent); width: {{ ((health_warning / total_pets) * 100) | round(1) }}%; height: 100%;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem;">
+                            <span style="color: #ef4444;">Critical</span>
+                            <span>{{ health_critical }} ({{ ((health_critical / total_pets) * 100) | round(1) }}%)</span>
+                        </div>
+                        <div style="background: var(--surface-light); border-radius: 4px; height: 10px; overflow: hidden;">
+                            <div style="background: #ef4444; width: {{ ((health_critical / total_pets) * 100) | round(1) }}%; height: 100%;"></div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p style="color: var(--text-muted); font-size: 0.9rem;">No pets yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Recently created pets -->
+            <div class="feature" style="padding: 1.5rem; margin-bottom: 2rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                    <h2 style="font-size: 1.1rem; font-weight: 600;">Recently Created Pets</h2>
+                    <a href="/admin/pets" style="color: rgba(255,255,255,0.65); text-decoration: none; font-size: 0.85rem;">View all &rarr;</a>
+                </div>
+                {% if recent_pets %}
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <th style="text-align: left; padding: 0.5rem 0.5rem; color: var(--text-muted); font-weight: 500;">Repo</th>
+                            <th style="text-align: left; padding: 0.5rem 0.5rem; color: var(--text-muted); font-weight: 500;">Stage</th>
+                            <th style="text-align: left; padding: 0.5rem 0.5rem; color: var(--text-muted); font-weight: 500;">Health</th>
+                            <th style="text-align: left; padding: 0.5rem 0.5rem; color: var(--text-muted); font-weight: 500;">Owner</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in recent_pets %}
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 0.6rem 0.5rem;">
+                                <a href="/pet/{{ item.pet.repo_owner }}/{{ item.pet.repo_name }}" style="color: rgba(255,255,255,0.9); text-decoration: none; font-weight: 500;">
+                                    {{ item.pet.repo_owner }}/{{ item.pet.repo_name }}
+                                </a>
+                                <div style="color: var(--text-muted); font-size: 0.8rem;">{{ item.pet.name }}</div>
+                            </td>
+                            <td style="padding: 0.6rem 0.5rem;">
+                                {% if item.pet.stage == "egg" %}&#x1F95A;
+                                {% elif item.pet.stage == "baby" %}&#x1F423;
+                                {% elif item.pet.stage == "child" %}&#x1F425;
+                                {% elif item.pet.stage == "teen" %}&#x1F426;
+                                {% elif item.pet.stage == "adult" %}&#x1F989;
+                                {% elif item.pet.stage == "elder" %}&#x1F985;
+                                {% else %}&#x1F95A;
+                                {% endif %}
+                                {{ item.pet.stage | capitalize }}
+                            </td>
+                            <td style="padding: 0.6rem 0.5rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <div style="background: var(--surface-light); border-radius: 4px; height: 6px; width: 80px; overflow: hidden; flex-shrink: 0;">
+                                        <div style="background: {% if item.pet.health >= 70 %}#4caf50{% elif item.pet.health >= 40 %}var(--accent){% else %}#ef4444{% endif %}; width: {{ item.pet.health }}%; height: 100%;"></div>
+                                    </div>
+                                    <span style="font-size: 0.8rem;">{{ item.pet.health }}%</span>
+                                </div>
+                            </td>
+                            <td style="padding: 0.6rem 0.5rem; color: rgba(255,255,255,0.7); font-size: 0.85rem;">
+                                {% if item.owner %}{{ item.owner.github_login }}{% else %}<span style="color: var(--text-muted);">—</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p style="color: var(--text-muted); font-size: 0.9rem;">No pets yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>

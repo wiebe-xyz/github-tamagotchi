@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Pets - Admin - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                <a href="/admin/pets" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem; font-weight:600;">Pets</a>
+            </div>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+                <div>
+                    <h1 style="font-size: 1.75rem; font-weight: 700;">All Pets</h1>
+                    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">{{ total }} pet{{ 's' if total != 1 else '' }} total &mdash; page {{ page }} of {{ total_pages }}</p>
+                </div>
+                <a href="/admin" style="color: rgba(255,255,255,0.65); text-decoration: none; font-size: 0.85rem;">&larr; Overview</a>
+            </div>
+
+            {% if pets_with_owners %}
+            <div class="feature-grid">
+                {% for item in pets_with_owners %}
+                <div class="feature" style="padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <!-- Pet image / emoji -->
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <div style="width: 56px; height: 56px; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            {% if item.pet.images_generated_at %}
+                            <img
+                                src="/api/v1/pets/{{ item.pet.repo_owner }}/{{ item.pet.repo_name }}/image/{{ item.pet.stage }}"
+                                alt="{{ item.pet.name }}"
+                                style="width: 100%; height: 100%; object-fit: cover;"
+                                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                            >
+                            <span style="display:none; font-size: 1.75rem; width:100%; height:100%; align-items:center; justify-content:center;">
+                            {% else %}
+                            <span style="font-size: 1.75rem; width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
+                            {% endif %}
+                                {% if item.pet.stage == "egg" %}&#x1F95A;
+                                {% elif item.pet.stage == "baby" %}&#x1F423;
+                                {% elif item.pet.stage == "child" %}&#x1F425;
+                                {% elif item.pet.stage == "teen" %}&#x1F426;
+                                {% elif item.pet.stage == "adult" %}&#x1F989;
+                                {% elif item.pet.stage == "elder" %}&#x1F985;
+                                {% else %}&#x1F95A;
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div style="min-width: 0;">
+                            <div style="font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ item.pet.name }}</div>
+                            <div style="color: var(--text-muted); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                <a href="/pet/{{ item.pet.repo_owner }}/{{ item.pet.repo_name }}" style="color: var(--text-muted); text-decoration: none;">
+                                    {{ item.pet.repo_owner }}/{{ item.pet.repo_name }}
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stage + mood tags -->
+                    <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; font-size: 0.8rem;">
+                        <span style="background: var(--surface-light); padding: 0.15rem 0.55rem; border-radius: 99px;">
+                            {% if item.pet.stage == "egg" %}&#x1F95A;
+                            {% elif item.pet.stage == "baby" %}&#x1F423;
+                            {% elif item.pet.stage == "child" %}&#x1F425;
+                            {% elif item.pet.stage == "teen" %}&#x1F426;
+                            {% elif item.pet.stage == "adult" %}&#x1F989;
+                            {% elif item.pet.stage == "elder" %}&#x1F985;
+                            {% endif %}
+                            {{ item.pet.stage | capitalize }}
+                        </span>
+                        <span style="background: var(--surface-light); padding: 0.15rem 0.55rem; border-radius: 99px;">{{ item.pet.mood | capitalize }}</span>
+                    </div>
+
+                    <!-- Health bar -->
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.25rem;">
+                            <span style="color: var(--text-muted);">Health</span>
+                            <span>{{ item.pet.health }}%</span>
+                        </div>
+                        <div style="background: var(--surface-light); border-radius: 4px; height: 6px; overflow: hidden;">
+                            <div style="background: {% if item.pet.health >= 70 %}#4caf50{% elif item.pet.health >= 40 %}var(--accent){% else %}#ef4444{% endif %}; width: {{ item.pet.health }}%; height: 100%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Owner -->
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">
+                        Owner:
+                        {% if item.owner %}
+                        <a href="https://github.com/{{ item.owner.github_login }}" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.65); text-decoration: none;">{{ item.owner.github_login }}</a>
+                        {% else %}
+                        <span>—</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Pagination -->
+            {% if total_pages > 1 %}
+            <div style="display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 2.5rem;">
+                {% if page > 1 %}
+                <a href="/admin/pets?page={{ page - 1 }}" class="secondary-btn" style="padding: 0.4rem 1rem; font-size: 0.9rem;">&larr; Previous</a>
+                {% else %}
+                <span class="secondary-btn" style="padding: 0.4rem 1rem; font-size: 0.9rem; opacity: 0.35; cursor: default;">&larr; Previous</span>
+                {% endif %}
+
+                <span style="color: var(--text-muted); font-size: 0.9rem;">{{ page }} / {{ total_pages }}</span>
+
+                {% if page < total_pages %}
+                <a href="/admin/pets?page={{ page + 1 }}" class="secondary-btn" style="padding: 0.4rem 1rem; font-size: 0.9rem;">Next &rarr;</a>
+                {% else %}
+                <span class="secondary-btn" style="padding: 0.4rem 1rem; font-size: 0.9rem; opacity: 0.35; cursor: default;">Next &rarr;</span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% else %}
+            <div style="text-align: center; padding: 4rem 0; color: var(--text-muted);">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">&#x1F95A;</div>
+                <p style="font-size: 1.1rem;">No pets have been registered yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>
