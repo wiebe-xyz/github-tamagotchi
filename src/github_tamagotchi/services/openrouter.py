@@ -9,7 +9,9 @@ import structlog
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.services.image_generation import (
+    DEFAULT_STYLE,
     NEGATIVE_PROMPT,
+    STYLES,
     GenerationResult,
     build_prompt,
     get_pet_appearance,
@@ -34,7 +36,7 @@ class OpenRouterService:
         self.timeout = timeout if timeout is not None else settings.openrouter_timeout
 
     async def generate_pet_image(
-        self, owner: str, repo: str, stage: str
+        self, owner: str, repo: str, stage: str, style: str = DEFAULT_STYLE
     ) -> GenerationResult:
         """Generate a pet image using OpenRouter's image generation API."""
         if not self.api_key:
@@ -44,9 +46,11 @@ class OpenRouterService:
 
         try:
             appearance = get_pet_appearance(owner, repo)
-            prompt = build_prompt(appearance, stage)
+            prompt = build_prompt(appearance, stage, style=style)
 
-            image_data = await self._call_api(prompt)
+            style_def = STYLES.get(style, STYLES[DEFAULT_STYLE])
+            negative = style_def.get("negative", NEGATIVE_PROMPT)
+            image_data = await self._call_api(prompt, negative)
 
             if image_data:
                 return GenerationResult(
@@ -79,7 +83,7 @@ class OpenRouterService:
             )
             return GenerationResult(success=False, error=str(e))
 
-    async def _call_api(self, prompt: str) -> bytes | None:
+    async def _call_api(self, prompt: str, negative: str = NEGATIVE_PROMPT) -> bytes | None:
         """Call the OpenRouter API and return image bytes."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -96,7 +100,7 @@ class OpenRouterService:
                         f"Generate a pixel art image based on this description. "
                         f"Do not include any text in the image. "
                         f"Description: {prompt} "
-                        f"Avoid: {NEGATIVE_PROMPT}"
+                        f"Avoid: {negative}"
                     ),
                 }
             ],
