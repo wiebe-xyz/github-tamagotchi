@@ -12,6 +12,7 @@ from github_tamagotchi.core.config import settings
 from github_tamagotchi.models import (  # noqa: F401 — ensure all models register with metadata
     Alert,
     ImageGenerationJob,
+    JobRun,
     Pet,
     PetComment,
     User,

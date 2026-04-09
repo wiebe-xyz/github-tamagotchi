@@ -14,7 +14,7 @@ from typing import Annotated
 import sentry_sdk
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -32,6 +32,7 @@ from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.mcp.server import get_mcp_server
+from github_tamagotchi.models.job_run import JobRun
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.models.webhook_event import WebhookEvent
@@ -58,117 +59,156 @@ scheduler = AsyncIOScheduler()
 _consecutive_poll_failures = 0
 
 
-async def poll_repositories() -> None:
+async def poll_repositories(triggered_by: str = "scheduler") -> None:
     """Periodic task to check all registered repositories."""
     global _consecutive_poll_failures  # noqa: PLW0603
 
-    logger.info("poll_started", message="Starting repository health check poll")
+    logger.info(
+        "poll_started",
+        message="Starting repository health check poll",
+        triggered_by=triggered_by,
+    )
 
     github_service = GitHubService()
     updated_count = 0
     error_count = 0
     evolved_count = 0
     rate_limited = False
+    error_messages: list[str] = []
 
     async with async_session_factory() as session:
-        # Query all pets
-        result = await session.execute(select(Pet))
-        pets = result.scalars().all()
-        total_pets = len(pets)
+        # Create a JobRun record
+        job_run = JobRun(
+            job_name="poll_repositories",
+            status="running",
+            triggered_by=triggered_by,
+        )
+        session.add(job_run)
+        await session.flush()  # get job_run.id
+        job_run_id = job_run.id
+        await session.commit()
 
-        logger.info("poll_pets_found", pet_count=total_pets)
+    try:
+        async with async_session_factory() as session:
+            # Query all pets
+            result = await session.execute(select(Pet))
+            pets = result.scalars().all()
+            total_pets = len(pets)
 
-        for pet in pets:
-            try:
-                # Fetch health metrics from GitHub
-                health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
+            logger.info("poll_pets_found", pet_count=total_pets)
 
-                # Calculate state changes
-                health_delta = calculate_health_delta(health)
-                experience_gained = calculate_experience(health)
-                new_health = max(0, min(100, pet.health + health_delta))
-                new_experience = pet.experience + experience_gained
-                new_mood = calculate_mood(health, new_health)
+            for pet in pets:
+                try:
+                    # Fetch health metrics from GitHub
+                    health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
 
-                # Check for evolution
-                current_stage = PetStage(pet.stage)
-                new_stage = get_next_stage(current_stage, new_experience)
+                    # Calculate state changes
+                    health_delta = calculate_health_delta(health)
+                    experience_gained = calculate_experience(health)
+                    new_health = max(0, min(100, pet.health + health_delta))
+                    new_experience = pet.experience + experience_gained
+                    new_mood = calculate_mood(health, new_health)
 
-                # Update pet
-                pet.health = new_health
-                pet.experience = new_experience
-                pet.mood = new_mood.value
-                pet.last_checked_at = datetime.now(UTC)
+                    # Check for evolution
+                    current_stage = PetStage(pet.stage)
+                    new_stage = get_next_stage(current_stage, new_experience)
 
-                # Handle evolution
-                if new_stage != current_stage:
-                    pet.stage = new_stage.value
-                    evolved_count += 1
-                    logger.info(
-                        "pet_evolved",
+                    # Update pet
+                    pet.health = new_health
+                    pet.experience = new_experience
+                    pet.mood = new_mood.value
+                    pet.last_checked_at = datetime.now(UTC)
+
+                    # Handle evolution
+                    if new_stage != current_stage:
+                        pet.stage = new_stage.value
+                        evolved_count += 1
+                        logger.info(
+                            "pet_evolved",
+                            pet_id=pet.id,
+                            pet_name=pet.name,
+                            repo=f"{pet.repo_owner}/{pet.repo_name}",
+                            old_stage=current_stage.value,
+                            new_stage=new_stage.value,
+                            experience=new_experience,
+                        )
+
+                    # Update last_fed_at if there was a recent commit
+                    if health.last_commit_at:
+                        hours_since_commit = (
+                            datetime.now(UTC) - health.last_commit_at
+                        ).total_seconds() / 3600
+                        if hours_since_commit < 24:
+                            pet.last_fed_at = datetime.now(UTC)
+
+                    updated_count += 1
+
+                    logger.debug(
+                        "pet_updated",
                         pet_id=pet.id,
                         pet_name=pet.name,
                         repo=f"{pet.repo_owner}/{pet.repo_name}",
-                        old_stage=current_stage.value,
-                        new_stage=new_stage.value,
-                        experience=new_experience,
+                        health_delta=health_delta,
+                        new_health=new_health,
+                        experience_gained=experience_gained,
+                        new_mood=new_mood.value,
                     )
 
-                # Update last_fed_at if there was a recent commit
-                if health.last_commit_at:
-                    hours_since_commit = (
-                        datetime.now(UTC) - health.last_commit_at
-                    ).total_seconds() / 3600
-                    if hours_since_commit < 24:
-                        pet.last_fed_at = datetime.now(UTC)
+                except RateLimitError as e:
+                    rate_limited = True
+                    logger.warning(
+                        "poll_rate_limited",
+                        pet_id=pet.id,
+                        repo=f"{pet.repo_owner}/{pet.repo_name}",
+                        reset_time=e.reset_time.isoformat() if e.reset_time else None,
+                        message="GitHub API rate limit reached, stopping poll cycle",
+                    )
+                    error_messages.append(
+                        f"Rate limited on {pet.repo_owner}/{pet.repo_name}"
+                    )
+                    # Stop polling to avoid hitting rate limits further
+                    break
 
-                updated_count += 1
+                except Exception as e:
+                    error_count += 1
+                    error_messages.append(f"{pet.repo_owner}/{pet.repo_name}: {e}")
+                    logger.error(
+                        "poll_pet_error",
+                        pet_id=pet.id,
+                        repo=f"{pet.repo_owner}/{pet.repo_name}",
+                        error=str(e),
+                    )
+                    # Continue with other pets
 
-                logger.debug(
-                    "pet_updated",
-                    pet_id=pet.id,
-                    pet_name=pet.name,
-                    repo=f"{pet.repo_owner}/{pet.repo_name}",
-                    health_delta=health_delta,
-                    new_health=new_health,
-                    experience_gained=experience_gained,
-                    new_mood=new_mood.value,
+            # Commit all changes
+            await session.commit()
+
+            # --- Alert checks ---
+            if settings.alerting_enabled:
+                await _run_alert_checks(
+                    session=session,
+                    total_pets=total_pets,
+                    updated_count=updated_count,
+                    error_count=error_count,
+                    rate_limited=rate_limited,
                 )
 
-            except RateLimitError as e:
-                rate_limited = True
-                logger.warning(
-                    "poll_rate_limited",
-                    pet_id=pet.id,
-                    repo=f"{pet.repo_owner}/{pet.repo_name}",
-                    reset_time=e.reset_time.isoformat() if e.reset_time else None,
-                    message="GitHub API rate limit reached, stopping poll cycle",
-                )
-                # Stop polling to avoid hitting rate limits further
-                break
+        final_status = "success"
+    except Exception as e:
+        final_status = "failed"
+        error_messages.append(f"Unhandled error: {e}")
+        logger.error("poll_failed", error=str(e))
 
-            except Exception as e:
-                error_count += 1
-                logger.error(
-                    "poll_pet_error",
-                    pet_id=pet.id,
-                    repo=f"{pet.repo_owner}/{pet.repo_name}",
-                    error=str(e),
-                )
-                # Continue with other pets
-
-        # Commit all changes
-        await session.commit()
-
-        # --- Alert checks ---
-        if settings.alerting_enabled:
-            await _run_alert_checks(
-                session=session,
-                total_pets=total_pets,
-                updated_count=updated_count,
-                error_count=error_count,
-                rate_limited=rate_limited,
-            )
+    # Update the JobRun with results
+    async with async_session_factory() as session:
+        job_run_result = await session.get(JobRun, job_run_id)
+        if job_run_result is not None:
+            job_run_result.completed_at = datetime.now(UTC)
+            job_run_result.status = final_status
+            job_run_result.pets_processed = updated_count
+            job_run_result.errors_count = error_count
+            job_run_result.error_details = "\n".join(error_messages) if error_messages else None
+            await session.commit()
 
     logger.info(
         "poll_completed",
@@ -532,3 +572,33 @@ async def admin_pets(
             "total": total,
         },
     )
+
+
+@app.get("/admin/jobs", response_class=HTMLResponse)
+async def admin_jobs(
+    request: Request,
+    user: AdminUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Admin page showing the last 50 job runs."""
+    result = await session.execute(
+        select(JobRun).order_by(JobRun.started_at.desc()).limit(50)
+    )
+    job_runs = result.scalars().all()
+    return templates.TemplateResponse(
+        request,
+        "admin_jobs.html",
+        {"user": user, "job_runs": job_runs},
+    )
+
+
+@app.post("/admin/jobs/poll/trigger")
+async def admin_trigger_poll(
+    request: Request,
+    user: AdminUser,
+    background_tasks: BackgroundTasks,
+) -> Response:
+    """Manually trigger a poll run immediately."""
+    triggered_by = f"manual:{user.github_login}"
+    background_tasks.add_task(poll_repositories, triggered_by=triggered_by)
+    return RedirectResponse(url="/admin/jobs", status_code=303)
