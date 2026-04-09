@@ -46,11 +46,10 @@ class TestPollRepositories:
             has_stale_dependencies=False,
         )
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             mock_service.get_repo_health.return_value = healthy_repo
             mock_service_class.return_value = mock_service
@@ -95,11 +94,10 @@ class TestPollRepositories:
             has_stale_dependencies=True,
         )
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             mock_service.get_repo_health.return_value = unhealthy_repo
             mock_service_class.return_value = mock_service
@@ -139,11 +137,10 @@ class TestPollRepositories:
             has_stale_dependencies=False,
         )
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             mock_service.get_repo_health.return_value = healthy_repo
             mock_service_class.return_value = mock_service
@@ -184,11 +181,10 @@ class TestPollRepositories:
 
         reset_time = datetime.now(UTC) + timedelta(hours=1)
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             # First call hits rate limit
             mock_service.get_repo_health.side_effect = RateLimitError(
@@ -242,11 +238,10 @@ class TestPollRepositories:
             has_stale_dependencies=False,
         )
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             # First pet fails, second succeeds
             mock_service.get_repo_health.side_effect = [
@@ -312,11 +307,10 @@ class TestPollRepositories:
             has_stale_dependencies=False,
         )
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             mock_service.get_repo_health.side_effect = [unhealthy_repo, healthy_repo]
             mock_service_class.return_value = mock_service
@@ -359,11 +353,10 @@ class TestPollRepositories:
             has_stale_dependencies=False,
         )
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             mock_service.get_repo_health.return_value = healthy_repo
             mock_service_class.return_value = mock_service
@@ -402,11 +395,10 @@ class TestPollRepositories:
             has_stale_dependencies=False,
         )
 
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             mock_service.get_repo_health.return_value = old_commit_repo
             mock_service_class.return_value = mock_service
@@ -422,11 +414,10 @@ class TestPollRepositories:
     @pytest.mark.asyncio
     async def test_poll_with_no_pets(self, test_db):
         """Polling should complete without errors when no pets exist."""
-        with patch(
-            "github_tamagotchi.main.GitHubService"
-        ) as mock_service_class, patch(
-            "github_tamagotchi.main.async_session_factory"
-        ) as mock_session_factory:
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
             mock_service = AsyncMock()
             mock_service_class.return_value = mock_service
 
