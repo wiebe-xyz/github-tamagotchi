@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi import __version__
 from github_tamagotchi.api.alerts import alert_router
-from github_tamagotchi.api.auth import auth_router, get_optional_user
+from github_tamagotchi.api.auth import auth_router, get_admin_user, get_optional_user
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
@@ -34,6 +34,7 @@ from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
+from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.github import GitHubService, RateLimitError
@@ -420,4 +421,114 @@ async def pet_profile(
             "repo_name": repo_name,
         },
         headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
+AdminUser = Annotated[User, Depends(get_admin_user)]
+
+
+@app.get("/admin/webhooks", response_class=HTMLResponse)
+async def admin_webhook_log(
+    request: Request,
+    user: AdminUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Admin page showing the last 100 webhook events."""
+    result = await session.execute(
+        select(WebhookEvent).order_by(WebhookEvent.created_at.desc()).limit(100)
+    )
+    events = result.scalars().all()
+    return templates.TemplateResponse(
+        request,
+        "admin_webhooks.html",
+        {"user": user, "events": events},
+    )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_overview(request: Request, user: AdminUser, session: DbSession) -> HTMLResponse:
+    """Admin overview page with aggregate stats."""
+    # Counts
+    user_count_result = await session.execute(select(func.count()).select_from(User))
+    total_users = user_count_result.scalar() or 0
+
+    pet_count_result = await session.execute(select(func.count()).select_from(Pet))
+    total_pets = pet_count_result.scalar() or 0
+
+    # Health distribution
+    healthy_result = await session.execute(
+        select(func.count()).select_from(Pet).where(Pet.health >= 70)
+    )
+    health_healthy = healthy_result.scalar() or 0
+
+    warning_result = await session.execute(
+        select(func.count()).select_from(Pet).where(Pet.health >= 40, Pet.health < 70)
+    )
+    health_warning = warning_result.scalar() or 0
+
+    critical_result = await session.execute(
+        select(func.count()).select_from(Pet).where(Pet.health < 40)
+    )
+    health_critical = critical_result.scalar() or 0
+
+    # Stage distribution
+    stage_counts: dict[str, int] = {}
+    for stage in PetStage:
+        result = await session.execute(
+            select(func.count()).select_from(Pet).where(Pet.stage == stage.value)
+        )
+        stage_counts[stage.value] = result.scalar() or 0
+
+    # Most recently created pets (latest 5) with owner info
+    recent_pets_result = await session.execute(
+        select(Pet, User)
+        .outerjoin(User, Pet.user_id == User.id)
+        .order_by(Pet.created_at.desc())
+        .limit(5)
+    )
+    recent_pets = [
+        {"pet": row.Pet, "owner": row.User}
+        for row in recent_pets_result
+    ]
+
+    return templates.TemplateResponse(
+        request,
+        "admin_overview.html",
+        {
+            "user": user,
+            "total_users": total_users,
+            "total_pets": total_pets,
+            "health_healthy": health_healthy,
+            "health_warning": health_warning,
+            "health_critical": health_critical,
+            "stage_counts": stage_counts,
+            "recent_pets": recent_pets,
+        },
+    )
+
+
+@app.get("/admin/pets", response_class=HTMLResponse)
+async def admin_pets(
+    request: Request,
+    user: AdminUser,
+    session: DbSession,
+    page: int = Query(1, ge=1),
+) -> HTMLResponse:
+    """Admin pet gallery with pagination."""
+    per_page = 20
+    pets_with_owners, total = await pet_crud.get_pets_with_owners(
+        session, page=page, per_page=per_page
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    return templates.TemplateResponse(
+        request,
+        "admin_pets.html",
+        {
+            "user": user,
+            "pets_with_owners": pets_with_owners,
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
+        },
     )

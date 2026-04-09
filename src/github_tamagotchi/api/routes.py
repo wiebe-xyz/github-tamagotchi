@@ -18,6 +18,7 @@ from github_tamagotchi.core.database import get_session
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
+from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.image_generation import get_pet_appearance
@@ -641,5 +642,55 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
         )
 
     payload = await request.json()
+
+    # Extract common fields for logging
+    repo = payload.get("repository", {})
+    repo_owner = repo.get("owner", {}).get("login", "") if isinstance(repo, dict) else ""
+    repo_name = repo.get("name", "") if isinstance(repo, dict) else ""
+    action = payload.get("action") if isinstance(payload, dict) else None
+
+    # Build a short human-readable summary
+    payload_summary: str | None = None
+    try:
+        if event_type == "push":
+            commits = payload.get("commits", [])
+            branch = payload.get("ref", "").removeprefix("refs/heads/")
+            payload_summary = f"pushed {len(commits)} commit(s) to {branch}"
+        elif event_type == "pull_request":
+            pr = payload.get("pull_request", {})
+            pr_number = pr.get("number", "?")
+            pr_title = pr.get("title", "")
+            payload_summary = f"{action} PR #{pr_number}: {pr_title}"
+        elif event_type == "issues":
+            issue = payload.get("issue", {})
+            issue_number = issue.get("number", "?")
+            issue_title = issue.get("title", "")
+            payload_summary = f"{action} issue #{issue_number}: {issue_title}"
+        elif event_type == "check_run":
+            check_run = payload.get("check_run", {})
+            name = check_run.get("name", "")
+            conclusion = check_run.get("conclusion") or check_run.get("status", "")
+            payload_summary = f"check run '{name}' {conclusion}"
+    except Exception:
+        pass  # Summary is best-effort; never block the webhook
+
+    processed = False
     message = await handler(payload, session)
+    processed = True
+
+    # Log the event; don't let logging failure crash the webhook
+    try:
+        event_log = WebhookEvent(
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            event_type=event_type,
+            action=action,
+            payload_summary=payload_summary,
+            processed=processed,
+        )
+        session.add(event_log)
+        await session.flush()
+    except Exception:
+        logger.exception("Failed to log webhook event")
+
     return WebhookResponse(status="processed", message=message)
