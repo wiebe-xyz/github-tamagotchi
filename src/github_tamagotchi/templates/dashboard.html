@@ -34,7 +34,7 @@
             {% if pets %}
             <div class="feature-grid">
                 {% for pet in pets %}
-                <div class="feature" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                <div class="feature" id="pet-card-{{ loop.index }}" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <span style="font-size: 2rem;">
                             {% if pet.stage == "egg" %}&#129361;
@@ -67,7 +67,15 @@
                         </div>
                     </div>
 
-                    <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}" class="secondary-btn" style="text-align: center; margin-top: 0.25rem;">View Profile</a>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+                        <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}" class="secondary-btn" style="text-align: center; flex: 1;">View Profile</a>
+                        <button
+                            onclick="deletePet('{{ pet.repo_owner }}', '{{ pet.repo_name }}', 'pet-card-{{ loop.index }}')"
+                            style="background: none; border: 1px solid #ef4444; color: #ef4444; border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.85rem; cursor: pointer; white-space: nowrap;"
+                            onmouseover="this.style.background='#ef4444';this.style.color='#fff'"
+                            onmouseout="this.style.background='none';this.style.color='#ef4444'"
+                        >&#128465; Delete</button>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -101,6 +109,18 @@
             await fetch('/auth/logout', { method: 'POST' });
             window.location.href = '/';
         });
+
+        async function deletePet(owner, repo, cardId) {
+            if (!confirm(`Delete pet for ${owner}/${repo}? This cannot be undone.`)) return;
+            const resp = await fetch(`/api/v1/pets/${owner}/${repo}`, { method: 'DELETE' });
+            if (resp.ok) {
+                document.getElementById(cardId).remove();
+                const grid = document.querySelector('.feature-grid');
+                if (grid && grid.children.length === 0) location.reload();
+            } else {
+                alert('Failed to delete pet. Please try again.');
+            }
+        }
     </script>
 </body>
 </html>
