@@ -57,6 +57,28 @@ async def get_pets(
     return pets, total
 
 
+async def get_pets_with_owners(
+    db: AsyncSession, page: int = 1, per_page: int = 20
+) -> tuple[list[dict[str, object]], int]:
+    """Get all pets with their owner info, paginated."""
+    from github_tamagotchi.models.user import User
+
+    offset = (page - 1) * per_page
+
+    count_result = await db.execute(select(func.count()).select_from(Pet))
+    total = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(Pet, User)
+        .outerjoin(User, Pet.user_id == User.id)
+        .order_by(Pet.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
+    rows = [{"pet": row.Pet, "owner": row.User} for row in result]
+    return rows, total
+
+
 async def delete_pet(db: AsyncSession, pet: Pet) -> None:
     """Delete a pet."""
     await db.delete(pet)

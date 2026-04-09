@@ -15,6 +15,7 @@ from github_tamagotchi.models import (  # noqa: F401 — ensure all models regis
     Pet,
     PetComment,
     User,
+    WebhookEvent,
 )
 from github_tamagotchi.models.pet import Base
 

@@ -30,6 +30,9 @@
             <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
                 <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
                 <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                {% if user and user.is_admin %}
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                {% endif %}
             </div>
             {% endif %}
             <div class="user-info">
