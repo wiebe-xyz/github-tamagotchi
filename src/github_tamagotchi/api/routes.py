@@ -186,6 +186,23 @@ class CommentCreate(BaseModel):
     body: str = Field(..., min_length=1, max_length=500)
 
 
+class AchievementItem(BaseModel):
+    """A single achievement with unlock status."""
+
+    id: str
+    name: str
+    icon: str
+    description: str
+    unlocked: bool
+    unlocked_at: datetime | None
+
+
+class AchievementsResponse(BaseModel):
+    """Response model for the achievements list."""
+
+    achievements: list[AchievementItem]
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(session: DbSession) -> HealthResponse:
     """Health check endpoint."""
@@ -459,6 +476,45 @@ async def create_comment(
     await session.commit()
     await session.refresh(comment)
     return CommentResponse.model_validate(comment)
+
+
+@router.get("/pets/{repo_owner}/{repo_name}/achievements", response_model=AchievementsResponse)
+async def get_pet_achievements(
+    repo_owner: str,
+    repo_name: str,
+    session: DbSession,
+) -> AchievementsResponse:
+    """Get all achievements for a pet, with unlock status. Public endpoint."""
+    from github_tamagotchi.services.achievements import (
+        ACHIEVEMENT_ORDER,
+        ACHIEVEMENTS,
+    )
+    from github_tamagotchi.services.achievements import (
+        get_pet_achievements as _get_pet_achievements,
+    )
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+
+    achievement_map = await _get_pet_achievements(pet.id, session)
+    items = []
+    for aid in ACHIEVEMENT_ORDER:
+        row = achievement_map[aid]
+        items.append(
+            AchievementItem(
+                id=aid,
+                name=ACHIEVEMENTS[aid]["name"],
+                icon=ACHIEVEMENTS[aid]["icon"],
+                description=ACHIEVEMENTS[aid]["description"],
+                unlocked=row is not None,
+                unlocked_at=row.unlocked_at if row is not None else None,
+            )
+        )
+    return AchievementsResponse(achievements=items)
 
 
 async def _update_images_generated_at(

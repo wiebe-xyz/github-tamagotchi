@@ -1,5 +1,6 @@
 """Database models."""
 
+from github_tamagotchi.models.achievement import PetAchievement
 from github_tamagotchi.models.alert import Alert, AlertSeverity, AlertStatus, AlertType
 from github_tamagotchi.models.comment import PetComment
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
@@ -17,6 +18,7 @@ __all__ = [
     "JobRun",
     "JobStatus",
     "Pet",
+    "PetAchievement",
     "PetComment",
     "PetMood",
     "PetStage",
