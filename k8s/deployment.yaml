@@ -7,6 +7,7 @@ metadata:
     app: github-tamagotchi
     version: blue
 spec:
+  progressDeadlineSeconds: 900
   replicas: 1
   selector:
     matchLabels:
@@ -113,7 +114,7 @@ spec:
               path: /api/v1/health
               port: 8000
             periodSeconds: 10
-            failureThreshold: 18
+            failureThreshold: 36
           livenessProbe:
             httpGet:
               path: /api/v1/health
@@ -136,6 +137,7 @@ metadata:
     app: github-tamagotchi
     version: green
 spec:
+  progressDeadlineSeconds: 900
   replicas: 0
   selector:
     matchLabels:
@@ -242,7 +244,7 @@ spec:
               path: /api/v1/health
               port: 8000
             periodSeconds: 10
-            failureThreshold: 18
+            failureThreshold: 36
           livenessProbe:
             httpGet:
               path: /api/v1/health
