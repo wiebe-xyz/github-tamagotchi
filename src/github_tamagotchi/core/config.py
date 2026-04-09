@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Sentry
+    sentry_dsn: str | None = None
+
     # Alerting
     alerting_enabled: bool = True
     alert_slack_webhook: str | None = None
