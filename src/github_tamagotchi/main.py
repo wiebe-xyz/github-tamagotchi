@@ -37,6 +37,7 @@ from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
+from github_tamagotchi.services.achievements import check_and_unlock_achievements
 from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.github import GitHubService, RateLimitError
 from github_tamagotchi.services.pet_logic import (
@@ -144,6 +145,10 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                             experience=new_experience,
                         )
 
+                    # Store last-known release and contributor snapshots
+                    pet.last_release_count = health.release_count_30d
+                    pet.last_contributor_count = health.contributor_count
+
                     # Update last_fed_at if there was a recent commit
                     if health.last_commit_at:
                         hours_since_commit = (
@@ -168,6 +173,16 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                             pet_name=pet.name,
                             repo=f"{pet.repo_owner}/{pet.repo_name}",
                             cause=cause,
+                        )
+
+                    # Check and unlock achievements based on updated pet state
+                    newly_unlocked = await check_and_unlock_achievements(pet, session)
+                    if newly_unlocked:
+                        logger.info(
+                            "achievements_unlocked",
+                            pet_id=pet.id,
+                            pet_name=pet.name,
+                            achievements=newly_unlocked,
                         )
 
                     updated_count += 1
@@ -376,7 +391,9 @@ OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, user: OptionalUser) -> HTMLResponse:
     """Landing page."""
-    return templates.TemplateResponse(request, "landing.html", {"user": user})
+    return templates.TemplateResponse(
+        request, "landing.html", {"user": user, "base_url": settings.base_url}
+    )
 
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
@@ -488,6 +505,8 @@ async def pet_profile(
             "page_url": page_url,
             "repo_owner": repo_owner,
             "repo_name": repo_name,
+            "base_url": settings.base_url,
+            "now_utc": now,
         },
         headers={"Cache-Control": "public, max-age=60"},
     )
@@ -631,3 +650,72 @@ async def admin_trigger_poll(
     triggered_by = f"manual:{user.github_login}"
     background_tasks.add_task(poll_repositories, triggered_by=triggered_by)
     return RedirectResponse(url="/admin/jobs", status_code=303)
+
+
+@app.get("/admin/achievements", response_class=HTMLResponse)
+async def admin_achievements(
+    request: Request,
+    user: AdminUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Admin page showing achievement statistics."""
+    from sqlalchemy import desc
+
+    from github_tamagotchi.models.achievement import PetAchievement
+    from github_tamagotchi.services.achievements import ACHIEVEMENT_ORDER, ACHIEVEMENTS
+
+    # Total achievements unlocked
+    total_result = await session.execute(
+        select(func.count()).select_from(PetAchievement)
+    )
+    total_unlocked = total_result.scalar() or 0
+
+    # Most commonly unlocked achievements
+    popular_result = await session.execute(
+        select(PetAchievement.achievement_id, func.count().label("count"))
+        .group_by(PetAchievement.achievement_id)
+        .order_by(desc("count"))
+    )
+    popular_rows = popular_result.all()
+    popular = [
+        {
+            "achievement_id": row.achievement_id,
+            "name": ACHIEVEMENTS.get(row.achievement_id, {}).get("name", row.achievement_id),
+            "icon": ACHIEVEMENTS.get(row.achievement_id, {}).get("icon", ""),
+            "count": row.count,
+        }
+        for row in popular_rows
+    ]
+
+    # Recent unlocks (last 20) with pet info
+    recent_result = await session.execute(
+        select(PetAchievement, Pet)
+        .join(Pet, PetAchievement.pet_id == Pet.id)
+        .order_by(PetAchievement.unlocked_at.desc())
+        .limit(20)
+    )
+    recent_unlocks = [
+        {
+            "pet": row.Pet,
+            "achievement_id": row.PetAchievement.achievement_id,
+            "name": ACHIEVEMENTS.get(row.PetAchievement.achievement_id, {}).get(
+                "name", row.PetAchievement.achievement_id
+            ),
+            "icon": ACHIEVEMENTS.get(row.PetAchievement.achievement_id, {}).get("icon", ""),
+            "unlocked_at": row.PetAchievement.unlocked_at,
+        }
+        for row in recent_result
+    ]
+
+    return templates.TemplateResponse(
+        request,
+        "admin_achievements.html",
+        {
+            "user": user,
+            "total_unlocked": total_unlocked,
+            "popular": popular,
+            "recent_unlocks": recent_unlocks,
+            "achievements": ACHIEVEMENTS,
+            "achievement_order": ACHIEVEMENT_ORDER,
+        },
+    )

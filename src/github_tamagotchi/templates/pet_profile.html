@@ -6,18 +6,28 @@
     <title>{{ pet.name }} — {{ repo_owner }}/{{ repo_name }} | GitHub Tamagotchi</title>
 
     <!-- OpenGraph / Social Sharing -->
-    <meta property="og:title" content="{{ pet.name }} — {{ repo_owner }}/{{ repo_name }}">
-    <meta property="og:description" content="{{ pet.name }} is a {{ pet.stage }} feeling {{ pet.mood }}. Health: {{ pet.health }}%, XP: {{ pet.experience }}. Age: {{ age_days }} days.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="{{ page_url }}">
-    <meta property="og:image" content="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}">
     <meta property="og:site_name" content="GitHub Tamagotchi">
+    <meta property="og:title" content="{{ pet.name }} the {{ pet.stage | capitalize }} · GitHub Tamagotchi">
+    {% if pet.is_dead %}
+    <meta property="og:description" content="{{ pet.name }} has passed away. 🪦 {{ repo_owner }}/{{ repo_name }} needs some love.">
+    {% else %}
+    <meta property="og:description" content="{{ pet.name }} is a {{ pet.mood }} {{ pet.stage }} with {{ pet.health }}HP, watching over {{ repo_owner }}/{{ repo_name }}.">
+    {% endif %}
+    <meta property="og:image" content="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg">
+    <meta property="og:image:width" content="120">
+    <meta property="og:image:height" content="80">
+    <meta property="og:url" content="{{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }}">
 
     <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ pet.name }} — {{ repo_owner }}/{{ repo_name }}">
-    <meta name="twitter:description" content="{{ pet.name }} is a {{ pet.stage }} feeling {{ pet.mood }}. Health: {{ pet.health }}%, XP: {{ pet.experience }}. Age: {{ age_days }} days.">
-    <meta name="twitter:image" content="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{ pet.name }} the {{ pet.stage | capitalize }} · GitHub Tamagotchi">
+    {% if pet.is_dead %}
+    <meta name="twitter:description" content="{{ pet.name }} has passed away. 🪦 {{ repo_owner }}/{{ repo_name }} needs some love.">
+    {% else %}
+    <meta name="twitter:description" content="{{ pet.name }} is a {{ pet.mood }} {{ pet.stage }} with {{ pet.health }}HP, watching over {{ repo_owner }}/{{ repo_name }}.">
+    {% endif %}
+    <meta name="twitter:image" content="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg">
 
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -78,7 +88,12 @@
                             {{ repo_owner }}/{{ repo_name }}
                         </a>
                     </div>
-                    <h1 class="profile-name">{{ pet.name }}</h1>
+                    <h1 class="profile-name">
+                        {{ pet.name }}
+                        {% if pet.generation > 1 %}
+                        <span style="display:inline-block; margin-left:0.5rem; font-size:0.55em; font-weight:600; background: linear-gradient(135deg, #b8860b, #ffd700); color:#1a1a1a; padding:0.2em 0.6em; border-radius:99px; vertical-align:middle; letter-spacing:0.03em;">Gen {{ pet.generation }}</span>
+                        {% endif %}
+                    </h1>
 
                     {% if pet.is_dead %}
                     <p class="profile-stage-label" style="color: #7f8c8d;">Deceased</p>
@@ -104,6 +119,33 @@
                         — {{ pet.created_at.year }}–{{ pet.died_at.year }}
                         {% endif %}
                     </p>
+
+                    {% if user and user.id == pet.user_id %}
+                    {# Resurrection section — only shown to the owner #}
+                    {% if pet.died_at %}
+                    {% set days_since_death = ((now_utc - pet.died_at).total_seconds() / 86400) | int %}
+                    {% set mourning_days = 7 %}
+                    {% set days_remaining = mourning_days - days_since_death %}
+                    <div id="resurrection-section" style="margin-top:1.5rem; padding:1.25rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1);">
+                        {% if days_remaining > 0 %}
+                        <p style="color:#9e9e9e; font-size:0.95rem; margin-bottom:0.75rem;">Your pet must rest. Resurrection available in <strong style="color:#bdbdbd;">{{ days_remaining }} day{% if days_remaining != 1 %}s{% endif %}</strong>.</p>
+                        <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:8px; overflow:hidden;">
+                            <div style="background: linear-gradient(90deg, #b8860b, #ffd700); height:100%; width:{{ [((days_since_death / mourning_days) * 100) | int, 100] | min }}%;"></div>
+                        </div>
+                        {% else %}
+                        <p style="color:rgba(255,255,255,0.75); font-size:0.95rem; margin-bottom:1rem;">The spirit stirs… Are you ready to bring <strong>{{ pet.name }}</strong> back?</p>
+                        <button
+                            id="resurrect-btn"
+                            style="background: linear-gradient(135deg, #b8860b, #ffd700); color:#1a1a1a; border:none; padding:0.6rem 1.5rem; border-radius:8px; font-size:1rem; font-weight:700; cursor:pointer; letter-spacing:0.02em;"
+                            onmouseover="this.style.opacity='0.85'"
+                            onmouseout="this.style.opacity='1'"
+                        >&#10024; Resurrect {{ pet.name }}</button>
+                        <p id="resurrect-error" style="color:#e53935; font-size:0.875rem; display:none; margin-top:0.5rem;"></p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endif %}
+
                     {% else %}
                     <p class="profile-stage-label">{{ pet.stage | capitalize }}</p>
 
@@ -126,6 +168,14 @@
                         <div class="stat-card">
                             <div class="stat-label">Age</div>
                             <div class="stat-value">{{ age_days }} day{% if age_days != 1 %}s{% endif %}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">&#128640; Releases (30d)</div>
+                            <div class="stat-value">{{ pet.last_release_count }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">&#128101; Contributors</div>
+                            <div class="stat-value">{{ pet.last_contributor_count }}</div>
                         </div>
                     </div>
 
@@ -217,6 +267,14 @@
                 <a href="/auth/github" class="cta-button large">Login with GitHub</a>
             </section>
             {% endif %}
+
+            <!-- Achievements Section -->
+            <section class="profile-section" id="achievements-section" style="margin-top: 2rem;">
+                <h2>Achievements</h2>
+                <div id="achievements-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 1rem;">
+                    <p id="achievements-loading" style="color: rgba(255,255,255,0.5); font-size: 0.9rem; grid-column: 1/-1;">Loading achievements&#8230;</p>
+                </div>
+            </section>
 
             <!-- Comments Section -->
             <section class="profile-section" id="comments-section" style="margin-top: 2rem;">
@@ -433,6 +491,91 @@
                 }
             });
         }
+
+        // Resurrect button
+        const resurrectBtn = document.getElementById('resurrect-btn');
+        const resurrectError = document.getElementById('resurrect-error');
+        if (resurrectBtn) {
+            resurrectBtn.addEventListener('click', async () => {
+                resurrectBtn.disabled = true;
+                resurrectBtn.textContent = 'Resurrecting…';
+                resurrectError.style.display = 'none';
+                try {
+                    const resp = await fetch(
+                        '/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/resurrect',
+                        { method: 'POST' }
+                    );
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        resurrectError.textContent = err.detail || 'Resurrection failed.';
+                        resurrectError.style.display = 'block';
+                        resurrectBtn.disabled = false;
+                        resurrectBtn.textContent = '✨ Resurrect {{ pet.name }}';
+                        return;
+                    }
+                    window.location.reload();
+                } catch (e) {
+                    resurrectError.textContent = 'Network error, please try again.';
+                    resurrectError.style.display = 'block';
+                    resurrectBtn.disabled = false;
+                    resurrectBtn.textContent = '✨ Resurrect {{ pet.name }}';
+                }
+            });
+        }
+
+        // Achievements
+        const ACHIEVEMENTS_API = '/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/achievements';
+
+        function renderAchievement(a) {
+            const card = document.createElement('div');
+            const opacity = a.unlocked ? '1' : '0.35';
+            card.style.cssText = `
+                background: rgba(255,255,255,0.05);
+                border: 1px solid rgba(255,255,255,${a.unlocked ? '0.15' : '0.06'});
+                border-radius: 10px;
+                padding: 0.75rem;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 0.3rem;
+                opacity: ${opacity};
+            `;
+            const iconEl = document.createElement('div');
+            iconEl.style.cssText = 'font-size: 1.75rem; line-height: 1;';
+            iconEl.textContent = a.unlocked ? a.icon : '🔒';
+            const nameEl = document.createElement('div');
+            nameEl.style.cssText = 'font-size: 0.78rem; font-weight: 600; color: rgba(255,255,255,0.9);';
+            nameEl.textContent = a.name;
+            card.appendChild(iconEl);
+            card.appendChild(nameEl);
+            if (a.unlocked && a.unlocked_at) {
+                const dateEl = document.createElement('div');
+                dateEl.style.cssText = 'font-size: 0.68rem; color: rgba(255,255,255,0.45);';
+                const d = new Date(a.unlocked_at);
+                dateEl.textContent = d.toLocaleDateString();
+                card.appendChild(dateEl);
+            }
+            card.title = a.description;
+            return card;
+        }
+
+        async function loadAchievements() {
+            const grid = document.getElementById('achievements-grid');
+            const loading = document.getElementById('achievements-loading');
+            try {
+                const resp = await fetch(ACHIEVEMENTS_API);
+                if (!resp.ok) throw new Error('Failed to load');
+                const data = await resp.json();
+                if (loading) loading.remove();
+                grid.innerHTML = '';
+                data.achievements.forEach(a => grid.appendChild(renderAchievement(a)));
+            } catch {
+                if (loading) loading.textContent = 'Could not load achievements.';
+            }
+        }
+
+        loadAchievements();
     </script>
 </body>
 </html>
