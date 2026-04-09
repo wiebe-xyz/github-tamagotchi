@@ -45,6 +45,7 @@ from github_tamagotchi.services.pet_logic import (
     calculate_health_delta,
     calculate_mood,
     get_next_stage,
+    update_commit_streak,
 )
 
 # Set up paths for templates and static files
@@ -99,6 +100,8 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
 
             for pet in pets:
                 try:
+                    now = datetime.now(UTC)
+
                     # Fetch health metrics from GitHub
                     health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
 
@@ -117,7 +120,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     pet.health = new_health
                     pet.experience = new_experience
                     pet.mood = new_mood.value
-                    pet.last_checked_at = datetime.now(UTC)
+                    pet.last_checked_at = now
 
                     # Handle evolution
                     if new_stage != current_stage:
@@ -136,10 +139,13 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     # Update last_fed_at if there was a recent commit
                     if health.last_commit_at:
                         hours_since_commit = (
-                            datetime.now(UTC) - health.last_commit_at
+                            now - health.last_commit_at
                         ).total_seconds() / 3600
                         if hours_since_commit < 24:
-                            pet.last_fed_at = datetime.now(UTC)
+                            pet.last_fed_at = now
+
+                    # Update commit streak
+                    update_commit_streak(pet, health, now)
 
                     updated_count += 1
 
