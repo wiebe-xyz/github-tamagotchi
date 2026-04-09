@@ -88,7 +88,12 @@
                             {{ repo_owner }}/{{ repo_name }}
                         </a>
                     </div>
-                    <h1 class="profile-name">{{ pet.name }}</h1>
+                    <h1 class="profile-name">
+                        {{ pet.name }}
+                        {% if pet.generation > 1 %}
+                        <span style="display:inline-block; margin-left:0.5rem; font-size:0.55em; font-weight:600; background: linear-gradient(135deg, #b8860b, #ffd700); color:#1a1a1a; padding:0.2em 0.6em; border-radius:99px; vertical-align:middle; letter-spacing:0.03em;">Gen {{ pet.generation }}</span>
+                        {% endif %}
+                    </h1>
 
                     {% if pet.is_dead %}
                     <p class="profile-stage-label" style="color: #7f8c8d;">Deceased</p>
@@ -114,6 +119,33 @@
                         — {{ pet.created_at.year }}–{{ pet.died_at.year }}
                         {% endif %}
                     </p>
+
+                    {% if user and user.id == pet.user_id %}
+                    {# Resurrection section — only shown to the owner #}
+                    {% if pet.died_at %}
+                    {% set days_since_death = ((now_utc - pet.died_at).total_seconds() / 86400) | int %}
+                    {% set mourning_days = 7 %}
+                    {% set days_remaining = mourning_days - days_since_death %}
+                    <div id="resurrection-section" style="margin-top:1.5rem; padding:1.25rem; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1);">
+                        {% if days_remaining > 0 %}
+                        <p style="color:#9e9e9e; font-size:0.95rem; margin-bottom:0.75rem;">Your pet must rest. Resurrection available in <strong style="color:#bdbdbd;">{{ days_remaining }} day{% if days_remaining != 1 %}s{% endif %}</strong>.</p>
+                        <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:8px; overflow:hidden;">
+                            <div style="background: linear-gradient(90deg, #b8860b, #ffd700); height:100%; width:{{ [((days_since_death / mourning_days) * 100) | int, 100] | min }}%;"></div>
+                        </div>
+                        {% else %}
+                        <p style="color:rgba(255,255,255,0.75); font-size:0.95rem; margin-bottom:1rem;">The spirit stirs… Are you ready to bring <strong>{{ pet.name }}</strong> back?</p>
+                        <button
+                            id="resurrect-btn"
+                            style="background: linear-gradient(135deg, #b8860b, #ffd700); color:#1a1a1a; border:none; padding:0.6rem 1.5rem; border-radius:8px; font-size:1rem; font-weight:700; cursor:pointer; letter-spacing:0.02em;"
+                            onmouseover="this.style.opacity='0.85'"
+                            onmouseout="this.style.opacity='1'"
+                        >&#10024; Resurrect {{ pet.name }}</button>
+                        <p id="resurrect-error" style="color:#e53935; font-size:0.875rem; display:none; margin-top:0.5rem;"></p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endif %}
+
                     {% else %}
                     <p class="profile-stage-label">{{ pet.stage | capitalize }}</p>
 
@@ -440,6 +472,37 @@
                     feedFeedback.style.display = 'inline';
                     feedBtn.disabled = false;
                     setTimeout(() => { feedFeedback.style.display = 'none'; }, 4000);
+                }
+            });
+        }
+
+        // Resurrect button
+        const resurrectBtn = document.getElementById('resurrect-btn');
+        const resurrectError = document.getElementById('resurrect-error');
+        if (resurrectBtn) {
+            resurrectBtn.addEventListener('click', async () => {
+                resurrectBtn.disabled = true;
+                resurrectBtn.textContent = 'Resurrecting\u2026';
+                resurrectError.style.display = 'none';
+                try {
+                    const resp = await fetch(
+                        '/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/resurrect',
+                        { method: 'POST' }
+                    );
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        resurrectError.textContent = err.detail || 'Resurrection failed.';
+                        resurrectError.style.display = 'block';
+                        resurrectBtn.disabled = false;
+                        resurrectBtn.innerHTML = '&#10024; Resurrect {{ pet.name }}';
+                        return;
+                    }
+                    window.location.reload();
+                } catch (e) {
+                    resurrectError.textContent = 'Network error, please try again.';
+                    resurrectError.style.display = 'block';
+                    resurrectBtn.disabled = false;
+                    resurrectBtn.innerHTML = '&#10024; Resurrect {{ pet.name }}';
                 }
             });
         }

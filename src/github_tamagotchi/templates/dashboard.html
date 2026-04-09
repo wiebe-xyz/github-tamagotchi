@@ -51,7 +51,12 @@
                             {% endif %}
                         </span>
                         <div>
-                            <div style="font-weight: 600; font-size: 1.05rem;">{{ pet.name }}</div>
+                            <div style="font-weight: 600; font-size: 1.05rem;">
+                                {{ pet.name }}
+                                {% if pet.generation > 1 %}
+                                <span style="display:inline-block; margin-left:0.4rem; font-size:0.65em; font-weight:600; background: linear-gradient(135deg, #b8860b, #ffd700); color:#1a1a1a; padding:0.15em 0.5em; border-radius:99px; vertical-align:middle; letter-spacing:0.03em;">Gen {{ pet.generation }}</span>
+                                {% endif %}
+                            </div>
                             <div style="color: var(--text-muted); font-size: 0.85rem;">{{ pet.repo_owner }}/{{ pet.repo_name }}</div>
                         </div>
                     </div>

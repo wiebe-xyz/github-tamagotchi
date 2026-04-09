@@ -85,3 +85,8 @@ exclude_lines = [
 ]
 show_missing = true
 fail_under = 70
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.0",
+]

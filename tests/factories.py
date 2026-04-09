@@ -20,6 +20,11 @@ def make_pet(
     commit_streak: int = 0,
     longest_streak: int = 0,
     last_streak_date: datetime | None = None,
+    is_dead: bool = False,
+    died_at: datetime | None = None,
+    cause_of_death: str | None = None,
+    grace_period_started: datetime | None = None,
+    generation: int = 1,
 ) -> Pet:
     """Create a Pet instance with sensible defaults."""
     return Pet(
@@ -35,6 +40,11 @@ def make_pet(
         commit_streak=commit_streak,
         longest_streak=longest_streak,
         last_streak_date=last_streak_date,
+        is_dead=is_dead,
+        died_at=died_at,
+        cause_of_death=cause_of_death,
+        grace_period_started=grace_period_started,
+        generation=generation,
     )
 
 
