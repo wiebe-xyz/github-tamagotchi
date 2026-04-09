@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job History - Admin - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .jobs-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        .jobs-table th,
+        .jobs-table td {
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--surface-light);
+        }
+        .jobs-table th {
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .jobs-table tr:hover td {
+            background: var(--surface-light);
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status-running  { background: #1d4ed8; color: #bfdbfe; }
+        .status-success  { background: #166534; color: #bbf7d0; }
+        .status-failed   { background: #7f1d1d; color: #fecaca; }
+        .empty-state {
+            text-align: center;
+            padding: 4rem 0;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                <a href="/admin/pets" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Pets</a>
+                <a href="/admin/webhooks" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Webhooks</a>
+                <a href="/admin/jobs" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem; font-weight:600;">Jobs</a>
+            </div>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+                <h1 style="font-size: 1.75rem; font-weight: 700;">Job History</h1>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <span style="color: var(--text-muted); font-size: 0.875rem;">Last 50 runs</span>
+                    <form method="post" action="/admin/jobs/poll/trigger">
+                        <button type="submit" class="cta-button" style="padding: 0.5rem 1.25rem; font-size: 0.9rem; cursor: pointer;">
+                            Run Poll Now
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            {% if job_runs %}
+            <div style="overflow-x: auto;">
+                <table class="jobs-table">
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Duration</th>
+                            <th>Status</th>
+                            <th>Pets Processed</th>
+                            <th>Errors</th>
+                            <th>Triggered By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for run in job_runs %}
+                        <tr>
+                            <td style="white-space: nowrap; color: var(--text-muted);">
+                                {{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else '—' }}
+                            </td>
+                            <td style="white-space: nowrap;">
+                                {% if run.completed_at and run.started_at %}
+                                    {% set secs = (run.completed_at - run.started_at).total_seconds() | int %}
+                                    {% if secs < 60 %}
+                                        {{ secs }}s
+                                    {% else %}
+                                        {{ (secs // 60) }}m {{ (secs % 60) }}s
+                                    {% endif %}
+                                {% elif run.status == "running" %}
+                                    <span style="color: var(--text-muted);">in progress</span>
+                                {% else %}
+                                    <span style="color: var(--text-muted);">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="status-badge status-{{ run.status }}">{{ run.status }}</span>
+                            </td>
+                            <td>{{ run.pets_processed }}</td>
+                            <td>
+                                {% if run.errors_count > 0 %}
+                                <span style="color: #ef4444; font-weight: 600;">{{ run.errors_count }}</span>
+                                {% if run.error_details %}
+                                <span title="{{ run.error_details }}" style="cursor: help; color: var(--text-muted); font-size: 0.8rem; margin-left: 0.25rem;">&#9432;</span>
+                                {% endif %}
+                                {% else %}
+                                <span style="color: var(--text-muted);">0</span>
+                                {% endif %}
+                            </td>
+                            <td style="color: var(--text-muted); font-size: 0.85rem;">{{ run.triggered_by }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">&#128336;</div>
+                <p style="font-size: 1.1rem;">No job runs recorded yet.</p>
+                <p style="color: var(--text-muted); margin-top: 0.5rem;">The first poll run will appear here.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>
