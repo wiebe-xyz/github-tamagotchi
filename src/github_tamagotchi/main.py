@@ -491,6 +491,7 @@ async def pet_profile(
             "repo_owner": repo_owner,
             "repo_name": repo_name,
             "base_url": settings.base_url,
+            "now_utc": now,
         },
         headers={"Cache-Control": "public, max-age=60"},
     )

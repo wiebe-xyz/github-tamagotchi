@@ -2,7 +2,7 @@
 
 import logging
 import math
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -16,7 +16,7 @@ from github_tamagotchi.api.auth import get_current_user, get_optional_user
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.crud import pet as pet_crud
-from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
@@ -81,6 +81,10 @@ class PetResponse(BaseModel):
     style: str
     commit_streak: int
     longest_streak: int
+    generation: int
+    is_dead: bool
+    died_at: datetime | None
+    cause_of_death: str | None
     created_at: datetime
     updated_at: datetime
     last_fed_at: datetime | None
@@ -312,6 +316,69 @@ async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> FeedR
         message=f"{updated_pet.name} has been fed!",
         pet=PetResponse.model_validate(updated_pet),
     )
+
+
+@router.post("/pets/{repo_owner}/{repo_name}/resurrect", response_model=PetResponse)
+async def resurrect_pet(
+    repo_owner: str,
+    repo_name: str,
+    session: DbSession,
+    user: Annotated[User, Depends(get_current_user)],
+) -> PetResponse:
+    """Resurrect a dead pet after the mandatory 7-day mourning period."""
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    if not pet.is_dead:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pet is not dead and cannot be resurrected",
+        )
+    if pet.user_id != user.id and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not own this pet",
+        )
+    if pet.died_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pet death timestamp is missing",
+        )
+    now = datetime.now(UTC)
+    died_at = pet.died_at
+    if died_at.tzinfo is None:
+        died_at = died_at.replace(tzinfo=UTC)
+    days_elapsed = (now - died_at).total_seconds() / 86400
+    mourning_days = 7
+    if days_elapsed < mourning_days:
+        days_remaining = math.ceil(mourning_days - days_elapsed)
+        day_word = "day" if days_remaining == 1 else "days"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Your pet must rest for {days_remaining} more {day_word} before resurrection",
+        )
+    # Perform resurrection
+    pet.is_dead = False
+    pet.died_at = None
+    pet.cause_of_death = None
+    pet.grace_period_started = None
+    pet.stage = PetStage.EGG.value
+    pet.health = 60
+    pet.experience = 0
+    pet.mood = PetMood.CONTENT.value
+    pet.generation += 1
+    await session.commit()
+    await session.refresh(pet)
+    # Enqueue egg stage image generation for the new generation
+    try:
+        get_image_provider()
+        await image_queue.create_job(session, pet.id, PetStage.EGG.value)
+    except ValueError:
+        pass  # no valid provider configured, skip
+    return PetResponse.model_validate(pet)
 
 
 @router.get("/pets/{repo_owner}/{repo_name}/badge.svg", response_class=Response)

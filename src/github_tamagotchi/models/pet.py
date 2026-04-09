@@ -93,6 +93,11 @@ class Pet(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Resurrection / generation tracking
+    generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"
