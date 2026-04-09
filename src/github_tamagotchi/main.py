@@ -11,8 +11,8 @@ from typing import Annotated
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
@@ -23,7 +23,7 @@ from github_tamagotchi.api.alerts import alert_router
 from github_tamagotchi.api.auth import auth_router, get_optional_user
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
-from github_tamagotchi.core.database import async_session_factory, close_database
+from github_tamagotchi.core.database import async_session_factory, close_database, get_session
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
@@ -285,3 +285,44 @@ OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 async def root(request: Request, user: OptionalUser) -> HTMLResponse:
     """Landing page."""
     return templates.TemplateResponse(request, "landing.html", {"user": user})
+
+
+DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request, user: OptionalUser) -> Response:
+    """Repo selection page for pet registration."""
+    if not user:
+        return RedirectResponse(url="/auth/github", status_code=302)
+    return templates.TemplateResponse(request, "register.html", {"user": user})
+
+
+@app.get("/register/complete", response_class=HTMLResponse)
+async def register_complete_page(
+    request: Request,
+    user: OptionalUser,
+    owner: str = Query(...),
+    repo: str = Query(...),
+    pet_name: str = Query(...),
+) -> Response:
+    """Success page shown after pet registration with embed code."""
+    if not user:
+        return RedirectResponse(url="/auth/github", status_code=302)
+    base_url = str(request.base_url).rstrip("/")
+    embed_image_url = f"{base_url}/api/v1/pets/{owner}/{repo}/image/egg"
+    pet_page_url = f"{base_url}/pet/{owner}/{repo}"
+    embed_code = f"[![{pet_name}]({embed_image_url})]({pet_page_url})"
+    return templates.TemplateResponse(
+        request,
+        "register_complete.html",
+        {
+            "user": user,
+            "owner": owner,
+            "repo": repo,
+            "pet_name": pet_name,
+            "embed_code": embed_code,
+            "embed_image_url": embed_image_url,
+            "pet_page_url": pet_page_url,
+        },
+    )

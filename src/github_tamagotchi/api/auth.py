@@ -127,7 +127,7 @@ async def login_github(response: Response) -> Response:
     params = {
         "client_id": settings.github_oauth_client_id,
         "redirect_uri": settings.oauth_redirect_uri,
-        "scope": "read:user",
+        "scope": "repo,read:user",
         "state": state,
     }
     redirect_url = f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
@@ -227,7 +227,7 @@ async def oauth_callback(
 
     response = Response(
         status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-        headers={"location": "/"},
+        headers={"location": "/register"},
     )
     response.set_cookie(
         key="session_token",
