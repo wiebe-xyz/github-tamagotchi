@@ -51,7 +51,7 @@ def generate_badge_svg(name: str, stage: str, mood: str, health: int) -> str:
     accent = MOOD_COLOR.get(mood, "#3498db")
     hp_color = _health_color(health)
     health_pct = max(0, min(100, health))
-    health_bar_width = round(health_pct * 0.8)  # 80px max bar width
+    health_bar_width = round(health_pct * 0.65)  # 65px max bar width
 
     # Truncate name to keep badge width manageable
     display_name = name if len(name) <= 14 else name[:13] + "…"
