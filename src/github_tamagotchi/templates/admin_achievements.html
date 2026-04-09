@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Achievements - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                <a href="/admin/pets" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Pets</a>
+                <a href="/admin/achievements" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem; font-weight:600;">Achievements</a>
+            </div>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <h1 style="font-size: 1.75rem; font-weight: 700; margin-bottom: 2rem;">Achievements</h1>
+
+            <!-- Summary -->
+            <div class="feature-grid" style="margin-bottom: 2.5rem; grid-template-columns: repeat(2, 1fr);">
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--primary);">{{ total_unlocked }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Total Achievements Unlocked</div>
+                </div>
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: var(--secondary);">{{ achievement_order | length }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Distinct Achievement Types</div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2.5rem;">
+
+                <!-- Most Popular -->
+                <div class="feature" style="padding: 1.5rem;">
+                    <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">Most Commonly Unlocked</h2>
+                    {% if popular %}
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="text-align: left; padding: 0.4rem 0; color: var(--text-muted); font-weight: 500;">Achievement</th>
+                                <th style="text-align: right; padding: 0.4rem 0; color: var(--text-muted); font-weight: 500;">Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in popular %}
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.5rem 0;">
+                                    {{ item.icon }} {{ item.name }}
+                                </td>
+                                <td style="text-align: right; padding: 0.5rem 0; font-weight: 600;">{{ item.count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p style="color: var(--text-muted); font-size: 0.9rem;">No achievements unlocked yet.</p>
+                    {% endif %}
+                </div>
+
+                <!-- Achievement catalogue -->
+                <div class="feature" style="padding: 1.5rem;">
+                    <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">All Achievements</h2>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="text-align: left; padding: 0.4rem 0; color: var(--text-muted); font-weight: 500;">Achievement</th>
+                                <th style="text-align: left; padding: 0.4rem 0; color: var(--text-muted); font-weight: 500;">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for aid in achievement_order %}
+                            {% set a = achievements[aid] %}
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.45rem 0; white-space: nowrap;">{{ a.icon }} {{ a.name }}</td>
+                                <td style="padding: 0.45rem 0; color: rgba(255,255,255,0.6); font-size: 0.8rem;">{{ a.description }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recent Unlocks -->
+            <div class="feature" style="padding: 1.5rem; margin-bottom: 2rem;">
+                <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">Recent Unlocks</h2>
+                {% if recent_unlocks %}
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <th style="text-align: left; padding: 0.5rem 0.5rem; color: var(--text-muted); font-weight: 500;">Pet</th>
+                            <th style="text-align: left; padding: 0.5rem 0.5rem; color: var(--text-muted); font-weight: 500;">Achievement</th>
+                            <th style="text-align: left; padding: 0.5rem 0.5rem; color: var(--text-muted); font-weight: 500;">Unlocked</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in recent_unlocks %}
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 0.6rem 0.5rem;">
+                                <a href="/pet/{{ item.pet.repo_owner }}/{{ item.pet.repo_name }}" style="color: rgba(255,255,255,0.9); text-decoration: none; font-weight: 500;">
+                                    {{ item.pet.name }}
+                                </a>
+                                <div style="color: var(--text-muted); font-size: 0.8rem;">{{ item.pet.repo_owner }}/{{ item.pet.repo_name }}</div>
+                            </td>
+                            <td style="padding: 0.6rem 0.5rem;">{{ item.icon }} {{ item.name }}</td>
+                            <td style="padding: 0.6rem 0.5rem; color: rgba(255,255,255,0.6); font-size: 0.85rem;">
+                                {{ item.unlocked_at.strftime('%Y-%m-%d %H:%M') if item.unlocked_at else '&#8212;' }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p style="color: var(--text-muted); font-size: 0.9rem;">No achievements unlocked yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>
