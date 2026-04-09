@@ -368,10 +368,10 @@ async def pet_profile(
     now = datetime.now(UTC)
     raw_activity: list[tuple[datetime, str, str]] = []
     if pet.last_fed_at:
-        raw_activity.append((pet.last_fed_at, "Fed", "&#127858;"))
+        raw_activity.append((pet.last_fed_at, "Fed", "🍖"))
     if pet.last_checked_at:
-        raw_activity.append((pet.last_checked_at, "Health checked", "&#129657;"))
-    raw_activity.append((pet.created_at, "Pet created", "&#129381;"))
+        raw_activity.append((pet.last_checked_at, "Health checked", "🩺"))
+    raw_activity.append((pet.created_at, "Pet created", "🥚"))
     raw_activity.sort(key=lambda x: x[0], reverse=True)
     activity_items = [
         {"event": ev, "timestamp": ts, "icon": icon}

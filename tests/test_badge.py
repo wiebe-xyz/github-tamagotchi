@@ -41,14 +41,14 @@ class TestGenerateBadgeSvg:
         """Health bar width is proportional to health value."""
         svg_full = generate_badge_svg("X", "egg", "content", 100)
         svg_low = generate_badge_svg("X", "egg", "content", 10)
-        # Full health: width=80; 10% health: width=8
-        assert 'width="80"' in svg_full
-        assert 'width="8"' in svg_low
+        # Full health: width=65; 10% health: width=6
+        assert 'width="65"' in svg_full
+        assert 'width="6"' in svg_low
 
     def test_health_clamped(self) -> None:
         """Health below 0 or above 100 is clamped."""
         svg_over = generate_badge_svg("X", "egg", "content", 200)
-        assert 'width="80"' in svg_over  # clamped to 100 → width 80
+        assert 'width="65"' in svg_over  # clamped to 100 → width 65
 
         svg_under = generate_badge_svg("X", "egg", "content", -10)
         assert 'width="0"' in svg_under
