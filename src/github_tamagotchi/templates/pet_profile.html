@@ -78,9 +78,9 @@
                         <div class="stat-card">
                             <div class="stat-label">Health</div>
                             <div class="stat-bar-wrap">
-                                <div class="stat-bar health-bar" style="width: {{ pet.health }}%"></div>
+                                <div class="stat-bar health-bar" id="health-bar" style="width: {{ pet.health }}%"></div>
                             </div>
-                            <div class="stat-value">{{ pet.health }}%</div>
+                            <div class="stat-value" id="health-value">{{ pet.health }}%</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Experience</div>
@@ -95,6 +95,18 @@
                             <div class="stat-value">{{ age_days }} day{% if age_days != 1 %}s{% endif %}</div>
                         </div>
                     </div>
+
+                    {% if user %}
+                    <!-- Feed button -->
+                    <div class="feed-row" style="margin-bottom: 1rem;">
+                        <button
+                            id="feed-btn"
+                            class="cta-button"
+                            style="padding: 0.5rem 1.25rem; font-size: 1rem; cursor: pointer;"
+                        >🍖 Feed</button>
+                        <span id="feed-feedback" style="margin-left: 0.75rem; font-size: 0.9rem; color: #4caf50; display: none;"></span>
+                    </div>
+                    {% endif %}
 
                     <!-- Share buttons -->
                     <div class="share-row">
@@ -212,6 +224,50 @@
             logoutBtn.addEventListener('click', async () => {
                 await fetch('/auth/logout', { method: 'POST' });
                 window.location.reload();
+            });
+        }
+
+        // Feed button
+        const feedBtn = document.getElementById('feed-btn');
+        const feedFeedback = document.getElementById('feed-feedback');
+        if (feedBtn) {
+            feedBtn.addEventListener('click', async () => {
+                feedBtn.disabled = true;
+                feedFeedback.style.display = 'none';
+                try {
+                    const resp = await fetch(
+                        '/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/feed',
+                        { method: 'POST' }
+                    );
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        feedFeedback.style.color = '#e53935';
+                        feedFeedback.textContent = err.detail || 'Error feeding pet.';
+                        feedFeedback.style.display = 'inline';
+                        feedBtn.disabled = false;
+                        setTimeout(() => { feedFeedback.style.display = 'none'; }, 4000);
+                        return;
+                    }
+                    const data = await resp.json();
+                    const newHealth = data.pet.health;
+                    const healthBar = document.getElementById('health-bar');
+                    const healthValue = document.getElementById('health-value');
+                    if (healthBar) healthBar.style.width = newHealth + '%';
+                    if (healthValue) healthValue.textContent = newHealth + '%';
+                    feedFeedback.style.color = '#4caf50';
+                    feedFeedback.textContent = 'Fed! +10 health ❤️';
+                    feedFeedback.style.display = 'inline';
+                    setTimeout(() => {
+                        feedFeedback.style.display = 'none';
+                        feedBtn.disabled = false;
+                    }, 5000);
+                } catch (e) {
+                    feedFeedback.style.color = '#e53935';
+                    feedFeedback.textContent = 'Network error, please try again.';
+                    feedFeedback.style.display = 'inline';
+                    feedBtn.disabled = false;
+                    setTimeout(() => { feedFeedback.style.display = 'none'; }, 4000);
+                }
             });
         }
     </script>
