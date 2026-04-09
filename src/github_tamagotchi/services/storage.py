@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 from minio import Minio
 from minio.error import S3Error
+from PIL import Image
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.models.pet import PetStage
@@ -18,6 +19,20 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 _VALID_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def remove_white_background(image_bytes: bytes, threshold: int = 240) -> bytes:
+    """Convert near-white pixels to transparent in a PNG."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    pixels = list(img.getdata())
+    new_pixels = [
+        (r, g, b, 0) if r > threshold and g > threshold and b > threshold else (r, g, b, a)
+        for r, g, b, a in pixels
+    ]
+    img.putdata(new_pixels)
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
 
 
 def _validate_path_component(value: str, name: str) -> None:
@@ -98,12 +113,13 @@ class StorageService:
 
         try:
             await self.ensure_bucket_exists()
+            processed = remove_white_background(image_data)
             await asyncio.to_thread(
                 self.client.put_object,
                 self.bucket,
                 object_path,
-                io.BytesIO(image_data),
-                len(image_data),
+                io.BytesIO(processed),
+                len(processed),
                 "image/png",
             )
             logger.info(

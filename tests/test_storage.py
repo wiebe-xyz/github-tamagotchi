@@ -1,11 +1,21 @@
 """Tests for MinIO/S3 storage service."""
 
+import io
 from unittest.mock import MagicMock, patch
 
 import pytest
 from minio.error import S3Error
+from PIL import Image
 
 from github_tamagotchi.services.storage import StorageService
+
+
+def _make_png(width: int = 2, height: int = 2) -> bytes:
+    """Create a minimal valid PNG image for testing."""
+    img = Image.new("RGB", (width, height), color=(255, 255, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 @pytest.fixture
@@ -89,9 +99,9 @@ class TestStorageService:
     async def test_upload_image(
         self, storage_service: StorageService, mock_minio_client: MagicMock
     ) -> None:
-        """Test image upload."""
+        """Test image upload with background removal."""
         mock_minio_client.bucket_exists.return_value = True
-        image_data = b"fake png data"
+        image_data = _make_png()
 
         path = await storage_service.upload_image("owner", "repo", "egg", image_data)
 
