@@ -91,6 +91,16 @@ uv run uvicorn github_tamagotchi.main:app --reload
 # http://localhost:8000/mcp/mcp
 ```
 
+## Cost Reference
+
+Image generation uses OpenRouter (currently `google/gemini-2.5-flash-image`).
+
+| Operation | Cost |
+|-----------|------|
+| Pet image generation (1024x1024 PNG) | ~$0.03 per image |
+
+Images are generated once per pet per stage and cached in MinIO. With 6 evolution stages, a single pet costs ~$0.18 in total image generation over its lifetime. The landing page serves cached images with 24h browser cache headers — no regeneration on page loads.
+
 ## Deployment
 
 Deployed to k3s cluster at `nijmegen.wiebe.xyz`. See `k8s/` directory for manifests.

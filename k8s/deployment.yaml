@@ -79,6 +79,28 @@ spec:
               value: "tamagotchi"
             - name: MINIO_SECURE
               value: "false"
+            - name: GITHUB_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-id
+            - name: GITHUB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-secret
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: jwt-secret-key
+            - name: TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: token-encryption-key
+            - name: OAUTH_REDIRECT_URI
+              value: "https://tamagotchi.nijmegen.wiebe.xyz/auth/callback"
           resources:
             requests:
               memory: "128Mi"
@@ -182,6 +204,28 @@ spec:
               value: "tamagotchi"
             - name: MINIO_SECURE
               value: "false"
+            - name: GITHUB_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-id
+            - name: GITHUB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-secret
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: jwt-secret-key
+            - name: TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: token-encryption-key
+            - name: OAUTH_REDIRECT_URI
+              value: "https://tamagotchi.nijmegen.wiebe.xyz/auth/callback"
           resources:
             requests:
               memory: "128Mi"
