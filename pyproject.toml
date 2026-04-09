@@ -20,6 +20,7 @@ dependencies = [
     "minio>=7.2.0",
     "pyjwt>=2.8.0",
     "cryptography>=42.0.0",
+    "Pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
