@@ -202,6 +202,12 @@ async def create_pet(
         pet_data.name,
         user_id=user.id if user else None,
     )
+    # Enqueue egg stage image generation if a provider is configured
+    try:
+        get_image_provider()
+        await image_queue.create_job(session, pet.id, PetStage.EGG.value)
+    except ValueError:
+        pass  # no valid provider configured, skip
     return PetResponse.model_validate(pet)
 
 

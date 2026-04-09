@@ -1,5 +1,7 @@
 """Tests for API routes."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
@@ -32,10 +34,16 @@ class TestPetsEndpointsAsync:
 
     async def test_create_pet(self, async_client: AsyncClient) -> None:
         """POST /api/v1/pets creates a new pet."""
-        response = await async_client.post(
-            "/api/v1/pets",
-            json={"repo_owner": "testuser", "repo_name": "testrepo", "name": "Fluffy"},
-        )
+        with (
+            patch(
+                "github_tamagotchi.api.routes.get_image_provider",
+                side_effect=ValueError("no provider"),
+            ),
+        ):
+            response = await async_client.post(
+                "/api/v1/pets",
+                json={"repo_owner": "testuser", "repo_name": "testrepo", "name": "Fluffy"},
+            )
 
         assert response.status_code == 201
         data = response.json()
@@ -48,17 +56,50 @@ class TestPetsEndpointsAsync:
         assert "created_at" in data
         assert "updated_at" in data
 
+    async def test_create_pet_enqueues_image_job_when_provider_configured(
+        self, async_client: AsyncClient
+    ) -> None:
+        """POST /api/v1/pets enqueues an egg-stage image job when a provider is configured."""
+        mock_job = MagicMock()
+        mock_job.id = 1
+
+        with (
+            patch(
+                "github_tamagotchi.api.routes.get_image_provider",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "github_tamagotchi.api.routes.image_queue.create_job",
+                new_callable=AsyncMock,
+                return_value=mock_job,
+            ) as mock_create_job,
+        ):
+            response = await async_client.post(
+                "/api/v1/pets",
+                json={"repo_owner": "testuser2", "repo_name": "testrepo2", "name": "Eggy"},
+            )
+
+        assert response.status_code == 201
+        mock_create_job.assert_called_once()
+        call_args = mock_create_job.call_args
+        # stage argument (3rd positional or kwarg) should be "egg"
+        assert call_args.args[2] == "egg" or call_args.kwargs.get("stage") == "egg"
+
     async def test_create_pet_duplicate(self, async_client: AsyncClient) -> None:
         """POST /api/v1/pets returns 409 for duplicate."""
-        await async_client.post(
-            "/api/v1/pets",
-            json={"repo_owner": "testuser", "repo_name": "testrepo", "name": "Fluffy"},
-        )
+        with patch(
+            "github_tamagotchi.api.routes.get_image_provider",
+            side_effect=ValueError("no provider"),
+        ):
+            await async_client.post(
+                "/api/v1/pets",
+                json={"repo_owner": "testuser", "repo_name": "testrepo", "name": "Fluffy"},
+            )
 
-        response = await async_client.post(
-            "/api/v1/pets",
-            json={"repo_owner": "testuser", "repo_name": "testrepo", "name": "AnotherName"},
-        )
+            response = await async_client.post(
+                "/api/v1/pets",
+                json={"repo_owner": "testuser", "repo_name": "testrepo", "name": "AnotherName"},
+            )
 
         assert response.status_code == 409
         assert "already exists" in response.json()["detail"]
