@@ -251,6 +251,29 @@ async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> FeedR
     )
 
 
+@router.get("/pets/{repo_owner}/{repo_name}/badge.svg", response_class=Response)
+async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> Response:
+    """Return an SVG badge representing the current pet state."""
+    from github_tamagotchi.services.badge import generate_badge_svg
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+
+    svg_content = generate_badge_svg(pet.name, pet.stage, pet.mood, pet.health)
+    return Response(
+        content=svg_content,
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+            "Content-Type": "image/svg+xml; charset=utf-8",
+        },
+    )
+
+
 @router.delete("/pets/{repo_owner}/{repo_name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> None:
     """Delete a pet."""
