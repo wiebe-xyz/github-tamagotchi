@@ -75,6 +75,12 @@
                     <label for="pet-name" class="pet-name-label">Pet name</label>
                     <input type="text" id="pet-name" class="pet-name-input" maxlength="100" placeholder="Name your pet...">
                 </div>
+                <div class="style-row">
+                    <label class="pet-name-label">Style</label>
+                    <div id="style-picker" class="style-picker">
+                        <!-- populated by JS from /api/v1/styles -->
+                    </div>
+                </div>
                 <div class="form-actions">
                     <button class="secondary-btn" onclick="clearSelection()">Cancel</button>
                     <button class="cta-button" id="create-btn" onclick="createPet()">Hatch Pet &#129395;</button>
@@ -92,6 +98,38 @@
         let selectedRepo = null;
         let githubPage = 1;
         let hasMore = true;
+        let selectedStyle = 'kawaii';
+
+        async function loadStyles() {
+            try {
+                const resp = await fetch('/api/v1/styles');
+                if (!resp.ok) return;
+                const styles = await resp.json();
+                renderStylePicker(styles);
+            } catch (e) {
+                // Style picker is non-critical; silently skip on error
+            }
+        }
+
+        function renderStylePicker(styles) {
+            const picker = document.getElementById('style-picker');
+            if (!picker) return;
+            picker.innerHTML = styles.map(s => `
+                <label class="style-card ${s.id === selectedStyle ? 'style-card--selected' : ''}" data-style="${escapeAttr(s.id)}">
+                    <input type="radio" name="pet-style" value="${escapeAttr(s.id)}" ${s.id === selectedStyle ? 'checked' : ''} style="display:none">
+                    <span class="style-card-label">${escapeHtml(s.label)}</span>
+                    <span class="style-card-desc">${escapeHtml(s.description)}</span>
+                </label>
+            `).join('');
+            picker.querySelectorAll('.style-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    selectedStyle = card.dataset.style;
+                    picker.querySelectorAll('.style-card').forEach(c => c.classList.remove('style-card--selected'));
+                    card.classList.add('style-card--selected');
+                    card.querySelector('input[type=radio]').checked = true;
+                });
+            });
+        }
 
         async function loadRepos() {
             document.getElementById('loading').style.display = 'flex';
@@ -235,6 +273,7 @@
                         repo_owner: selectedRepo.owner,
                         repo_name: selectedRepo.name,
                         name: petName,
+                        style: selectedStyle,
                     }),
                 });
                 if (!resp.ok) {
@@ -262,6 +301,7 @@
 
         document.getElementById('repo-search').addEventListener('input', applyFilter);
 
+        loadStyles();
         loadRepos();
 
         document.getElementById('logout-btn').addEventListener('click', async () => {

@@ -14,6 +14,7 @@ async def create_pet(
     repo_name: str,
     name: str,
     user_id: int | None = None,
+    style: str = "kawaii",
 ) -> Pet:
     """Create a new pet."""
     pet = Pet(
@@ -21,6 +22,7 @@ async def create_pet(
         repo_name=repo_name,
         name=name,
         user_id=user_id,
+        style=style,
     )
     db.add(pet)
     await db.commit()

@@ -21,7 +21,7 @@ from github_tamagotchi.models.user import User
 from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.github import GitHubService
-from github_tamagotchi.services.image_generation import get_pet_appearance
+from github_tamagotchi.services.image_generation import DEFAULT_STYLE, STYLES, get_pet_appearance
 from github_tamagotchi.services.image_queue import get_image_provider
 from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.token_encryption import decrypt_token
@@ -48,6 +48,21 @@ class PetCreate(BaseModel):
     repo_owner: str = Field(..., min_length=1, max_length=255)
     repo_name: str = Field(..., min_length=1, max_length=255)
     name: str = Field(..., min_length=1, max_length=100)
+    style: str = Field(DEFAULT_STYLE, min_length=1, max_length=30)
+
+
+class StyleInfo(BaseModel):
+    """A single style definition."""
+
+    id: str
+    label: str
+    description: str
+
+
+class StyleUpdateRequest(BaseModel):
+    """Request body for updating a pet's style."""
+
+    style: str = Field(..., min_length=1, max_length=30)
 
 
 class PetResponse(BaseModel):
@@ -63,6 +78,7 @@ class PetResponse(BaseModel):
     mood: str
     health: int
     experience: int
+    style: str
     created_at: datetime
     updated_at: datetime
     last_fed_at: datetime | None
@@ -206,6 +222,15 @@ async def get_queue_stats(session: DbSession) -> QueueStatsResponse:
     )
 
 
+@router.get("/styles", response_model=list[StyleInfo])
+async def list_styles() -> list[StyleInfo]:
+    """Return all available pet image styles."""
+    return [
+        StyleInfo(id=style_id, label=style_def["label"], description=style_def["description"])
+        for style_id, style_def in STYLES.items()
+    ]
+
+
 @router.post("/pets", response_model=PetResponse, status_code=status.HTTP_201_CREATED)
 async def create_pet(
     pet_data: PetCreate,
@@ -213,6 +238,11 @@ async def create_pet(
     user: Annotated[User | None, Depends(get_optional_user)] = None,
 ) -> PetResponse:
     """Create a new pet for a GitHub repository."""
+    if pet_data.style not in STYLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid style '{pet_data.style}'. Must be one of: {', '.join(STYLES.keys())}",
+        )
     existing = await pet_crud.get_pet_by_repo(session, pet_data.repo_owner, pet_data.repo_name)
     if existing:
         raise HTTPException(
@@ -225,6 +255,7 @@ async def create_pet(
         pet_data.repo_name,
         pet_data.name,
         user_id=user.id if user else None,
+        style=pet_data.style,
     )
     # Enqueue egg stage image generation if a provider is configured
     try:
@@ -314,6 +345,45 @@ async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> Non
             detail=f"Pet not found for {repo_owner}/{repo_name}",
         )
     await pet_crud.delete_pet(session, pet)
+
+
+@router.put("/pets/{repo_owner}/{repo_name}/style", response_model=PetResponse)
+async def update_pet_style(
+    repo_owner: str,
+    repo_name: str,
+    style_data: StyleUpdateRequest,
+    session: DbSession,
+    user: Annotated[User, Depends(get_current_user)],
+) -> PetResponse:
+    """Update a pet's style and enqueue image regeneration for its current stage."""
+    if style_data.style not in STYLES:
+        valid = ", ".join(STYLES.keys())
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid style '{style_data.style}'. Must be one of: {valid}",
+        )
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    # Verify ownership
+    if pet.user_id != user.id and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not own this pet",
+        )
+    pet.style = style_data.style
+    await session.commit()
+    await session.refresh(pet)
+    # Enqueue image regeneration for the current stage
+    try:
+        get_image_provider()
+        await image_queue.create_job(session, pet.id, pet.stage)
+    except ValueError:
+        pass  # no valid provider configured, skip
+    return PetResponse.model_validate(pet)
 
 
 @router.get("/pets/{repo_owner}/{repo_name}/characteristics", response_model=PetCharacteristics)

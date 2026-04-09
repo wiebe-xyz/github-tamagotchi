@@ -2,7 +2,7 @@
 
 from typing import Protocol, runtime_checkable
 
-from github_tamagotchi.services.image_generation import GenerationResult
+from github_tamagotchi.services.image_generation import DEFAULT_STYLE, GenerationResult
 
 
 @runtime_checkable
@@ -10,7 +10,7 @@ class ImageProvider(Protocol):
     """Protocol for image generation providers."""
 
     async def generate_pet_image(
-        self, owner: str, repo: str, stage: str
+        self, owner: str, repo: str, stage: str, style: str = DEFAULT_STYLE
     ) -> GenerationResult:
         """Generate a pet image for the given repository and stage."""
         ...

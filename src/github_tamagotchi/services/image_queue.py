@@ -280,6 +280,7 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
                 owner=pet.repo_owner,
                 repo=pet.repo_name,
                 stage=stage,
+                style=getattr(pet, "style", "kawaii"),
             )
 
             if not result.success:

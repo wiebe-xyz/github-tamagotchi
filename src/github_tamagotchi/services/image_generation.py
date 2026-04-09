@@ -70,12 +70,47 @@ FEATURES: list[str] = [
     "sparkle effects",
 ]
 
-# Base prompt templates
+# Style definitions for pet image generation
+STYLES: dict[str, dict[str, str]] = {
+    "kawaii": {
+        "label": "Kawaii",
+        "description": "Cute pixel art with pastel colors",
+        "prompt_prefix": "cute pixel art tamagotchi creature, kawaii style, game sprite, clean lines, simple shading, adorable, chibi,",  # noqa: E501
+        "negative": "realistic, dark, scary, violent",
+    },
+    "doom_metal": {
+        "label": "Doom Metal",
+        "description": "Dark, gothic, heavy metal aesthetic",
+        "prompt_prefix": "dark fantasy creature, heavy metal album art, dramatic lighting, gothic style, dark colors, menacing,",  # noqa: E501
+        "negative": "cute, pastel, kawaii, cheerful",
+    },
+    "wizard": {
+        "label": "Wizard",
+        "description": "Magical fantasy familiar",
+        "prompt_prefix": "magical creature, wizard familiar, enchanted, mystical aura, fantasy illustration, arcane,",  # noqa: E501
+        "negative": "modern, urban, realistic photo",
+    },
+    "retro_scifi": {
+        "label": "Retro Sci-Fi",
+        "description": "80s synthwave / retro futurism",
+        "prompt_prefix": "retro sci-fi creature, synthwave colors, neon glow, 80s aesthetic, cyberpunk, pixel art,",  # noqa: E501
+        "negative": "organic, natural, medieval, fantasy",
+    },
+    "minimalist": {
+        "label": "Minimalist",
+        "description": "Clean geometric modern design",
+        "prompt_prefix": "minimalist geometric creature, clean lines, flat design, modern illustration, simple shapes,",  # noqa: E501
+        "negative": "detailed, complex, busy, cluttered",
+    },
+}
+
+DEFAULT_STYLE = "kawaii"
+
+# Base prompt template (style prefix is prepended separately)
 POSITIVE_PROMPT_TEMPLATE = (
-    "cute pixel art tamagotchi creature, {color} and {accent_color} coloring, "
+    "{style_prefix} {color} and {accent_color} coloring, "
     "{body_type} body shape, {feature} features, {stage_description}, "
-    "kawaii style, game sprite, white background, centered composition, "
-    "clean lines, simple shading, full body visible, adorable, chibi"
+    "white background, centered composition, full body visible"
 )
 
 NEGATIVE_PROMPT = (
@@ -140,11 +175,19 @@ def get_pet_appearance(owner: str, repo: str) -> PetAppearance:
     )
 
 
-def build_prompt(appearance: PetAppearance, stage: str) -> str:
-    """Build the positive prompt for image generation."""
+def build_prompt(appearance: PetAppearance, stage: str, style: str = DEFAULT_STYLE) -> str:
+    """Build the positive prompt for image generation.
+
+    Args:
+        appearance: Visual characteristics derived from the repository.
+        stage: Pet evolution stage.
+        style: Style key from STYLES dict (defaults to DEFAULT_STYLE).
+    """
     stage_desc = STAGE_PROMPTS.get(stage, STAGE_PROMPTS[PetStage.ADULT.value])
+    style_def = STYLES.get(style, STYLES[DEFAULT_STYLE])
 
     return POSITIVE_PROMPT_TEMPLATE.format(
+        style_prefix=style_def["prompt_prefix"],
         color=appearance.color,
         accent_color=appearance.accent_color,
         body_type=appearance.body_type,
@@ -161,20 +204,21 @@ def load_base_workflow() -> dict[str, Any]:
     return workflow
 
 
-def build_workflow(owner: str, repo: str, stage: str) -> dict[str, Any]:
+def build_workflow(owner: str, repo: str, stage: str, style: str = DEFAULT_STYLE) -> dict[str, Any]:
     """Build a complete ComfyUI workflow for pet generation.
 
     Args:
         owner: Repository owner
         repo: Repository name
         stage: Pet evolution stage
+        style: Style key from STYLES dict
 
     Returns:
         Complete workflow dictionary ready for ComfyUI API
     """
     workflow = load_base_workflow()
     appearance = get_pet_appearance(owner, repo)
-    prompt = build_prompt(appearance, stage)
+    prompt = build_prompt(appearance, stage, style=style)
 
     # Update KSampler seed
     workflow["3"]["inputs"]["seed"] = appearance.seed
@@ -200,19 +244,22 @@ class ImageGenerationService:
         self.comfyui_url = comfyui_url or settings.comfyui_url
         self.timeout = settings.comfyui_timeout
 
-    async def generate_pet_image(self, owner: str, repo: str, stage: str) -> GenerationResult:
+    async def generate_pet_image(
+        self, owner: str, repo: str, stage: str, style: str = DEFAULT_STYLE
+    ) -> GenerationResult:
         """Generate a pet image for the given repository and stage.
 
         Args:
             owner: Repository owner
             repo: Repository name
             stage: Pet evolution stage (egg, baby, child, teen, adult, elder)
+            style: Style key from STYLES dict
 
         Returns:
             GenerationResult with image data or error
         """
         try:
-            workflow = build_workflow(owner, repo, stage)
+            workflow = build_workflow(owner, repo, stage, style=style)
             prompt_id = await self._queue_prompt(workflow)
 
             if not prompt_id:

@@ -57,6 +57,9 @@ class Pet(Base):
     mood: Mapped[str] = mapped_column(String(20), default=PetMood.CONTENT.value)
     health: Mapped[int] = mapped_column(Integer, default=100)
     experience: Mapped[int] = mapped_column(Integer, default=0)
+    style: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="kawaii", server_default="kawaii"
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
