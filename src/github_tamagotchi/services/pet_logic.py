@@ -148,3 +148,49 @@ def update_commit_streak(pet: "Pet", health: RepoHealth, now: datetime) -> None:
                 pet.commit_streak = 0
 
     pet.longest_streak = max(pet.longest_streak, pet.commit_streak)
+
+
+# Death thresholds
+DEATH_GRACE_PERIOD_DAYS = 7  # Days at 0 health before death
+ABANDONMENT_THRESHOLD_DAYS = 90  # Days without any activity before abandonment death
+
+
+def update_grace_period(pet: "Pet", now: datetime) -> None:
+    """Set or clear grace_period_started based on current health.
+
+    If health is 0, record the start of the grace period (if not already set).
+    If health is above 0, clear the grace period.
+    """
+    if pet.health == 0:
+        if pet.grace_period_started is None:
+            pet.grace_period_started = now
+    else:
+        pet.grace_period_started = None
+
+
+def check_death_conditions(pet: "Pet", now: datetime) -> tuple[bool, str | None]:
+    """Check whether the pet should die and return the cause.
+
+    Returns (should_die, cause) where cause is one of:
+      - "neglect"     — health has been at 0 for 7+ days
+      - "abandonment" — no activity for 90 days
+
+    Returns (False, None) if the pet should stay alive.
+    """
+    # Abandonment: no activity (last_checked_at or last_fed_at) for 90 days
+    last_activity = pet.last_checked_at or pet.last_fed_at or pet.created_at
+    # Normalise: if naive datetime, compare against naive now
+    compare_now = now.replace(tzinfo=None) if last_activity.tzinfo is None else now
+    days_inactive = (compare_now - last_activity).total_seconds() / 86400
+    if days_inactive >= ABANDONMENT_THRESHOLD_DAYS:
+        return True, "abandonment"
+
+    # Neglect: health at 0 for 7+ days
+    if pet.grace_period_started is not None:
+        grace_start = pet.grace_period_started
+        compare_now = now.replace(tzinfo=None) if grace_start.tzinfo is None else now
+        days_at_zero = (compare_now - grace_start).total_seconds() / 86400
+        if days_at_zero >= DEATH_GRACE_PERIOD_DAYS:
+            return True, "neglect"
+
+    return False, None

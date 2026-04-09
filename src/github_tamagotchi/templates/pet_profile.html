@@ -54,8 +54,11 @@
         <div class="container">
 
             <!-- Hero row: sprite + core stats -->
-            <section class="profile-hero">
+            <section class="profile-hero{% if pet.is_dead %} profile-hero--deceased{% endif %}">
                 <div class="profile-sprite-wrap">
+                    {% if pet.is_dead %}
+                    <div class="pet-emoji-fallback" style="display:flex; font-size: 4rem;">&#129680;</div>
+                    {% else %}
                     <img
                         src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}"
                         alt="{{ pet.name }}"
@@ -66,6 +69,7 @@
                     <div id="pet-emoji-fallback" class="pet-emoji-fallback" style="display:none;">&#128049;</div>
                     <div class="pet-shadow"></div>
                     <div class="status-badge mood-{{ pet.mood }}">{{ pet.mood | capitalize }}</div>
+                    {% endif %}
                 </div>
 
                 <div class="profile-meta">
@@ -75,6 +79,32 @@
                         </a>
                     </div>
                     <h1 class="profile-name">{{ pet.name }}</h1>
+
+                    {% if pet.is_dead %}
+                    <p class="profile-stage-label" style="color: #7f8c8d;">Deceased</p>
+                    <div class="stats-grid">
+                        <div class="stat-card" style="grid-column: span 2;">
+                            <div class="stat-label">&#128128; Cause of death</div>
+                            <div class="stat-value" style="color: #9e9e9e;">{{ pet.cause_of_death | capitalize if pet.cause_of_death else "Unknown" }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Died</div>
+                            <div class="stat-value" style="color: #9e9e9e;">
+                                {% if pet.died_at %}{{ pet.died_at.strftime('%Y-%m-%d') }}{% else %}Unknown{% endif %}
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Age at death</div>
+                            <div class="stat-value" style="color: #9e9e9e;">{{ age_days }} day{% if age_days != 1 %}s{% endif %}</div>
+                        </div>
+                    </div>
+                    <p style="margin-top: 1rem; font-size: 1.1rem; color: #7f8c8d;">
+                        RIP {{ pet.name }}
+                        {% if pet.died_at and pet.created_at %}
+                        — {{ pet.created_at.year }}–{{ pet.died_at.year }}
+                        {% endif %}
+                    </p>
+                    {% else %}
                     <p class="profile-stage-label">{{ pet.stage | capitalize }}</p>
 
                     <div class="stats-grid">
@@ -121,6 +151,7 @@
                         >🍖 Feed</button>
                         <span id="feed-feedback" style="margin-left: 0.75rem; font-size: 0.9rem; color: #4caf50; display: none;"></span>
                     </div>
+                    {% endif %}
                     {% endif %}
 
                     <!-- Share buttons -->
