@@ -96,6 +96,13 @@ async def get_current_user(
     return user
 
 
+async def get_admin_user(user: Annotated[User, Depends(get_current_user)]) -> User:
+    """Dependency to require admin access."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 async def get_optional_user(
     session: DbSession,
     session_token: str | None = Cookie(None),
@@ -221,6 +228,10 @@ async def oauth_callback(
         github_avatar_url=github_user.get("avatar_url"),
         encrypted_token=encrypted,
     )
+
+    # Set admin flag based on configured logins
+    user.is_admin = github_user["login"] in settings.admin_github_logins
+    await session.flush()
 
     # Create JWT session token
     token = _create_jwt(user.id)

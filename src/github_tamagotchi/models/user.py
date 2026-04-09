@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from github_tamagotchi.models.pet import Base
@@ -17,6 +17,11 @@ class User(Base):
     github_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
     github_login: Mapped[str] = mapped_column(String(255), nullable=False)
     github_avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Admin flag
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     # Encrypted GitHub access token
     encrypted_token: Mapped[str | None] = mapped_column(Text, nullable=True)

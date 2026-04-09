@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Admin
+    admin_github_logins: list[str] = ["webwiebe"]
+
     # Sentry
     sentry_dsn: str | None = None
 
