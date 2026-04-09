@@ -79,6 +79,8 @@ class PetResponse(BaseModel):
     health: int
     experience: int
     style: str
+    commit_streak: int
+    longest_streak: int
     created_at: datetime
     updated_at: datetime
     last_fed_at: datetime | None
@@ -324,7 +326,13 @@ async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> 
             detail=f"Pet not found for {repo_owner}/{repo_name}",
         )
 
-    svg_content = generate_badge_svg(pet.name, pet.stage, pet.mood, pet.health)
+    svg_content = generate_badge_svg(
+        pet.name,
+        pet.stage,
+        pet.mood,
+        pet.health,
+        commit_streak=pet.commit_streak,
+    )
     return Response(
         content=svg_content,
         media_type="image/svg+xml",

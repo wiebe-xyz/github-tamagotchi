@@ -17,6 +17,9 @@ def make_pet(
     experience: int = 0,
     last_fed_at: datetime | None = None,
     last_checked_at: datetime | None = None,
+    commit_streak: int = 0,
+    longest_streak: int = 0,
+    last_streak_date: datetime | None = None,
 ) -> Pet:
     """Create a Pet instance with sensible defaults."""
     return Pet(
@@ -29,6 +32,9 @@ def make_pet(
         experience=experience,
         last_fed_at=last_fed_at,
         last_checked_at=last_checked_at,
+        commit_streak=commit_streak,
+        longest_streak=longest_streak,
+        last_streak_date=last_streak_date,
     )
 
 

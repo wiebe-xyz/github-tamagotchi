@@ -99,6 +99,18 @@
                         </div>
                     </div>
 
+                    <!-- Commit Streak -->
+                    <div class="streak-row" style="margin-top: 1rem; margin-bottom: 0.75rem;">
+                        {% if pet.commit_streak > 0 %}
+                        <span class="streak-active" style="font-size: 1.1rem; font-weight: 600;">&#128293; {{ pet.commit_streak }} day streak</span>
+                        {% else %}
+                        <span class="streak-inactive" style="color: rgba(255,255,255,0.45); font-size: 0.9rem;">No active streak</span>
+                        {% endif %}
+                        {% if pet.longest_streak > 0 %}
+                        <span class="streak-best" style="margin-left: 1rem; font-size: 0.85rem; color: rgba(255,255,255,0.6);">&#127942; Best: {{ pet.longest_streak }} day{% if pet.longest_streak != 1 %}s{% endif %}</span>
+                        {% endif %}
+                    </div>
+
                     {% if user %}
                     <!-- Feed button -->
                     <div class="feed-row" style="margin-bottom: 1rem;">
