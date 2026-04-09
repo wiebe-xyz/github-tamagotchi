@@ -20,6 +20,24 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-secret
+      initContainers:
+        - name: migrate
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          imagePullPolicy: Always
+          command:
+            - sh
+            - -c
+            - |
+              until alembic upgrade head; do
+                echo "Migration failed, retrying in 5s..."
+                sleep 5
+              done
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
       containers:
         - name: github-tamagotchi
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
@@ -105,6 +123,24 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-secret
+      initContainers:
+        - name: migrate
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          imagePullPolicy: Always
+          command:
+            - sh
+            - -c
+            - |
+              until alembic upgrade head; do
+                echo "Migration failed, retrying in 5s..."
+                sleep 5
+              done
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
       containers:
         - name: github-tamagotchi
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
