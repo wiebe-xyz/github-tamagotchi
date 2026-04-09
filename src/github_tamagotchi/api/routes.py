@@ -19,9 +19,11 @@ from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services import image_queue
+from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.image_generation import get_pet_appearance
 from github_tamagotchi.services.image_queue import get_image_provider
 from github_tamagotchi.services.storage import StorageService
+from github_tamagotchi.services.token_encryption import decrypt_token
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,18 @@ class PetCharacteristics(BaseModel):
     accent_color: str
     body_type: str
     feature: str
+
+
+class RepoItem(BaseModel):
+    """A GitHub repo available for pet registration."""
+
+    full_name: str
+    owner: str
+    name: str
+    description: str | None
+    private: bool
+    has_pet: bool
+    pet_name: str | None
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -438,6 +452,56 @@ async def list_my_pets(
         per_page=per_page,
         pages=pages,
     )
+
+
+@router.get("/me/repos", response_model=list[RepoItem])
+async def list_my_repos(
+    session: DbSession,
+    user: Annotated[User, Depends(get_current_user)],
+    page: Annotated[int, Query(ge=1)] = 1,
+) -> list[RepoItem]:
+    """List GitHub repos accessible to the authenticated user with write access."""
+    if not user.encrypted_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No GitHub token stored. Please re-authenticate.",
+        )
+
+    try:
+        token = decrypt_token(user.encrypted_token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt GitHub token. Please re-authenticate.",
+        ) from None
+
+    github = GitHubService(token=token)
+    raw_repos = await github.list_user_repos(page=page)
+
+    # Filter to repos where user has push access
+    writable = [r for r in raw_repos if r.get("permissions", {}).get("push")]
+
+    # Fetch existing pets to mark which repos already have one
+    from sqlalchemy import select as sa_select
+
+    existing_pets: dict[tuple[str, str], str] = {}
+    if writable:
+        result = await session.execute(sa_select(Pet))
+        for pet in result.scalars().all():
+            existing_pets[(pet.repo_owner, pet.repo_name)] = pet.name
+
+    return [
+        RepoItem(
+            full_name=r["full_name"],
+            owner=r["owner"]["login"],
+            name=r["name"],
+            description=r.get("description"),
+            private=r.get("private", False),
+            has_pet=(r["owner"]["login"], r["name"]) in existing_pets,
+            pet_name=existing_pets.get((r["owner"]["login"], r["name"])),
+        )
+        for r in writable
+    ]
 
 
 @router.post("/webhooks/github", response_model=WebhookResponse)

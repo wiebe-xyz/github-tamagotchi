@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register Your Pet - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo">GitHub Tamagotchi</a>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="register-main">
+        <div class="container">
+            <div class="register-header">
+                <h1>Pick a Repository</h1>
+                <p class="register-subtitle">Choose a repo to hatch your pet. Only repos where you have write access are shown.</p>
+            </div>
+
+            <div id="loading" class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading your repositories...</p>
+            </div>
+
+            <div id="error-state" class="error-state" style="display:none">
+                <p id="error-message">Failed to load repositories.</p>
+                <button class="cta-button" onclick="loadRepos()">Retry</button>
+            </div>
+
+            <div id="repos-container" style="display:none">
+                <div class="search-bar">
+                    <input type="text" id="repo-search" placeholder="Search repositories..." class="search-input" autocomplete="off">
+                </div>
+
+                <div id="repo-list" class="repo-list"></div>
+
+                <div id="empty-state" class="empty-state" style="display:none">
+                    <p>No repositories match your search.</p>
+                </div>
+
+                <div class="pagination-controls">
+                    <button id="prev-page" class="page-btn" onclick="changePage(-1)" disabled>&#8592; Previous</button>
+                    <span id="page-info" class="page-info"></span>
+                    <button id="next-page" class="page-btn" onclick="changePage(1)">Next &#8594;</button>
+                </div>
+            </div>
+
+            <!-- Pet name + create form (shown when a repo is selected) -->
+            <div id="create-form" class="create-form" style="display:none">
+                <div class="selected-repo-info">
+                    <span class="selected-label">Selected:</span>
+                    <span id="selected-repo-name" class="selected-repo"></span>
+                </div>
+                <div class="pet-name-row">
+                    <label for="pet-name" class="pet-name-label">Pet name</label>
+                    <input type="text" id="pet-name" class="pet-name-input" maxlength="100" placeholder="Name your pet...">
+                </div>
+                <div class="form-actions">
+                    <button class="secondary-btn" onclick="clearSelection()">Cancel</button>
+                    <button class="cta-button" id="create-btn" onclick="createPet()">Hatch Pet &#129395;</button>
+                </div>
+                <p id="create-error" class="create-error" style="display:none"></p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let allRepos = [];
+        let filteredRepos = [];
+        let currentPage = 1;
+        const PER_PAGE = 20;
+        let selectedRepo = null;
+        let githubPage = 1;
+        let hasMore = true;
+
+        async function loadRepos() {
+            document.getElementById('loading').style.display = 'flex';
+            document.getElementById('error-state').style.display = 'none';
+            document.getElementById('repos-container').style.display = 'none';
+            allRepos = [];
+            githubPage = 1;
+            hasMore = true;
+            await fetchAllRepos();
+        }
+
+        async function fetchAllRepos() {
+            while (hasMore) {
+                try {
+                    const resp = await fetch(`/api/v1/me/repos?page=${githubPage}`);
+                    if (!resp.ok) {
+                        const data = await resp.json();
+                        throw new Error(data.detail || 'Failed to load repositories');
+                    }
+                    const repos = await resp.json();
+                    if (repos.length === 0) {
+                        hasMore = false;
+                    } else {
+                        allRepos = allRepos.concat(repos);
+                        githubPage++;
+                        if (repos.length < 100) hasMore = false;
+                    }
+                } catch (e) {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error-state').style.display = 'block';
+                    document.getElementById('error-message').textContent = e.message;
+                    return;
+                }
+            }
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('repos-container').style.display = 'block';
+            applyFilter();
+        }
+
+        function applyFilter() {
+            const query = document.getElementById('repo-search').value.toLowerCase();
+            filteredRepos = allRepos.filter(r =>
+                r.full_name.toLowerCase().includes(query) ||
+                (r.description || '').toLowerCase().includes(query)
+            );
+            currentPage = 1;
+            renderPage();
+        }
+
+        function renderPage() {
+            const start = (currentPage - 1) * PER_PAGE;
+            const pageRepos = filteredRepos.slice(start, start + PER_PAGE);
+            const list = document.getElementById('repo-list');
+            const empty = document.getElementById('empty-state');
+
+            if (filteredRepos.length === 0) {
+                list.innerHTML = '';
+                empty.style.display = 'block';
+            } else {
+                empty.style.display = 'none';
+                list.innerHTML = pageRepos.map(repo => repoCard(repo)).join('');
+            }
+
+            const totalPages = Math.max(1, Math.ceil(filteredRepos.length / PER_PAGE));
+            document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('prev-page').disabled = currentPage <= 1;
+            document.getElementById('next-page').disabled = currentPage >= totalPages;
+        }
+
+        function repoCard(repo) {
+            const hasPet = repo.has_pet;
+            const disabled = hasPet ? 'disabled' : '';
+            const petBadge = hasPet
+                ? `<span class="pet-badge">Pet: ${escapeHtml(repo.pet_name)}</span>`
+                : '';
+            const privateBadge = repo.private
+                ? '<span class="private-badge">Private</span>'
+                : '';
+            const desc = repo.description ? `<p class="repo-desc">${escapeHtml(repo.description)}</p>` : '';
+
+            return `<div class="repo-card ${hasPet ? 'repo-has-pet' : ''}" onclick="${hasPet ? '' : `selectRepo('${escapeAttr(repo.owner)}', '${escapeAttr(repo.name)}', '${escapeAttr(repo.full_name)}')`}">
+                <div class="repo-card-main">
+                    <div class="repo-title-row">
+                        <span class="repo-full-name">${escapeHtml(repo.full_name)}</span>
+                        ${privateBadge}
+                        ${petBadge}
+                    </div>
+                    ${desc}
+                </div>
+                ${hasPet ? '' : '<div class="repo-select-hint">Select &#8594;</div>'}
+            </div>`;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function escapeAttr(str) {
+            return (str || '').replace(/'/g, "\\'");
+        }
+
+        function selectRepo(owner, name, fullName) {
+            selectedRepo = { owner, name, fullName };
+            document.getElementById('selected-repo-name').textContent = fullName;
+            document.getElementById('pet-name').value = name;
+            document.getElementById('create-form').style.display = 'block';
+            document.getElementById('create-error').style.display = 'none';
+            document.getElementById('create-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function clearSelection() {
+            selectedRepo = null;
+            document.getElementById('create-form').style.display = 'none';
+        }
+
+        function changePage(delta) {
+            const totalPages = Math.ceil(filteredRepos.length / PER_PAGE);
+            currentPage = Math.max(1, Math.min(totalPages, currentPage + delta));
+            renderPage();
+        }
+
+        async function createPet() {
+            if (!selectedRepo) return;
+            const petName = document.getElementById('pet-name').value.trim();
+            if (!petName) {
+                showCreateError('Please enter a pet name.');
+                return;
+            }
+
+            const btn = document.getElementById('create-btn');
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+            document.getElementById('create-error').style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/v1/pets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repo_owner: selectedRepo.owner,
+                        repo_name: selectedRepo.name,
+                        name: petName,
+                    }),
+                });
+                if (!resp.ok) {
+                    const data = await resp.json();
+                    throw new Error(data.detail || 'Failed to create pet');
+                }
+                const params = new URLSearchParams({
+                    owner: selectedRepo.owner,
+                    repo: selectedRepo.name,
+                    pet_name: petName,
+                });
+                window.location.href = `/register/complete?${params}`;
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'Hatch Pet &#129395;';
+                showCreateError(e.message);
+            }
+        }
+
+        function showCreateError(msg) {
+            const el = document.getElementById('create-error');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        document.getElementById('repo-search').addEventListener('input', applyFilter);
+
+        loadRepos();
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>

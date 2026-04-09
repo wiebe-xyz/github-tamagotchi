@@ -192,3 +192,29 @@ class GitHubService:
     def _get_oldest_age_days(self, items: list[dict[str, Any]]) -> float:
         """Get age in days of the oldest item."""
         return self._get_oldest_age_hours(items) / 24
+
+    async def list_user_repos(
+        self, page: int = 1, per_page: int = 100
+    ) -> list[dict[str, Any]]:
+        """List repositories accessible to the authenticated user."""
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/user/repos",
+                    headers=self._get_headers(),
+                    params={
+                        "per_page": per_page,
+                        "page": page,
+                        "sort": "pushed",
+                        "affiliation": "owner,collaborator,organization_member",
+                    },
+                )
+                self._check_rate_limit(resp)
+                resp.raise_for_status()
+                result: list[dict[str, Any]] = resp.json()
+                return result
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning("Failed to list user repos", error=str(e))
+                return []

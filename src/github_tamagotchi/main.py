@@ -329,7 +329,6 @@ async def register_complete_page(
         },
     )
 
-
 @app.get("/pet/{repo_owner}/{repo_name}", response_class=HTMLResponse)
 async def pet_profile(
     request: Request,
