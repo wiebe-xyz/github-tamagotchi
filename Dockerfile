@@ -22,4 +22,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/api/v1/health')" || exit 1
 
 # Start the application (migrations run as a k8s initContainer)
-CMD ["uvicorn", "github_tamagotchi.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "github_tamagotchi.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "10"]
