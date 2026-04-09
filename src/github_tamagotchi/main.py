@@ -358,20 +358,17 @@ async def pet_profile(
 
     # Build activity feed from available timestamps
     now = datetime.now(UTC)
-    activity_items = []
+    raw_activity: list[tuple[datetime, str, str]] = []
     if pet.last_fed_at:
-        activity_items.append(
-            {"event": "Fed", "timestamp": pet.last_fed_at, "icon": "&#127858;"}
-        )
+        raw_activity.append((pet.last_fed_at, "Fed", "&#127858;"))
     if pet.last_checked_at:
-        activity_items.append(
-            {"event": "Health checked", "timestamp": pet.last_checked_at, "icon": "&#129657;"}
-        )
-    activity_items.append(
-        {"event": "Pet created", "timestamp": pet.created_at, "icon": "&#129381;"}
-    )
-    activity_items.sort(key=lambda x: x["timestamp"], reverse=True)
-    activity_items = activity_items[:10]
+        raw_activity.append((pet.last_checked_at, "Health checked", "&#129657;"))
+    raw_activity.append((pet.created_at, "Pet created", "&#129381;"))
+    raw_activity.sort(key=lambda x: x[0], reverse=True)
+    activity_items = [
+        {"event": ev, "timestamp": ts, "icon": icon}
+        for ts, ev, icon in raw_activity[:10]
+    ]
 
     # Calculate age in days (handle both tz-aware and naive datetimes from DB)
     created = pet.created_at
