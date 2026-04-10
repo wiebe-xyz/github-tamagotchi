@@ -295,6 +295,35 @@
                 <div id="blame-board-sins" style="margin-top:1rem;"></div>
             </section>
 
+            <!-- Chippy's Humans (Contributor Relationships) -->
+            {% if contributor_relationships %}
+            <section class="profile-section" style="margin-top: 2rem;">
+                <h2>{{ pet.name }}'s Humans</h2>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem;">
+                    {% for rel in contributor_relationships %}
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.9rem; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <img src="https://github.com/{{ rel.github_username }}.png?size=28" alt="{{ rel.github_username }}" width="28" height="28" style="border-radius: 50%; object-fit: cover;" onerror="this.style.display='none'">
+                            <a href="https://github.com/{{ rel.github_username }}" target="_blank" rel="noopener" style="color: rgba(255,255,255,0.9); text-decoration: none; font-weight: 500;">@{{ rel.github_username }}</a>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <span style="font-size: 0.8rem; color: rgba(255,255,255,0.5);">{{ rel.score }} pts</span>
+                            <span style="font-size: 1.1rem;" title="{{ rel.standing | capitalize }}">
+                                {% if rel.standing == "favorite" %}&#128525;
+                                {% elif rel.standing == "good" %}&#128522;
+                                {% elif rel.standing == "doghouse" %}&#128545;
+                                {% elif rel.standing == "absent" %}&#128532;
+                                {% else %}&#128512;
+                                {% endif %}
+                            </span>
+                            <span style="font-size: 0.8rem; color: rgba(255,255,255,0.6); min-width: 60px; text-align: right;">{{ rel.standing | capitalize }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
             <!-- Comments Section -->
             <section class="profile-section" id="comments-section" style="margin-top: 2rem;">
                 <h2>Discussion</h2>

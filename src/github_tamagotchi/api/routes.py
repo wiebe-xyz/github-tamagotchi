@@ -289,6 +289,25 @@ class BlameBoardResponse(BaseModel):
     hero_entries: list[HeroEntryItem]
 
 
+class ContributorRelationshipItem(BaseModel):
+    """A single contributor relationship item."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    github_username: str
+    standing: str
+    score: int
+    last_activity: datetime | None
+    good_deeds: list[str]
+    sins: list[str]
+
+
+class ContributorRelationshipsResponse(BaseModel):
+    """Response model for contributor relationships."""
+
+    contributors: list[ContributorRelationshipItem]
+
+
 class LeaderboardEntry(BaseModel):
     """A single entry on the leaderboard."""
 
@@ -872,6 +891,31 @@ async def get_pet_milestones(
     milestones = await get_milestones(session, pet.id)
     return MilestonesResponse(
         milestones=[MilestoneItem.model_validate(m) for m in milestones]
+    )
+
+
+@router.get(
+    "/pets/{repo_owner}/{repo_name}/contributors",
+    response_model=ContributorRelationshipsResponse,
+)
+async def get_pet_contributors(
+    repo_owner: str,
+    repo_name: str,
+    session: DbSession,
+) -> ContributorRelationshipsResponse:
+    """Get contributor relationships for a pet. Public endpoint."""
+    from github_tamagotchi.crud.contributor_relationship import get_contributors_for_pet
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+
+    contributors = await get_contributors_for_pet(session, pet.id)
+    return ContributorRelationshipsResponse(
+        contributors=[ContributorRelationshipItem.model_validate(c) for c in contributors]
     )
 
 

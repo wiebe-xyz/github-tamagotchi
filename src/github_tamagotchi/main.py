@@ -31,6 +31,7 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
 from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.crud.contributor_relationship import upsert_contributor_relationship
 from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.job_run import JobRun
@@ -40,6 +41,7 @@ from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.achievements import check_and_unlock_achievements
 from github_tamagotchi.services.alerting import AlertChecker
+from github_tamagotchi.services.contributor_relationships import build_contributor_updates
 from github_tamagotchi.services.github import GitHubService, RateLimitError, RepoInsights
 from github_tamagotchi.services.pet_logic import (
     EVOLUTION_THRESHOLDS,
@@ -199,6 +201,33 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                             pet_id=pet.id,
                             pet_name=pet.name,
                             achievements=newly_unlocked,
+                        )
+
+                    # Update contributor relationships from GitHub activity
+                    try:
+                        activity = await github_service.get_all_contributor_activity(
+                            pet.repo_owner, pet.repo_name
+                        )
+                        contributor_updates = build_contributor_updates(activity, now)
+                        for update in contributor_updates:
+                            await upsert_contributor_relationship(
+                                db=session,
+                                pet_id=pet.id,
+                                github_username=update.github_username,
+                                score=update.score,
+                                standing=update.standing,
+                                last_activity=update.last_activity,
+                                good_deeds=update.good_deeds,
+                                sins=update.sins,
+                            )
+                    except RateLimitError:
+                        raise
+                    except Exception as e:
+                        logger.warning(
+                            "contributor_relationship_update_failed",
+                            pet_id=pet.id,
+                            repo=f"{pet.repo_owner}/{pet.repo_name}",
+                            error=str(e),
                         )
 
                     updated_count += 1
@@ -702,6 +731,11 @@ async def pet_profile(
     else:
         age_days = (now - created).days
 
+    # Fetch contributor relationships
+    from github_tamagotchi.crud.contributor_relationship import get_contributors_for_pet
+
+    contributor_relationships = await get_contributors_for_pet(session, pet.id)
+
     page_url = str(request.url)
     return templates.TemplateResponse(
         request,
@@ -717,6 +751,7 @@ async def pet_profile(
             "repo_name": repo_name,
             "base_url": settings.base_url,
             "now_utc": now,
+            "contributor_relationships": contributor_relationships,
         },
         headers={"Cache-Control": "public, max-age=60"},
     )

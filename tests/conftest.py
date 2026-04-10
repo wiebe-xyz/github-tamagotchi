@@ -18,7 +18,13 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
 
 # Import all models to ensure they're registered with Base.metadata
-from github_tamagotchi.models import ImageGenerationJob, Pet, PetAchievement, User  # noqa: F401
+from github_tamagotchi.models import (  # noqa: F401
+    ContributorRelationship,
+    ImageGenerationJob,
+    Pet,
+    PetAchievement,
+    User,
+)
 from github_tamagotchi.models.pet import Base
 from github_tamagotchi.services.github import RepoHealth
 
