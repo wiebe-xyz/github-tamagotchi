@@ -93,6 +93,11 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+    # Sync is_admin from config on every request so nav links and gates stay consistent
+    should_be_admin = user.github_login in settings.admin_github_logins
+    if user.is_admin != should_be_admin:
+        user.is_admin = should_be_admin
+        await session.flush()
     return user
 
 
