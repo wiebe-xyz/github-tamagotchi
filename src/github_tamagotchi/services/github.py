@@ -146,6 +146,10 @@ class GitHubService:
                 reset_time = None
                 if reset_timestamp:
                     reset_time = datetime.fromtimestamp(int(reset_timestamp), tz=UTC)
+                logger.warning(
+                    "github_rate_limited",
+                    reset_time=reset_time.isoformat() if reset_time else None,
+                )
                 raise RateLimitError(
                     "GitHub API rate limit exceeded",
                     reset_time=reset_time,
@@ -219,7 +223,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("Failed to get last commit", error=str(e))
+            logger.warning("github_error", endpoint="commits", error=str(e))
         return None
 
     async def _get_open_prs(
@@ -239,7 +243,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("Failed to get open PRs", error=str(e))
+            logger.warning("github_error", endpoint="pulls", error=str(e))
         return []
 
     async def _get_open_issues(
@@ -260,7 +264,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("Failed to get open issues", error=str(e))
+            logger.warning("github_error", endpoint="issues", error=str(e))
         return []
 
     async def _get_ci_status(self, client: httpx.AsyncClient, owner: str, repo: str) -> bool | None:
@@ -288,7 +292,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("Failed to get CI status", error=str(e))
+            logger.warning("github_error", endpoint="check_status", error=str(e))
         return None
 
     async def _get_security_alerts(

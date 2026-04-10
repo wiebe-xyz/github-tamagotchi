@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import sentry_sdk
 import structlog
@@ -58,6 +58,37 @@ from github_tamagotchi.services.pet_logic import (
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+
+def configure_logging(debug: bool = False) -> None:
+    """Configure structlog for JSON structured logging to stdout."""
+    shared_processors: list[Any] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+    ]
+
+    if debug:
+        processors: list[Any] = [
+            *shared_processors,
+            structlog.dev.ConsoleRenderer(),
+        ]
+    else:
+        processors = [
+            *shared_processors,
+            structlog.processors.dict_tracebacks,
+            structlog.processors.JSONRenderer(),
+        ]
+
+    structlog.configure(
+        processors=processors,
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+
+configure_logging(debug=bool(os.getenv("DEBUG")))
 logger = structlog.get_logger()
 
 scheduler = AsyncIOScheduler()
@@ -116,6 +147,9 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
 
                     # Fetch health metrics from GitHub
                     health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
+
+                    old_health = pet.health
+                    old_mood = pet.mood
 
                     # Calculate state changes
                     health_delta = calculate_health_delta(health)
@@ -232,6 +266,16 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                         )
 
                     updated_count += 1
+
+                    logger.info(
+                        "pet_polled",
+                        pet_id=pet.id,
+                        pet_name=pet.name,
+                        repo=f"{pet.repo_owner}/{pet.repo_name}",
+                        health_before=old_health,
+                        health_after=new_health,
+                        mood_changed=(old_mood != new_mood.value),
+                    )
 
                     logger.debug(
                         "pet_updated",

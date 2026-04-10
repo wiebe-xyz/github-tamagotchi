@@ -1,10 +1,10 @@
 """API routes for pet management."""
 
-import logging
 import math
 from datetime import UTC, datetime
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,7 +30,7 @@ from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.token_encryption import decrypt_token
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1", tags=["pets"])
 
@@ -362,7 +362,7 @@ async def health_check(session: DbSession) -> HealthResponse:
         await session.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception:
-        logger.exception("Database health check failed")
+        logger.exception("health_check_db_error")
         db_status = "disconnected"
 
     return HealthResponse(status="healthy", version=__version__, database=db_status)
@@ -435,6 +435,12 @@ async def create_pet(
         pet_name,
         user_id=user.id if user else None,
         style=pet_data.style,
+    )
+    logger.info(
+        "pet_created",
+        pet_id=pet.id,
+        pet_name=pet.name,
+        repo=f"{pet_data.repo_owner}/{pet_data.repo_name}",
     )
     # Enqueue egg stage image generation if a provider is configured
     try:
