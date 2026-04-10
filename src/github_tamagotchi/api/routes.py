@@ -1136,7 +1136,7 @@ async def get_pet_animated_gif(
         )
 
     # Fetch the pet to get mood, health, style, and stored canonical appearance
-    pet = await pet_crud.get_pet(session, repo_owner, repo_name)
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
     mood = pet.mood if pet else "content"
     health = pet.health if pet else 100
     style = pet.style if pet else DEFAULT_STYLE
