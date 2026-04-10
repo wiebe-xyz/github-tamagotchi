@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -88,6 +88,17 @@ class Pet(Base):
     # Skin
     skin: Mapped[str] = mapped_column(String(20), default=PetSkin.CLASSIC.value)
     low_health_recoveries: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Personality traits (0.0 to 1.0), generated once at creation
+    personality_activity: Mapped[float | None] = mapped_column(Float, nullable=True)  # lazy→active
+    personality_sociability: Mapped[float | None] = mapped_column(  # shy→social
+        Float, nullable=True
+    )
+    personality_bravery: Mapped[float | None] = mapped_column(  # cautious→brave
+        Float, nullable=True
+    )
+    personality_tidiness: Mapped[float | None] = mapped_column(Float, nullable=True)  # messy→neat
+    personality_appetite: Mapped[float | None] = mapped_column(Float, nullable=True)  # light→hungry
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

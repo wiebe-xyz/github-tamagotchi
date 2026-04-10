@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.models.pet import Pet, PetMood, PetSkin
+from github_tamagotchi.services.pet_logic import generate_personality
 
 # Simple in-memory leaderboard cache: stores (timestamp, data) per category
 _leaderboard_cache: dict[str, tuple[datetime, list[Pet]]] = {}
@@ -20,13 +21,19 @@ async def create_pet(
     user_id: int | None = None,
     style: str = "kawaii",
 ) -> Pet:
-    """Create a new pet."""
+    """Create a new pet with generated personality traits."""
+    personality = generate_personality(repo_owner, repo_name)
     pet = Pet(
         repo_owner=repo_owner,
         repo_name=repo_name,
         name=name,
         user_id=user_id,
         style=style,
+        personality_activity=personality.activity,
+        personality_sociability=personality.sociability,
+        personality_bravery=personality.bravery,
+        personality_tidiness=personality.tidiness,
+        personality_appetite=personality.appetite,
     )
     db.add(pet)
     await db.commit()

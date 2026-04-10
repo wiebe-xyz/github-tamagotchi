@@ -80,6 +80,16 @@ class BadgeStyleUpdateRequest(BaseModel):
     badge_style: str = Field(..., min_length=1, max_length=20)
 
 
+class PersonalityResponse(BaseModel):
+    """Personality traits for a pet."""
+
+    activity: float | None
+    sociability: float | None
+    bravery: float | None
+    tidiness: float | None
+    appetite: float | None
+
+
 class PetResponse(BaseModel):
     """Response model for pet data."""
 
@@ -103,6 +113,11 @@ class PetResponse(BaseModel):
     is_dead: bool
     died_at: datetime | None
     cause_of_death: str | None
+    personality_activity: float | None
+    personality_sociability: float | None
+    personality_bravery: float | None
+    personality_tidiness: float | None
+    personality_appetite: float | None
     created_at: datetime
     updated_at: datetime
     last_fed_at: datetime | None
