@@ -1,10 +1,10 @@
 """API routes for pet management."""
 
+import logging
 import math
 from datetime import UTC, datetime
 from typing import Annotated
 
-import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
+from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.auth import get_current_user, get_optional_user
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
@@ -30,7 +31,7 @@ from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.token_encryption import decrypt_token
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["pets"])
 
@@ -118,7 +119,6 @@ class PetResponse(BaseModel):
     personality_bravery: float | None
     personality_tidiness: float | None
     personality_appetite: float | None
-    last_contributor_count: int
     created_at: datetime
     updated_at: datetime
     last_fed_at: datetime | None
@@ -414,12 +414,6 @@ async def create_pet(
         user_id=user.id if user else None,
         style=pet_data.style,
     )
-    logger.info(
-        "pet_created",
-        pet_id=pet.id,
-        pet_name=pet.name,
-        repo=f"{pet_data.repo_owner}/{pet_data.repo_name}",
-    )
     # Enqueue egg stage image generation if a provider is configured
     try:
         get_image_provider()
@@ -527,6 +521,7 @@ async def resurrect_pet(
     pet.experience = 0
     pet.mood = PetMood.CONTENT.value
     pet.generation += 1
+    metrics_service.resurrections_total.inc()
     await session.commit()
     await session.refresh(pet)
     # Enqueue egg stage image generation for the new generation
@@ -1232,6 +1227,8 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
             detail="Missing X-GitHub-Event header",
         )
 
+    metrics_service.webhooks_received_total.labels(event_type=event_type).inc()
+
     # Handle ping event (sent when webhook is first configured)
     if event_type == "ping":
         return WebhookResponse(status="ok", message="pong")
@@ -1277,8 +1274,13 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
         pass  # Summary is best-effort; never block the webhook
 
     processed = False
-    message = await handler(payload, session)
-    processed = True
+    try:
+        message = await handler(payload, session)
+        processed = True
+        metrics_service.webhooks_processed_total.inc()
+    except Exception:
+        metrics_service.webhooks_failed_total.inc()
+        raise
 
     # Log the event; don't let logging failure crash the webhook
     try:
