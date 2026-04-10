@@ -267,7 +267,7 @@ class TestBadgeStyles:
         assert DEFAULT_BADGE_STYLE == "playful"
 
     def test_badge_styles_set_contains_all_three(self) -> None:
-        assert BADGE_STYLES == {"playful", "minimal", "maintained"}
+        assert {"playful", "minimal", "maintained"} == BADGE_STYLES
 
     def test_playful_style_returns_svg(self) -> None:
         svg = generate_badge_svg("Fluffy", "egg", "content", 80, badge_style="playful")
