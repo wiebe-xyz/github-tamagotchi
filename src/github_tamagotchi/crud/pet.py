@@ -120,6 +120,19 @@ async def get_leaderboard(
     return pets
 
 
+async def get_pets_by_github_username(
+    db: AsyncSession, username: str, limit: int = 50
+) -> list[Pet]:
+    """Get all pets where repo_owner matches the given GitHub username, ordered by creation date."""
+    result = await db.execute(
+        select(Pet)
+        .where(Pet.repo_owner == username)
+        .order_by(Pet.created_at.asc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def delete_pet(db: AsyncSession, pet: Pet) -> None:
     """Delete a pet."""
     await db.delete(pet)

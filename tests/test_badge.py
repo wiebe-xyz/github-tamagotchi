@@ -517,3 +517,225 @@ class TestContributorBadgeEndpoint:
 
         assert "cache-control" in response.headers
         assert "public" in response.headers["cache-control"]
+
+
+class TestGenerateShowcaseSvg:
+    """Unit tests for the showcase SVG generator."""
+
+    def _make_pet(self, name: str = "Chippy", stage: str = "baby", mood: str = "happy") -> dict:
+        return {"name": name, "stage": stage, "mood": mood, "health": 80, "is_dead": False}
+
+    def test_empty_pets_returns_valid_svg(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([], "alice")
+        assert svg.strip().startswith("<svg")
+        assert "</svg>" in svg
+
+    def test_empty_pets_shows_no_pets_message(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([], "alice")
+        assert "No pets yet" in svg
+        assert "alice" in svg
+
+    def test_single_pet_shows_name(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([self._make_pet("Fluffy")], "alice")
+        assert "Fluffy" in svg
+
+    def test_single_pet_shows_stage_emoji(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([self._make_pet(stage="egg")], "alice")
+        assert "🥚" in svg
+
+    def test_dead_pet_shows_tombstone(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        pet = {"name": "Ghost", "stage": "adult", "mood": "content", "health": 0, "is_dead": True}
+        svg = generate_showcase_svg([pet], "alice")
+        assert "🪦" in svg
+
+    def test_long_name_truncated(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([self._make_pet("A" * 15)], "alice")
+        assert "A" * 15 not in svg
+        assert "…" in svg
+
+    def test_multiple_pets_all_names_present(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        pets = [self._make_pet("Chippy"), self._make_pet("Fluffy"), self._make_pet("Buddy")]
+        svg = generate_showcase_svg(pets, "alice")
+        assert "Chippy" in svg
+        assert "Fluffy" in svg
+        assert "Buddy" in svg
+
+    def test_horizontal_layout_wider_than_vertical(self) -> None:
+        import re
+
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        pets = [self._make_pet("A"), self._make_pet("B"), self._make_pet("C")]
+        svg_h = generate_showcase_svg(pets, "alice", layout="horizontal")
+        svg_v = generate_showcase_svg(pets, "alice", layout="vertical")
+        w_h = int(re.search(r'width="(\d+)"', svg_h).group(1))  # type: ignore[union-attr]
+        w_v = int(re.search(r'width="(\d+)"', svg_v).group(1))  # type: ignore[union-attr]
+        assert w_h > w_v
+
+    def test_grid_layout_returns_valid_svg(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        pets = [self._make_pet(f"Pet{i}") for i in range(6)]
+        svg = generate_showcase_svg(pets, "alice", layout="grid")
+        assert svg.strip().startswith("<svg")
+        assert "</svg>" in svg
+
+    def test_light_theme_returns_valid_svg(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([self._make_pet()], "alice", theme="light")
+        assert svg.strip().startswith("<svg")
+        assert "#f8f9fa" in svg
+
+    def test_dark_theme_default(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([self._make_pet()], "alice")
+        assert "#16213e" in svg
+
+    def test_title_includes_username(self) -> None:
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        svg = generate_showcase_svg([self._make_pet()], "wiebe")
+        assert "wiebe" in svg
+
+    def test_unknown_layout_falls_back_to_horizontal(self) -> None:
+        import re
+
+        from github_tamagotchi.services.badge import generate_showcase_svg
+
+        pets = [self._make_pet("A"), self._make_pet("B")]
+        svg_h = generate_showcase_svg(pets, "u", layout="horizontal")
+        svg_u = generate_showcase_svg(pets, "u", layout="unknown")
+        w_h = int(re.search(r'width="(\d+)"', svg_h).group(1))  # type: ignore[union-attr]
+        w_u = int(re.search(r'width="(\d+)"', svg_u).group(1))  # type: ignore[union-attr]
+        assert w_h == w_u
+
+
+class TestShowcaseEndpoint:
+    """Integration tests for the showcase SVG endpoint."""
+
+    async def test_showcase_empty_returns_200(self, async_client: AsyncClient) -> None:
+        """Empty showcase returns 200 with an SVG (not 404)."""
+        response = await async_client.get("/api/v1/showcase/nobody_with_no_pets.svg")
+        assert response.status_code == 200
+        assert "image/svg+xml" in response.headers["content-type"]
+        body = response.text
+        assert body.strip().startswith("<svg")
+        assert "No pets yet" in body
+
+    async def test_showcase_with_pets_returns_svg(self, async_client: AsyncClient) -> None:
+        """Showcase returns SVG containing pet names for a user with pets."""
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "showcase_user", "repo_name": "repo1", "name": "Fluffy"},
+        )
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "showcase_user", "repo_name": "repo2", "name": "Chippy"},
+        )
+
+        response = await async_client.get("/api/v1/showcase/showcase_user.svg")
+        assert response.status_code == 200
+        body = response.text
+        assert "Fluffy" in body
+        assert "Chippy" in body
+
+    async def test_showcase_content_type(self, async_client: AsyncClient) -> None:
+        """Showcase endpoint returns SVG content type."""
+        response = await async_client.get("/api/v1/showcase/anyuser.svg")
+        assert "image/svg+xml" in response.headers["content-type"]
+
+    async def test_showcase_cache_headers(self, async_client: AsyncClient) -> None:
+        """Showcase endpoint includes proper cache headers."""
+        response = await async_client.get("/api/v1/showcase/anyuser.svg")
+        assert "cache-control" in response.headers
+        assert "public" in response.headers["cache-control"]
+        assert "max-age" in response.headers["cache-control"]
+
+    async def test_showcase_layout_horizontal(self, async_client: AsyncClient) -> None:
+        """horizontal layout query param is accepted."""
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "layout_user", "repo_name": "repo", "name": "Pixel"},
+        )
+        response = await async_client.get("/api/v1/showcase/layout_user.svg?layout=horizontal")
+        assert response.status_code == 200
+
+    async def test_showcase_layout_vertical(self, async_client: AsyncClient) -> None:
+        """vertical layout query param is accepted."""
+        response = await async_client.get("/api/v1/showcase/someuser.svg?layout=vertical")
+        assert response.status_code == 200
+
+    async def test_showcase_layout_grid(self, async_client: AsyncClient) -> None:
+        """grid layout query param is accepted."""
+        response = await async_client.get("/api/v1/showcase/someuser.svg?layout=grid")
+        assert response.status_code == 200
+
+    async def test_showcase_invalid_layout_rejected(self, async_client: AsyncClient) -> None:
+        """Invalid layout query param returns 422."""
+        response = await async_client.get("/api/v1/showcase/someuser.svg?layout=diagonal")
+        assert response.status_code == 422
+
+    async def test_showcase_theme_light(self, async_client: AsyncClient) -> None:
+        """light theme query param is accepted and changes colours."""
+        response = await async_client.get("/api/v1/showcase/someuser.svg?theme=light")
+        assert response.status_code == 200
+
+    async def test_showcase_invalid_theme_rejected(self, async_client: AsyncClient) -> None:
+        """Invalid theme query param returns 422."""
+        response = await async_client.get("/api/v1/showcase/someuser.svg?theme=neon")
+        assert response.status_code == 422
+
+    async def test_showcase_max_param_limits_pets(self, async_client: AsyncClient) -> None:
+        """max param limits the number of pets shown."""
+        for i in range(5):
+            await async_client.post(
+                "/api/v1/pets",
+                json={"repo_owner": "max_user", "repo_name": f"repo{i}", "name": f"Pet{i}"},
+            )
+
+        response_limited = await async_client.get("/api/v1/showcase/max_user.svg?max=2")
+        response_full = await async_client.get("/api/v1/showcase/max_user.svg?max=10")
+
+        assert response_limited.status_code == 200
+        assert response_full.status_code == 200
+        import re
+        w_limited = int(
+            re.search(r'width="(\d+)"', response_limited.text).group(1)  # type: ignore[union-attr]
+        )
+        w_full = int(
+            re.search(r'width="(\d+)"', response_full.text).group(1)  # type: ignore[union-attr]
+        )
+        assert w_limited < w_full
+
+    async def test_showcase_only_shows_owner_pets(self, async_client: AsyncClient) -> None:
+        """Showcase only shows pets belonging to the requested username."""
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "userA", "repo_name": "repo", "name": "UserAPet"},
+        )
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "userB", "repo_name": "repo", "name": "UserBPet"},
+        )
+
+        response = await async_client.get("/api/v1/showcase/userA.svg")
+        assert response.status_code == 200
+        body = response.text
+        assert "UserAPet" in body
+        assert "UserBPet" not in body
