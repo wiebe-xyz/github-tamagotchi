@@ -1,5 +1,7 @@
 """Pet state management and evolution logic."""
 
+import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -123,6 +125,84 @@ def calculate_experience(health: RepoHealth) -> int:
             exp += 20  # Recent commit
 
     return exp
+
+
+@dataclass
+class PetPersonality:
+    """Personality traits for a pet, each in range [0.0, 1.0]."""
+
+    activity: float      # 0=lazy, 1=active
+    sociability: float   # 0=shy, 1=social
+    bravery: float       # 0=cautious, 1=brave
+    tidiness: float      # 0=messy, 1=neat
+    appetite: float      # 0=light eater, 1=hungry
+
+
+def generate_personality(
+    repo_owner: str, repo_name: str, health: RepoHealth | None = None
+) -> PetPersonality:
+    """Generate permanent personality traits for a pet.
+
+    Uses a deterministic hash of the repo identifier for base values, then
+    nudges traits based on actual repository health metrics when available.
+    """
+    # Derive base trait values deterministically from the repo identifier
+    seed = hashlib.sha256(f"{repo_owner}/{repo_name}".encode()).hexdigest()
+    base_values = [int(seed[i * 8 : (i + 1) * 8], 16) / 0xFFFFFFFF for i in range(5)]
+    activity, sociability, bravery, tidiness, appetite = base_values
+
+    if health is not None:
+        now = datetime.now(UTC)
+
+        # Activity: nudged by commit recency
+        if health.last_commit_at:
+            hours_since = (now - health.last_commit_at).total_seconds() / 3600
+            if hours_since < 24:
+                activity = activity * 0.4 + 0.6  # nudge active
+            elif hours_since > 72:
+                activity = activity * 0.4  # nudge lazy
+
+        # Bravery: nudged by PR merge speed (no old PRs = brave)
+        if health.oldest_pr_age_hours is None or health.oldest_pr_age_hours < 24:
+            bravery = bravery * 0.4 + 0.6  # nudge brave
+        elif health.oldest_pr_age_hours > 72:
+            bravery = bravery * 0.4  # nudge cautious
+
+        # Tidiness: nudged by open issue count
+        if health.open_issues_count == 0:
+            tidiness = tidiness * 0.4 + 0.6  # nudge neat
+        elif health.open_issues_count > 10:
+            tidiness = tidiness * 0.4  # nudge messy
+
+    return PetPersonality(
+        activity=round(min(1.0, max(0.0, activity)), 3),
+        sociability=round(min(1.0, max(0.0, sociability)), 3),
+        bravery=round(min(1.0, max(0.0, bravery)), 3),
+        tidiness=round(min(1.0, max(0.0, tidiness)), 3),
+        appetite=round(min(1.0, max(0.0, appetite)), 3),
+    )
+
+
+def get_personality_message(
+    pet_name: str, personality: PetPersonality, mood: PetMood
+) -> str | None:
+    """Return a personality-influenced status message for specific moods.
+
+    Returns None when there's no personality-driven message for the current mood.
+    """
+    if mood == PetMood.HUNGRY:
+        if personality.activity >= 0.6:
+            return f"{pet_name} is pacing around restlessly. Where's all the action?"
+        else:
+            return f"{pet_name} is enjoying the quiet. Still has snacks from last week."
+
+    if mood == PetMood.WORRIED:
+        if personality.bravery >= 0.6:
+            return f"{pet_name} is eyeing those open PRs. Time to merge and move on!"
+        else:
+            return f"{pet_name} is hiding under the desk. Too many open PRs to handle."
+
+    return None
 
 
 def get_next_stage(current_stage: PetStage, experience: int) -> PetStage:

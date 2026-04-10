@@ -12,10 +12,13 @@ from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.pet_logic import (
+    PetPersonality,
     calculate_experience,
     calculate_health_delta,
     calculate_mood,
+    generate_personality,
     get_next_stage,
+    get_personality_message,
 )
 
 mcp = FastMCP("GitHub Tamagotchi")
@@ -47,7 +50,11 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
         github = GitHubService()
         health = await github.get_repo_health(repo_owner, repo_name)
 
-        return {
+        personality = _get_pet_personality(pet, repo_owner, repo_name)
+        mood = PetMood(pet.mood)
+        personality_msg = get_personality_message(pet.name, personality, mood)
+
+        response: dict[str, Any] = {
             "repo": f"{repo_owner}/{repo_name}",
             "pet": {
                 "name": pet.name,
@@ -58,6 +65,7 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
                 "created_at": pet.created_at.isoformat() if pet.created_at else None,
                 "last_fed_at": pet.last_fed_at.isoformat() if pet.last_fed_at else None,
             },
+            "personality": _format_personality(personality),
             "health_metrics": {
                 "last_commit": health.last_commit_at.isoformat() if health.last_commit_at else None,
                 "open_prs": health.open_prs_count,
@@ -65,6 +73,9 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
                 "ci_passing": health.last_ci_success,
             },
         }
+        if personality_msg:
+            response["message"] = personality_msg
+        return response
 
 
 @mcp.tool()
@@ -80,6 +91,7 @@ async def register_pet(repo_owner: str, repo_name: str, name: str) -> dict[str, 
         The newly created pet details
     """
     async with async_session_factory() as session:
+        personality = generate_personality(repo_owner, repo_name)
         pet = Pet(
             repo_owner=repo_owner,
             repo_name=repo_name,
@@ -88,6 +100,11 @@ async def register_pet(repo_owner: str, repo_name: str, name: str) -> dict[str, 
             mood=PetMood.CONTENT.value,
             health=100,
             experience=0,
+            personality_activity=personality.activity,
+            personality_sociability=personality.sociability,
+            personality_bravery=personality.bravery,
+            personality_tidiness=personality.tidiness,
+            personality_appetite=personality.appetite,
         )
 
         try:
@@ -111,6 +128,7 @@ async def register_pet(repo_owner: str, repo_name: str, name: str) -> dict[str, 
                 "health": pet.health,
                 "experience": pet.experience,
             },
+            "personality": _format_personality(personality),
             "message": f"Pet '{name}' has hatched as an egg!",
         }
 
@@ -293,7 +311,8 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
         exp_gained = calculate_experience(health)
         pet.experience += exp_gained
 
-        pet.mood = calculate_mood(health, pet.health).value
+        new_mood = calculate_mood(health, pet.health)
+        pet.mood = new_mood.value
 
         new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
         evolved = new_stage.value != old_stage
@@ -305,7 +324,10 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
 
         await session.commit()
 
-        response: dict[str, Any] = {
+        personality = _get_pet_personality(pet, repo_owner, repo_name)
+        personality_msg = get_personality_message(pet.name, personality, new_mood)
+
+        update_response: dict[str, Any] = {
             "repo": f"{repo_owner}/{repo_name}",
             "pet": {
                 "name": pet.name,
@@ -321,10 +343,46 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
             },
         }
 
-        if evolved:
-            response["evolution"] = f"Your pet evolved from {old_stage} to {new_stage.value}!"
+        if personality_msg:
+            update_response["message"] = personality_msg
 
-        return response
+        if evolved:
+            update_response["evolution"] = (
+                f"Your pet evolved from {old_stage} to {new_stage.value}!"
+            )
+
+        return update_response
+
+
+def _get_pet_personality(pet: Pet, repo_owner: str, repo_name: str) -> PetPersonality:
+    """Get personality from pet DB fields, or generate if not yet set."""
+    if pet.personality_activity is not None:
+        return PetPersonality(
+            activity=pet.personality_activity,
+            sociability=pet.personality_sociability or 0.5,
+            bravery=pet.personality_bravery or 0.5,
+            tidiness=pet.personality_tidiness or 0.5,
+            appetite=pet.personality_appetite or 0.5,
+        )
+    return generate_personality(repo_owner, repo_name)
+
+
+def _format_personality(personality: PetPersonality) -> dict[str, Any]:
+    """Format personality traits as a display-friendly dict."""
+    return {
+        "activity": personality.activity,
+        "sociability": personality.sociability,
+        "bravery": personality.bravery,
+        "tidiness": personality.tidiness,
+        "appetite": personality.appetite,
+        "display": {
+            "activity": "Active" if personality.activity >= 0.5 else "Lazy",
+            "sociability": "Social" if personality.sociability >= 0.5 else "Shy",
+            "bravery": "Brave" if personality.bravery >= 0.5 else "Cautious",
+            "tidiness": "Neat" if personality.tidiness >= 0.5 else "Messy",
+            "appetite": "Hungry" if personality.appetite >= 0.5 else "Light eater",
+        },
+    }
 
 
 def _calculate_stage_progress(experience: int, current_stage: str) -> dict[str, Any]:
