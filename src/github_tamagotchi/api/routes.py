@@ -241,6 +241,31 @@ class MilestonesResponse(BaseModel):
     milestones: list[MilestoneItem]
 
 
+class BlameEntryItem(BaseModel):
+    """A single blame entry on the blame board."""
+
+    issue: str
+    culprit: str
+    how_long: str
+
+
+class HeroEntryItem(BaseModel):
+    """A single hero entry on the heroes board."""
+
+    good_deed: str
+    hero: str
+    when: str
+
+
+class BlameBoardResponse(BaseModel):
+    """Response model for the blame/heroes board."""
+
+    is_healthy: bool
+    blame_board_enabled: bool
+    blame_entries: list[BlameEntryItem]
+    hero_entries: list[HeroEntryItem]
+
+
 class LeaderboardEntry(BaseModel):
     """A single entry on the leaderboard."""
 
@@ -758,6 +783,53 @@ async def get_pet_milestones(
     milestones = await get_milestones(session, pet.id)
     return MilestonesResponse(
         milestones=[MilestoneItem.model_validate(m) for m in milestones]
+    )
+
+
+@router.get("/pets/{repo_owner}/{repo_name}/blame-board", response_model=BlameBoardResponse)
+async def get_blame_board(
+    repo_owner: str,
+    repo_name: str,
+    session: DbSession,
+) -> BlameBoardResponse:
+    """Get the blame/heroes board for a pet. Public endpoint.
+
+    Returns blame entries when the pet is unhealthy, and hero entries when healthy.
+    Returns empty lists when blame_board_enabled is False.
+    """
+    from github_tamagotchi.services.github import GitHubService
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+
+    if not pet.blame_board_enabled or pet.is_dead:
+        return BlameBoardResponse(
+            is_healthy=pet.health >= 50,
+            blame_board_enabled=pet.blame_board_enabled,
+            blame_entries=[],
+            hero_entries=[],
+        )
+
+    gh = GitHubService()
+    board = await gh.get_blame_board_data(
+        repo_owner, repo_name, pet.health, pet.mood
+    )
+
+    return BlameBoardResponse(
+        is_healthy=board.is_healthy,
+        blame_board_enabled=True,
+        blame_entries=[
+            BlameEntryItem(issue=e.issue, culprit=e.culprit, how_long=e.how_long)
+            for e in board.blame_entries
+        ],
+        hero_entries=[
+            HeroEntryItem(good_deed=e.good_deed, hero=e.hero, when=e.when)
+            for e in board.hero_entries
+        ],
     )
 
 

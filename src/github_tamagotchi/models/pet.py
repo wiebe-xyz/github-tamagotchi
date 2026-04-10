@@ -114,6 +114,11 @@ class Pet(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # Blame board visibility (opt-out by repo admin)
+    blame_board_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"
