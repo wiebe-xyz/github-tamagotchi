@@ -1,7 +1,7 @@
 """Add pet admin settings: contributor_badges_enabled, thresholds, excluded_contributors table
 
-Revision ID: 020
-Revises: 019
+Revision ID: 022
+Revises: 021
 Create Date: 2026-04-10
 
 """
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "020"
-down_revision: str | None = "019"
+revision: str = "022"
+down_revision: str | None = "021"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
