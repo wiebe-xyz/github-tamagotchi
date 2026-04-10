@@ -8,6 +8,7 @@ metadata:
     version: blue
 spec:
   progressDeadlineSeconds: 900
+  revisionHistoryLimit: 2
   replicas: 1
   selector:
     matchLabels:
@@ -148,6 +149,7 @@ metadata:
     version: green
 spec:
   progressDeadlineSeconds: 900
+  revisionHistoryLimit: 2
   replicas: 0
   selector:
     matchLabels:
