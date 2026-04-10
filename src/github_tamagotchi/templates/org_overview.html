@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ org_name }}'s Pets — GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                {% if user %}
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                {% if user.is_admin %}
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                {% endif %}
+                {% endif %}
+                <a href="/leaderboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Leaderboard</a>
+            </div>
+            <div class="user-info">
+                {% if user %}
+                    {% if user.github_avatar_url %}
+                    <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                    {% endif %}
+                    <span class="user-name">{{ user.github_login }}</span>
+                    <button class="logout-button" id="logout-btn">Log out</button>
+                {% else %}
+                    <a href="/auth/github" class="cta-button" style="padding:0.4rem 1rem; font-size:0.875rem;">Login with GitHub</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+
+            <!-- Header -->
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+                <img src="https://github.com/{{ org_name }}.png?size=64" alt="{{ org_name }}" style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--surface-light);">
+                <div>
+                    <h1 style="font-size: 1.75rem; font-weight: 700; margin: 0;">{{ org_name }}</h1>
+                    <div style="color: var(--text-muted); font-size: 0.9rem;">Org Pet Overview</div>
+                </div>
+            </div>
+
+            {% if total == 0 %}
+            <!-- Empty state -->
+            <div style="text-align: center; padding: 4rem 0; color: var(--text-muted);">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">&#129361;</div>
+                <p>No pets registered for <strong>{{ org_name }}</strong> yet.</p>
+                <a href="/register" style="color: var(--accent);">Register a repo</a> to get started.
+            </div>
+            {% else %}
+
+            <!-- Health overview banner -->
+            <div class="feature" style="padding: 1.25rem; margin-top: 1.5rem; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem; justify-content: space-between;">
+                <div>
+                    <div style="font-size: 1.1rem; font-weight: 700;">{{ org_name }}'s Pets</div>
+                    <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">
+                        {{ total }} pet{{ 's' if total != 1 else '' }}
+                        &nbsp;&middot;&nbsp;
+                        avg health {{ avg_health }}
+                    </div>
+                </div>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.4rem; font-weight: 700; color: #4caf50;">{{ healthy }}</div>
+                        <div style="color: var(--text-muted); font-size: 0.75rem;">Healthy</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.4rem; font-weight: 700; color: #ff9800;">{{ hungry }}</div>
+                        <div style="color: var(--text-muted); font-size: 0.75rem;">Hungry</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.4rem; font-weight: 700; color: #f44336;">{{ sick }}</div>
+                        <div style="color: var(--text-muted); font-size: 0.75rem;">Sick</div>
+                    </div>
+                    {% if dead > 0 %}
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-muted);">{{ dead }}</div>
+                        <div style="color: var(--text-muted); font-size: 0.75rem;">Dead</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- All Pets table -->
+            <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.75rem;">All Pets</h2>
+            <div class="feature" style="padding: 0; overflow: hidden; margin-bottom: 2.5rem;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03);">
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: var(--text-muted);">Pet</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: var(--text-muted);">Repo</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: var(--text-muted);">Stage</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: var(--text-muted);">Health</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: var(--text-muted);">Top Caretaker</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in pet_entries %}
+                        {% set pet = entry.pet %}
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);{% if pet.is_dead %} opacity: 0.5;{% endif %}">
+                            <td style="padding: 0.75rem 1rem;">
+                                <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}" style="display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: inherit;">
+                                    <span style="font-size: 1.2rem;">
+                                        {% if pet.is_dead %}&#129680;
+                                        {% elif pet.stage == "egg" %}🥚
+                                        {% elif pet.stage == "baby" %}🐣
+                                        {% elif pet.stage == "child" %}🐥
+                                        {% elif pet.stage == "teen" %}🐦
+                                        {% elif pet.stage == "adult" %}🦉
+                                        {% elif pet.stage == "elder" %}🦅
+                                        {% else %}🥚{% endif %}
+                                    </span>
+                                    <span style="font-weight: 600;">{{ pet.name }}</span>
+                                </a>
+                            </td>
+                            <td style="padding: 0.75rem 1rem; color: var(--text-muted); font-size: 0.85rem;">{{ pet.repo_owner }}/{{ pet.repo_name }}</td>
+                            <td style="padding: 0.75rem 1rem;">
+                                <span style="background: var(--surface-light); padding: 0.15rem 0.5rem; border-radius: 99px; font-size: 0.8rem;">{{ pet.stage | capitalize }}</span>
+                            </td>
+                            <td style="padding: 0.75rem 1rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <div style="width: 60px; height: 6px; background: var(--surface-light); border-radius: 3px; overflow: hidden;">
+                                        <div style="height: 100%; width: {{ pet.health }}%; background: {% if pet.health >= 70 %}#4caf50{% elif pet.health >= 30 %}#ff9800{% else %}#f44336{% endif %}; border-radius: 3px;"></div>
+                                    </div>
+                                    <span style="font-size: 0.85rem; color: {% if pet.health >= 70 %}#4caf50{% elif pet.health >= 30 %}#ff9800{% else %}#f44336{% endif %};">{{ pet.health }}</span>
+                                </div>
+                            </td>
+                            <td style="padding: 0.75rem 1rem; font-size: 0.85rem;">
+                                {% if entry.top_caretaker %}
+                                <a href="/dashboard/{{ entry.top_caretaker }}" style="color: var(--accent); text-decoration: none;">@{{ entry.top_caretaker }}</a>
+                                {% else %}
+                                <span style="color: var(--text-muted);">Nobody (!)</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if org_leaderboard %}
+            <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.75rem;">Org Leaderboard</h2>
+            <div class="feature" style="padding: 1.25rem; margin-bottom: 2.5rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Top caretakers across all {{ org_name }} repos (last 30 days)</p>
+                <ol style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                    {% for username, count in org_leaderboard %}
+                    <li style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.25rem;">
+                        <span style="font-size: 0.95rem; font-weight: 700; width: 1.5rem; text-align: center; color: {% if loop.index == 1 %}#ffd700{% elif loop.index == 2 %}#c0c0c0{% elif loop.index == 3 %}#cd7f32{% else %}var(--text-muted){% endif %};">
+                            {% if loop.index == 1 %}&#129351;
+                            {% elif loop.index == 2 %}&#129352;
+                            {% elif loop.index == 3 %}&#129353;
+                            {% else %}{{ loop.index }}{% endif %}
+                        </span>
+                        <img src="https://github.com/{{ username }}.png?size=32" alt="{{ username }}" style="width: 24px; height: 24px; border-radius: 50%;">
+                        <a href="/dashboard/{{ username }}" style="flex: 1; color: inherit; text-decoration: none; font-weight: 500;">@{{ username }}</a>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Favorite of {{ count }} pet{{ 's' if count != 1 else '' }}</span>
+                    </li>
+                    {% endfor %}
+                </ol>
+            </div>
+            {% endif %}
+
+            {% if neglected %}
+            <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.75rem; color: #f44336;">Neglected Repos</h2>
+            <div class="feature" style="padding: 1.25rem; border: 1px solid rgba(244, 67, 54, 0.3); margin-bottom: 2.5rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">These repos need attention:</p>
+                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                    {% for pet in neglected %}
+                    <li style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span>{% if pet.is_dead %}&#129680;{% else %}&#128565;{% endif %}</span>
+                        <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}" style="color: var(--accent); text-decoration: none; font-weight: 500;">{{ pet.repo_owner }}/{{ pet.repo_name }}</a>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">
+                            {% if pet.is_dead %}Dead{% else %}Health {{ pet.health }}{% endif %}
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% endif %}
+        </div>
+    </main>
+
+    <footer style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid rgba(255,255,255,0.08);">
+        <a href="/" style="color: var(--text-muted); text-decoration: none;">GitHub Tamagotchi</a>
+    </footer>
+
+    {% if user %}
+    <script>
+        document.getElementById('logout-btn')?.addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+    {% endif %}
+</body>
+</html>

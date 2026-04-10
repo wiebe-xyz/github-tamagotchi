@@ -587,6 +587,74 @@ async def leaderboard_page(
     )
 
 
+@app.get("/org/{org_name}", response_class=HTMLResponse)
+async def org_overview(
+    request: Request,
+    org_name: str,
+    user: OptionalUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Org-wide pet overview: all pets, aggregate health, and contributor leaderboard."""
+    import asyncio
+
+    from github_tamagotchi.crud.pet import get_org_pets
+
+    pets = await get_org_pets(session, org_name)
+
+    # Aggregate health stats
+    total = len(pets)
+    healthy = sum(1 for p in pets if p.health >= 70 and not p.is_dead)
+    hungry = sum(1 for p in pets if 30 <= p.health < 70 and not p.is_dead)
+    sick = sum(1 for p in pets if p.health < 30 and not p.is_dead)
+    dead = sum(1 for p in pets if p.is_dead)
+    avg_health = int(sum(p.health for p in pets) / total) if total else 0
+
+    # Neglected repos: health < 30 or dead
+    neglected = [p for p in pets if p.is_dead or p.health < 30]
+
+    # Fetch top contributor per pet in parallel (best-effort)
+    top_contributors: list[str | None] = []
+    if pets:
+        tasks = [
+            GitHubService().get_top_contributor(p.repo_owner, p.repo_name) for p in pets
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            top_contributors.append(r if isinstance(r, str) else None)
+
+    # Build per-pet display entries
+    pet_entries = [
+        {"pet": p, "top_caretaker": top_contributors[i] if i < len(top_contributors) else None}
+        for i, p in enumerate(pets)
+    ]
+
+    # Build org contributor leaderboard (count of repos per top contributor)
+    caretaker_counts: dict[str, int] = {}
+    for entry in pet_entries:
+        caretaker = entry["top_caretaker"]
+        if caretaker:
+            caretaker_counts[caretaker] = caretaker_counts.get(caretaker, 0) + 1
+    org_leaderboard = sorted(caretaker_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    return templates.TemplateResponse(
+        request,
+        "org_overview.html",
+        {
+            "user": user,
+            "org_name": org_name,
+            "pet_entries": pet_entries,
+            "total": total,
+            "healthy": healthy,
+            "hungry": hungry,
+            "sick": sick,
+            "dead": dead,
+            "avg_health": avg_health,
+            "neglected": neglected,
+            "org_leaderboard": org_leaderboard,
+        },
+    )
+
+
 @app.get("/pet/{repo_owner}/{repo_name}", response_class=HTMLResponse)
 async def pet_profile(
     request: Request,
