@@ -603,3 +603,81 @@ class TestGetNextStage:
     def test_evolution_boundary_cases(self, stage: PetStage, exp: int, expected: PetStage) -> None:
         """Test evolution at exact threshold boundaries."""
         assert get_next_stage(stage, exp) == expected
+
+
+class TestDependentsResponsibilityMechanic:
+    """Tests for the dependents responsibility mechanic."""
+
+    def test_security_penalty_normal_without_dependents(self) -> None:
+        """Standard security penalty when no dependents."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_critical=1,
+            dependent_count=0,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["critical"]
+
+    def test_security_penalty_normal_below_threshold(self) -> None:
+        """Standard security penalty when dependents below 100."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_critical=1,
+            dependent_count=99,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["critical"]
+
+    def test_security_penalty_doubled_with_many_dependents(self) -> None:
+        """Security penalty is doubled when dependent_count >= 100."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_critical=1,
+            dependent_count=100,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["critical"] * 2
+
+    def test_security_penalty_doubled_for_large_dependent_count(self) -> None:
+        """Double penalty applies regardless of how many dependents above threshold."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_high=1,
+            dependent_count=10000,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["high"] * 2
+
+    def test_no_penalty_without_security_alerts_with_many_dependents(self) -> None:
+        """High dependent count alone does not affect health when no security alerts."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            dependent_count=5000,
+        )
+        assert calculate_health_delta(health) == 0

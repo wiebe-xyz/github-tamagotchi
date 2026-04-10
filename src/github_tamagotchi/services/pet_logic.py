@@ -97,14 +97,20 @@ def calculate_health_delta(health: RepoHealth) -> int:
         delta -= 5
 
     # Security alert penalties (capped per severity to avoid instant death)
+    # High-dependent packages carry more responsibility: security issues hurt more
+    sec_mult = 2 if health.dependent_count >= 100 else 1
     if health.security_alerts_critical > 0:
-        delta -= min(health.security_alerts_critical * SECURITY_HEALTH_PENALTY["critical"], 40)
+        cap = SECURITY_HEALTH_PENALTY["critical"] * health.security_alerts_critical * sec_mult
+        delta -= min(cap, 40 * sec_mult)
     if health.security_alerts_high > 0:
-        delta -= min(health.security_alerts_high * SECURITY_HEALTH_PENALTY["high"], 20)
+        cap = SECURITY_HEALTH_PENALTY["high"] * health.security_alerts_high * sec_mult
+        delta -= min(cap, 20 * sec_mult)
     if health.security_alerts_medium > 0:
-        delta -= min(health.security_alerts_medium * SECURITY_HEALTH_PENALTY["medium"], 10)
+        cap = SECURITY_HEALTH_PENALTY["medium"] * health.security_alerts_medium * sec_mult
+        delta -= min(cap, 10 * sec_mult)
     if health.security_alerts_low > 0:
-        delta -= min(health.security_alerts_low * SECURITY_HEALTH_PENALTY["low"], 4)
+        cap = SECURITY_HEALTH_PENALTY["low"] * health.security_alerts_low * sec_mult
+        delta -= min(cap, 4 * sec_mult)
 
     return delta
 

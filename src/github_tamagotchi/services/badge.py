@@ -100,6 +100,14 @@ def _sprite_image_element(b64: str, anim_name: str | None, anim_timing: str | No
     return [img_elem]
 
 
+def _format_dependent_count(count: int) -> str:
+    """Format a dependent count for compact display (e.g. 1200 -> '1.2k')."""
+    if count >= 1000:
+        formatted = f"{count / 1000:.1f}k"
+        return formatted.replace(".0k", "k")
+    return str(count)
+
+
 def _playful_badge(
     display_name: str,
     stage: str,
@@ -108,6 +116,7 @@ def _playful_badge(
     *,
     commit_streak: int = 0,
     pet_image_b64: str | None = None,
+    flair_text: str | None = None,
 ) -> str:
     """Dark gradient badge with emoji sprites (original style)."""
     stage_sprite = STAGE_EMOJI.get(stage, "🥚")
@@ -175,6 +184,11 @@ def _playful_badge(
             lines.append(
                 f'  <text x="{_TEXT_RIGHT}" y="14" font-size="7" fill="#ff9800" {_END}'
                 f' font-family="monospace">🔥{commit_streak}</text>'
+            )
+        elif flair_text:
+            lines.append(
+                f'  <text x="{_TEXT_RIGHT}" y="14" font-size="7" fill="#f1c40f" {_END}'
+                f' font-family="sans-serif">{flair_text}</text>'
             )
     else:
         # 120px wide layout with emoji (original)
@@ -420,6 +434,13 @@ def _dead_badge(
     return "\n".join(lines)
 
 
+def _dependent_flair_text(dependent_count: int) -> str | None:
+    """Return flair text for the badge when the repo has many dependents."""
+    if dependent_count >= 100:
+        return f"\u2699 {_format_dependent_count(dependent_count)} deps"
+    return None
+
+
 def generate_badge_svg(
     name: str,
     stage: str,
@@ -432,6 +453,7 @@ def generate_badge_svg(
     commit_streak: int = 0,
     pet_image_b64: str | None = None,
     badge_style: str = DEFAULT_BADGE_STYLE,
+    dependent_count: int = 0,
 ) -> str:
     """Generate an SVG badge representing the current pet state.
 
@@ -446,6 +468,7 @@ def generate_badge_svg(
         commit_streak: Current commit streak count.
         pet_image_b64: Base64-encoded PNG sprite, or None to use emoji fallback.
         badge_style: Visual style — "playful", "minimal", or "maintained".
+        dependent_count: Number of repos/packages that depend on this one.
     """
     display_name = name if len(name) <= 14 else name[:13] + "…"
 
@@ -466,9 +489,15 @@ def generate_badge_svg(
     if badge_style == "maintained":
         return _maintained_badge(display_name, stage, health)
 
-    # Default: playful
+    # Default: playful — show dependent flair for high-responsibility packages
     return _playful_badge(
-        display_name, stage, mood, health, commit_streak=commit_streak, pet_image_b64=pet_image_b64
+        display_name,
+        stage,
+        mood,
+        health,
+        commit_streak=commit_streak,
+        pet_image_b64=pet_image_b64,
+        flair_text=_dependent_flair_text(dependent_count),
     )
 
 
