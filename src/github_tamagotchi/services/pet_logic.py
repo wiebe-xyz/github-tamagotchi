@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from github_tamagotchi.models.pet import PetMood, PetStage
+from github_tamagotchi.models.pet import PetMood, PetSkin, PetStage
 from github_tamagotchi.services.github import RepoHealth
 
 if TYPE_CHECKING:
@@ -222,3 +222,29 @@ def check_death_conditions(pet: "Pet", now: datetime) -> tuple[bool, str | None]
             return True, "neglect"
 
     return False, None
+
+# Skin unlock conditions keyed by skin variant
+SKIN_UNLOCK_CONDITIONS: dict[PetSkin, str] = {
+    PetSkin.CLASSIC: "Default skin, always available",
+    PetSkin.ROBOT: "Reach Adult stage",
+    PetSkin.DRAGON: "Reach Elder stage",
+    PetSkin.GHOST: "Recover from critical health (<5) three times",
+}
+
+
+def get_unlocked_skins(pet: "Pet") -> list[PetSkin]:
+    """Return the list of skins unlocked for the given pet."""
+    unlocked = [PetSkin.CLASSIC]
+
+    stage = PetStage(pet.stage)
+
+    if stage in (PetStage.ADULT, PetStage.ELDER):
+        unlocked.append(PetSkin.ROBOT)
+
+    if stage == PetStage.ELDER:
+        unlocked.append(PetSkin.DRAGON)
+
+    if pet.low_health_recoveries >= 3:
+        unlocked.append(PetSkin.GHOST)
+
+    return unlocked

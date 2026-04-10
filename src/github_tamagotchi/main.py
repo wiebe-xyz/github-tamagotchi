@@ -118,6 +118,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     # Calculate state changes
                     health_delta = calculate_health_delta(health)
                     experience_gained = calculate_experience(health)
+                    was_critical = pet.health < 5
                     new_health = max(0, min(100, pet.health + health_delta))
                     new_experience = pet.experience + experience_gained
                     new_mood = calculate_mood(health, new_health)
@@ -125,6 +126,17 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     # Check for evolution
                     current_stage = PetStage(pet.stage)
                     new_stage = get_next_stage(current_stage, new_experience)
+
+                    # Track low-health recoveries (Ghost skin unlock condition)
+                    if was_critical and new_health >= 5:
+                        pet.low_health_recoveries += 1
+                        logger.info(
+                            "pet_low_health_recovery",
+                            pet_id=pet.id,
+                            pet_name=pet.name,
+                            repo=f"{pet.repo_owner}/{pet.repo_name}",
+                            low_health_recoveries=pet.low_health_recoveries,
+                        )
 
                     # Update pet
                     pet.health = new_health

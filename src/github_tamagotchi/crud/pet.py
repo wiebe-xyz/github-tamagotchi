@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from github_tamagotchi.models.pet import Pet, PetMood
+from github_tamagotchi.models.pet import Pet, PetMood, PetSkin
 
 # Simple in-memory leaderboard cache: stores (timestamp, data) per category
 _leaderboard_cache: dict[str, tuple[datetime, list[Pet]]] = {}
@@ -149,6 +149,14 @@ async def feed_pet(db: AsyncSession, pet: Pet) -> Pet:
     elif pet.health >= 50:
         pet.mood = PetMood.CONTENT.value
 
+    await db.commit()
+    await db.refresh(pet)
+    return pet
+
+
+async def select_skin(db: AsyncSession, pet: Pet, skin: PetSkin) -> Pet:
+    """Set the active skin on a pet."""
+    pet.skin = skin.value
     await db.commit()
     await db.refresh(pet)
     return pet

@@ -16,7 +16,7 @@ from github_tamagotchi.api.auth import get_current_user, get_optional_user
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.crud import pet as pet_crud
-from github_tamagotchi.models.pet import Pet, PetMood, PetStage
+from github_tamagotchi.models.pet import Pet, PetMood, PetSkin, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
@@ -25,6 +25,7 @@ from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE, STYLES, get_pet_appearance
 from github_tamagotchi.services.image_queue import get_image_provider
 from github_tamagotchi.services.naming import generate_name_from_repo, is_valid_pet_name
+from github_tamagotchi.services.pet_logic import SKIN_UNLOCK_CONDITIONS, get_unlocked_skins
 from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.token_encryption import decrypt_token
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
@@ -92,6 +93,8 @@ class PetResponse(BaseModel):
     mood: str
     health: int
     experience: int
+    skin: str
+    low_health_recoveries: int
     style: str
     badge_style: str
     commit_streak: int
@@ -129,6 +132,26 @@ class WebhookResponse(BaseModel):
     status: str
     message: str
 
+
+class SkinInfo(BaseModel):
+    """Info about a single skin variant."""
+
+    skin: str
+    unlocked: bool
+    unlock_condition: str
+
+
+class SkinSelectRequest(BaseModel):
+    """Request body for selecting a skin."""
+
+    skin: str = Field(..., min_length=1, max_length=20)
+
+
+class SkinSelectResponse(BaseModel):
+    """Response after selecting a skin."""
+
+    message: str
+    pet: PetResponse
 
 class HealthResponse(BaseModel):
     """Health check response."""
@@ -557,6 +580,56 @@ async def get_pet_badge(
         },
     )
 
+
+@router.get("/pets/{repo_owner}/{repo_name}/skins", response_model=list[SkinInfo])
+async def list_skins(repo_owner: str, repo_name: str, session: DbSession) -> list[SkinInfo]:
+    """List all skins and their unlock status for a pet."""
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    unlocked = get_unlocked_skins(pet)
+    return [
+        SkinInfo(
+            skin=skin.value,
+            unlocked=skin in unlocked,
+            unlock_condition=SKIN_UNLOCK_CONDITIONS[skin],
+        )
+        for skin in PetSkin
+    ]
+
+
+@router.put("/pets/{repo_owner}/{repo_name}/skin", response_model=SkinSelectResponse)
+async def select_skin(
+    repo_owner: str, repo_name: str, body: SkinSelectRequest, session: DbSession
+) -> SkinSelectResponse:
+    """Set the active skin for a pet (must be unlocked)."""
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    try:
+        chosen_skin = PetSkin(body.skin)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown skin '{body.skin}'",
+        ) from exc
+    unlocked = get_unlocked_skins(pet)
+    if chosen_skin not in unlocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Skin '{body.skin}' is not yet unlocked for this pet",
+        )
+    updated_pet = await pet_crud.select_skin(session, pet, chosen_skin)
+    return SkinSelectResponse(
+        message=f"{updated_pet.name} is now wearing the {chosen_skin.value} skin!",
+        pet=PetResponse.model_validate(updated_pet),
+    )
 
 @router.delete("/pets/{repo_owner}/{repo_name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> None:

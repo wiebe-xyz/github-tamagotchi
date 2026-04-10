@@ -38,6 +38,15 @@ class PetMood(StrEnum):
     DANCING = "dancing"
 
 
+class PetSkin(StrEnum):
+    """Visual skin applied to the pet's badge."""
+
+    CLASSIC = "classic"
+    ROBOT = "robot"
+    DRAGON = "dragon"
+    GHOST = "ghost"
+
+
 class Pet(Base):
     """A virtual pet representing a GitHub repository."""
 
@@ -74,6 +83,10 @@ class Pet(Base):
     last_streak_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # Skin
+    skin: Mapped[str] = mapped_column(String(20), default=PetSkin.CLASSIC.value)
+    low_health_recoveries: Mapped[int] = mapped_column(Integer, default=0)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
