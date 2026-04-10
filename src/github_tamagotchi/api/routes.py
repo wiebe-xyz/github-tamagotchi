@@ -1082,3 +1082,73 @@ async def get_leaderboard(session: DbSession) -> LeaderboardResponse:
         )
 
     return LeaderboardResponse(categories=categories, cached_at=now)
+
+
+@router.get("/contributor/{repo_owner}/{repo_name}/{username}.svg", response_class=Response)
+async def get_contributor_badge(
+    repo_owner: str,
+    repo_name: str,
+    username: str,
+    session: DbSession,
+    details: bool = Query(default=False, description="Include shame detail in badge"),
+) -> Response:
+    """Return an SVG badge showing a contributor's standing with the repo pet."""
+    from github_tamagotchi.services.badge import ContributorStanding, generate_contributor_badge_svg
+    from github_tamagotchi.services.github import ContributorStats
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+
+    # Fetch live contributor stats from GitHub
+    gh = GitHubService()
+    try:
+        stats: ContributorStats = await gh.get_contributor_stats(repo_owner, repo_name, username)
+    except Exception:
+        # Fall back to a neutral badge if GitHub is unreachable
+        stats = ContributorStats(
+            commits_30d=0,
+            last_commit_at=None,
+            is_top_contributor=False,
+            has_failed_ci=False,
+            days_since_last_commit=None,
+        )
+
+    # Determine standing
+    if stats.has_failed_ci and stats.commits_30d > 0:
+        standing = ContributorStanding.DOGHOUSE
+    elif stats.is_top_contributor:
+        standing = ContributorStanding.FAVORITE
+    elif stats.commits_30d > 0:
+        standing = ContributorStanding.GOOD
+    elif stats.days_since_last_commit is not None:
+        standing = ContributorStanding.ABSENT
+    else:
+        standing = ContributorStanding.NEUTRAL
+
+    shame_detail: str | None = None
+    if details and standing == ContributorStanding.DOGHOUSE:
+        days = stats.days_since_last_commit or 0
+        shame_detail = f"Broke CI {days}d ago" if days else "Broke CI recently"
+
+    svg_content = generate_contributor_badge_svg(
+        pet_name=pet.name,
+        pet_stage=pet.stage,
+        username=username,
+        standing=standing,
+        score=stats.commits_30d * 10 if standing == ContributorStanding.GOOD else None,
+        days_away=stats.days_since_last_commit if standing == ContributorStanding.ABSENT else None,
+        shame_detail=shame_detail,
+    )
+
+    return Response(
+        content=svg_content,
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+            "Content-Type": "image/svg+xml; charset=utf-8",
+        },
+    )

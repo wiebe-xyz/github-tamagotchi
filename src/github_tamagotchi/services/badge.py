@@ -1,6 +1,7 @@
 """SVG badge generation for pet state visualization."""
 
 from datetime import datetime
+from enum import StrEnum
 
 from github_tamagotchi.models.pet import PetMood, PetStage
 
@@ -467,3 +468,133 @@ def generate_badge_svg(
     return _playful_badge(
         display_name, stage, mood, health, commit_streak=commit_streak, pet_image_b64=pet_image_b64
     )
+
+
+class ContributorStanding(StrEnum):
+    """A contributor's current standing with the pet."""
+
+    FAVORITE = "favorite"
+    GOOD = "good"
+    NEUTRAL = "neutral"
+    DOGHOUSE = "doghouse"
+    ABSENT = "absent"
+
+
+# Visual config per standing
+_STANDING_CONFIG: dict[str, dict[str, str]] = {
+    ContributorStanding.FAVORITE: {
+        "accent": "#f1c40f",
+        "icon": "💕",
+        "label": "Favorite Human",
+        "verb": "loves",
+    },
+    ContributorStanding.GOOD: {
+        "accent": "#2ecc71",
+        "icon": "✨",
+        "label": "Good Standing",
+        "verb": "appreciates",
+    },
+    ContributorStanding.NEUTRAL: {
+        "accent": "#3498db",
+        "icon": "",
+        "label": "Contributor",
+        "verb": "knows",
+    },
+    ContributorStanding.DOGHOUSE: {
+        "accent": "#e74c3c",
+        "icon": "💩",
+        "label": "Doghouse",
+        "verb": "is disappointed in",
+    },
+    ContributorStanding.ABSENT: {
+        "accent": "#9b59b6",
+        "icon": "😢",
+        "label": "Missing",
+        "verb": "misses",
+    },
+}
+
+
+def generate_contributor_badge_svg(
+    pet_name: str,
+    pet_stage: str,
+    username: str,
+    standing: str,
+    *,
+    score: int | None = None,
+    days_away: int | None = None,
+    shame_detail: str | None = None,
+) -> str:
+    """Generate an SVG contributor badge showing a user's standing with the pet.
+
+    Args:
+        pet_name: Name of the pet.
+        pet_stage: Current stage of the pet (for emoji selection).
+        username: GitHub username of the contributor.
+        standing: One of the ContributorStanding values.
+        score: Point score to display (used for GOOD standing).
+        days_away: Days since last commit (used for ABSENT standing).
+        shame_detail: Short explanation for DOGHOUSE (shown when details=true).
+    """
+    cfg = _STANDING_CONFIG.get(standing, _STANDING_CONFIG[ContributorStanding.NEUTRAL])
+    accent: str = cfg["accent"]
+    icon: str = cfg["icon"]
+    label: str = cfg["label"]
+    verb: str = cfg["verb"]
+
+    stage_emoji = STAGE_EMOJI.get(pet_stage, "🐣")
+
+    # Truncate strings to keep badge compact
+    display_pet = pet_name if len(pet_name) <= 12 else pet_name[:11] + "…"
+    display_user = username if len(username) <= 14 else username[:13] + "…"
+
+    width = 200
+    height = 56
+
+    # Build detail line text
+    if standing == ContributorStanding.FAVORITE:
+        detail = "⭐ Favorite Human"
+    elif standing == ContributorStanding.GOOD and score is not None:
+        detail = f"{score} pts"
+    elif standing == ContributorStanding.ABSENT and days_away is not None:
+        detail = f"{days_away}d away"
+    elif standing == ContributorStanding.DOGHOUSE and shame_detail:
+        detail = shame_detail
+    elif standing == ContributorStanding.DOGHOUSE:
+        detail = "Fix your PR!"
+    else:
+        detail = ""
+
+    icon_part = f"{icon} " if icon else ""
+    main_text = f"{stage_emoji}{icon_part}{display_pet} {verb} {display_user}"
+    # Truncate main text if too long for the badge
+    if len(main_text) > 32:
+        main_text = main_text[:31] + "…"
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"'
+        f' role="img" aria-label="{display_pet}\'s opinion of {display_user}">',
+        f"  <title>{display_pet}'s opinion of {display_user} ({label})</title>",
+        "  <defs>",
+        '    <linearGradient id="cbg" x1="0" y1="0" x2="0" y2="1">',
+        '      <stop offset="0" stop-color="#1a1a2e"/>',
+        '      <stop offset="1" stop-color="#16213e"/>',
+        "    </linearGradient>",
+        '    <clipPath id="cr">',
+        f'      <rect width="{width}" height="{height}" rx="6"/>',
+        "    </clipPath>",
+        "  </defs>",
+        f'  <rect width="{width}" height="{height}" rx="6" fill="url(#cbg)"/>',
+        f'  <rect width="{width}" height="3" fill="{accent}"/>',
+        f'  <text x="10" y="24" font-size="11" fill="#ecf0f1"'
+        f' font-family="monospace" dominant-baseline="middle">{main_text}</text>',
+    ]
+
+    if detail:
+        lines.append(
+            f'  <text x="10" y="43" font-size="9" fill="{accent}"'
+            f' font-family="sans-serif" dominant-baseline="middle">{detail}</text>'
+        )
+
+    lines.append("</svg>")
+    return "\n".join(lines)

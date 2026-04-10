@@ -1,6 +1,7 @@
 """Tests for SVG badge generation."""
 
 import base64
+from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
 
@@ -8,7 +9,9 @@ from github_tamagotchi.services.badge import (
     BADGE_STYLES,
     DEFAULT_BADGE_STYLE,
     MOOD_ANIMATION,
+    ContributorStanding,
     generate_badge_svg,
+    generate_contributor_badge_svg,
 )
 
 # A minimal 1x1 transparent PNG, base64-encoded, used as a stand-in sprite in tests.
@@ -308,3 +311,209 @@ class TestBadgeStyles:
         svg_playful = generate_badge_svg("X", "egg", "content", 50, badge_style="playful")
         svg_unknown = generate_badge_svg("X", "egg", "content", 50, badge_style="unknown")
         assert svg_playful == svg_unknown
+
+
+class TestGenerateContributorBadgeSvg:
+    """Unit tests for the contributor badge SVG generator."""
+
+    def test_returns_valid_svg(self) -> None:
+        """Output must be a valid SVG string."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "charlie", ContributorStanding.NEUTRAL
+        )
+        assert svg.strip().startswith("<svg")
+        assert "</svg>" in svg
+
+    def test_favorite_standing_shows_star(self) -> None:
+        """Favorite standing includes the star label."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "charlie", ContributorStanding.FAVORITE
+        )
+        assert "Favorite Human" in svg
+
+    def test_good_standing_shows_score(self) -> None:
+        """Good standing with score shows point count."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "charlie", ContributorStanding.GOOD, score=127
+        )
+        assert "127 pts" in svg
+
+    def test_absent_standing_shows_days(self) -> None:
+        """Absent standing shows days away."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "charlie", ContributorStanding.ABSENT, days_away=23
+        )
+        assert "23d away" in svg
+
+    def test_doghouse_standing_default_detail(self) -> None:
+        """Doghouse standing shows default shame text when no detail provided."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "charlie", ContributorStanding.DOGHOUSE
+        )
+        assert "Fix your PR!" in svg
+
+    def test_doghouse_standing_custom_detail(self) -> None:
+        """Doghouse standing shows custom shame detail when provided."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "charlie", ContributorStanding.DOGHOUSE,
+            shame_detail="Broke CI 2d ago",
+        )
+        assert "Broke CI 2d ago" in svg
+
+    def test_contains_username(self) -> None:
+        """Badge includes the contributor's username."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "alice", ContributorStanding.GOOD
+        )
+        assert "alice" in svg
+
+    def test_contains_pet_name(self) -> None:
+        """Badge includes the pet's name."""
+        svg = generate_contributor_badge_svg(
+            "Chippy", "baby", "alice", ContributorStanding.GOOD
+        )
+        assert "Chippy" in svg
+
+    def test_long_pet_name_truncated(self) -> None:
+        """Very long pet names are truncated to keep badge width manageable."""
+        long_name = "A" * 20
+        svg = generate_contributor_badge_svg(
+            long_name, "baby", "alice", ContributorStanding.NEUTRAL
+        )
+        assert long_name not in svg
+        assert "…" in svg
+
+    def test_all_standings_produce_valid_svg(self) -> None:
+        """All standing variants produce valid SVG."""
+        for standing in ContributorStanding:
+            svg = generate_contributor_badge_svg("Pet", "baby", "user", standing)
+            assert svg.strip().startswith("<svg"), f"Invalid SVG for standing {standing}"
+            assert "</svg>" in svg
+
+
+class TestContributorBadgeEndpoint:
+    """Integration tests for the contributor badge endpoint."""
+
+    async def test_contributor_badge_not_found(self, async_client: AsyncClient) -> None:
+        """Returns 404 when the pet does not exist."""
+        response = await async_client.get("/api/v1/contributor/nobody/norepo/charlie.svg")
+        assert response.status_code == 404
+
+    async def test_contributor_badge_returns_svg(self, async_client: AsyncClient) -> None:
+        """Endpoint returns valid SVG for an existing pet."""
+        from datetime import UTC, datetime
+
+        from github_tamagotchi.services.github import ContributorStats
+
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "owner", "repo_name": "myrepo", "name": "Chippy"},
+        )
+
+        mock_stats = ContributorStats(
+            commits_30d=5,
+            last_commit_at=datetime.now(UTC),
+            is_top_contributor=True,
+            has_failed_ci=False,
+            days_since_last_commit=0,
+        )
+
+        with patch(
+            "github_tamagotchi.api.routes.GitHubService.get_contributor_stats",
+            new_callable=AsyncMock,
+            return_value=mock_stats,
+        ):
+            response = await async_client.get("/api/v1/contributor/owner/myrepo/charlie.svg")
+
+        assert response.status_code == 200
+        assert "image/svg+xml" in response.headers["content-type"]
+        body = response.text
+        assert body.strip().startswith("<svg")
+        assert "Chippy" in body
+
+    async def test_contributor_badge_favorite_standing(self, async_client: AsyncClient) -> None:
+        """Top contributor gets favorite standing badge."""
+        from datetime import UTC, datetime
+
+        from github_tamagotchi.services.github import ContributorStats
+
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "owner2", "repo_name": "myrepo2", "name": "Fluffy"},
+        )
+
+        mock_stats = ContributorStats(
+            commits_30d=10,
+            last_commit_at=datetime.now(UTC),
+            is_top_contributor=True,
+            has_failed_ci=False,
+            days_since_last_commit=0,
+        )
+
+        with patch(
+            "github_tamagotchi.api.routes.GitHubService.get_contributor_stats",
+            new_callable=AsyncMock,
+            return_value=mock_stats,
+        ):
+            response = await async_client.get("/api/v1/contributor/owner2/myrepo2/alice.svg")
+
+        assert response.status_code == 200
+        assert "Favorite Human" in response.text
+
+    async def test_contributor_badge_doghouse_with_details(self, async_client: AsyncClient) -> None:
+        """Doghouse badge with details=true shows shame explanation."""
+        from datetime import UTC, datetime
+
+        from github_tamagotchi.services.github import ContributorStats
+
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "owner3", "repo_name": "myrepo3", "name": "Chompy"},
+        )
+
+        mock_stats = ContributorStats(
+            commits_30d=2,
+            last_commit_at=datetime.now(UTC),
+            is_top_contributor=False,
+            has_failed_ci=True,
+            days_since_last_commit=2,
+        )
+
+        with patch(
+            "github_tamagotchi.api.routes.GitHubService.get_contributor_stats",
+            new_callable=AsyncMock,
+            return_value=mock_stats,
+        ):
+            response = await async_client.get(
+                "/api/v1/contributor/owner3/myrepo3/bob.svg?details=true"
+            )
+
+        assert response.status_code == 200
+        assert "Broke CI" in response.text
+
+    async def test_contributor_badge_cache_headers(self, async_client: AsyncClient) -> None:
+        """Badge endpoint includes proper cache headers."""
+        from github_tamagotchi.services.github import ContributorStats
+
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "owner4", "repo_name": "myrepo4", "name": "Pix"},
+        )
+
+        mock_stats = ContributorStats(
+            commits_30d=0,
+            last_commit_at=None,
+            is_top_contributor=False,
+            has_failed_ci=False,
+            days_since_last_commit=None,
+        )
+
+        with patch(
+            "github_tamagotchi.api.routes.GitHubService.get_contributor_stats",
+            new_callable=AsyncMock,
+            return_value=mock_stats,
+        ):
+            response = await async_client.get("/api/v1/contributor/owner4/myrepo4/eve.svg")
+
+        assert "cache-control" in response.headers
+        assert "public" in response.headers["cache-control"]
