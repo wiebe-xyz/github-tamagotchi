@@ -222,6 +222,25 @@ class AchievementsResponse(BaseModel):
     achievements: list[AchievementItem]
 
 
+class MilestoneItem(BaseModel):
+    """A single evolution milestone."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    old_stage: str
+    new_stage: str
+    experience: int
+    age_days: int
+    created_at: datetime
+
+
+class MilestonesResponse(BaseModel):
+    """Response model for the milestones list."""
+
+    milestones: list[MilestoneItem]
+
+
 class LeaderboardEntry(BaseModel):
     """A single entry on the leaderboard."""
 
@@ -719,6 +738,27 @@ async def get_pet_achievements(
             )
         )
     return AchievementsResponse(achievements=items)
+
+@router.get("/pets/{repo_owner}/{repo_name}/milestones", response_model=MilestonesResponse)
+async def get_pet_milestones(
+    repo_owner: str,
+    repo_name: str,
+    session: DbSession,
+) -> MilestonesResponse:
+    """Get recent evolution milestones for a pet. Public endpoint."""
+    from github_tamagotchi.crud.milestone import get_milestones
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+
+    milestones = await get_milestones(session, pet.id)
+    return MilestonesResponse(
+        milestones=[MilestoneItem.model_validate(m) for m in milestones]
+    )
 
 
 async def _update_images_generated_at(

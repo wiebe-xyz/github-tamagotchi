@@ -31,6 +31,7 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
 from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.mcp.server import get_mcp_server
 from github_tamagotchi.models.job_run import JobRun
 from github_tamagotchi.models.pet import Pet, PetStage
@@ -135,6 +136,9 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     if new_stage != current_stage:
                         pet.stage = new_stage.value
                         evolved_count += 1
+                        await create_milestone(
+                            session, pet, current_stage.value, new_stage.value, new_experience
+                        )
                         logger.info(
                             "pet_evolved",
                             pet_id=pet.id,
