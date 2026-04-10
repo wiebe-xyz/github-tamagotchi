@@ -901,9 +901,9 @@ async def get_pet_achievements(
         items.append(
             AchievementItem(
                 id=aid,
-                name=ACHIEVEMENTS[aid]["name"],
-                icon=ACHIEVEMENTS[aid]["icon"],
-                description=ACHIEVEMENTS[aid]["description"],
+                name=str(ACHIEVEMENTS[aid]["name"]),
+                icon=str(ACHIEVEMENTS[aid]["icon"]),
+                description=str(ACHIEVEMENTS[aid]["description"]),
                 unlocked=row is not None,
                 unlocked_at=row.unlocked_at if row is not None else None,
             )

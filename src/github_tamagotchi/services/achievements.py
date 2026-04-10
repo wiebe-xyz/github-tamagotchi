@@ -8,7 +8,7 @@ from github_tamagotchi.models.achievement import PetAchievement
 from github_tamagotchi.models.comment import PetComment
 from github_tamagotchi.models.pet import Pet, PetStage
 
-ACHIEVEMENTS: dict[str, dict[str, str]] = {
+ACHIEVEMENTS: dict[str, dict[str, str | bool]] = {
     "first_commit": {
         "name": "First Blood",
         "icon": "\U0001fa78",
