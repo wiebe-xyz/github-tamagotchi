@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.pet import Pet, PetStage
-from github_tamagotchi.services.image_generation import ImageGenerationService
+from github_tamagotchi.services.image_generation import ImageGenerationService, remove_background
 from github_tamagotchi.services.openrouter import OpenRouterService
 from github_tamagotchi.services.provider import ImageProvider
 
@@ -287,6 +287,10 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
                 raise RuntimeError(
                     f"Image generation failed for stage {stage}: {result.error}"
                 )
+
+            # Remove chroma-key background to produce a transparent PNG
+            if result.image_data:
+                result.image_data = remove_background(result.image_data)
 
             logger.info(
                 "Successfully generated image for stage",

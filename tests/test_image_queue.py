@@ -311,9 +311,15 @@ class TestProcessJob:
             filename="test_image.png",
         )
 
-        with patch(
-            "github_tamagotchi.services.image_queue.get_image_provider"
-        ) as mock_get_provider:
+        with (
+            patch(
+                "github_tamagotchi.services.image_queue.get_image_provider"
+            ) as mock_get_provider,
+            patch(
+                "github_tamagotchi.services.image_queue.remove_background",
+                return_value=b"transparent_png",
+            ),
+        ):
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
@@ -336,9 +342,15 @@ class TestProcessJob:
             filename="test_image.png",
         )
 
-        with patch(
-            "github_tamagotchi.services.image_queue.get_image_provider"
-        ) as mock_get_provider:
+        with (
+            patch(
+                "github_tamagotchi.services.image_queue.get_image_provider"
+            ) as mock_get_provider,
+            patch(
+                "github_tamagotchi.services.image_queue.remove_background",
+                return_value=b"transparent_png",
+            ),
+        ):
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
@@ -366,9 +378,15 @@ class TestProcessJob:
             filename="test_image.png",
         )
 
-        with patch(
-            "github_tamagotchi.services.image_queue.get_image_provider"
-        ) as mock_get_provider:
+        with (
+            patch(
+                "github_tamagotchi.services.image_queue.get_image_provider"
+            ) as mock_get_provider,
+            patch(
+                "github_tamagotchi.services.image_queue.remove_background",
+                return_value=b"transparent_png",
+            ),
+        ):
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
@@ -460,9 +478,15 @@ class TestRunWorker:
             await asyncio.sleep(0.5)
             stop_event.set()
 
-        with patch(
-            "github_tamagotchi.services.image_queue.get_image_provider"
-        ) as mock_get_provider:
+        with (
+            patch(
+                "github_tamagotchi.services.image_queue.get_image_provider"
+            ) as mock_get_provider,
+            patch(
+                "github_tamagotchi.services.image_queue.remove_background",
+                return_value=b"transparent_png",
+            ),
+        ):
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service

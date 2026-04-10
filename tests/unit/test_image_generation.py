@@ -1,9 +1,11 @@
 """Tests for the ComfyUI image generation service."""
 
+import io
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from PIL import Image
 
 from github_tamagotchi.models.pet import PetStage
 from github_tamagotchi.services.image_generation import (
@@ -19,6 +21,7 @@ from github_tamagotchi.services.image_generation import (
     build_workflow,
     get_pet_appearance,
     load_base_workflow,
+    remove_background,
     repo_to_seed,
 )
 
@@ -332,3 +335,88 @@ class TestGenerationResult:
         assert result.image_data is None
         assert result.filename is None
         assert result.error == "Something went wrong"
+
+
+def _make_png(width: int, height: int, color: tuple[int, int, int, int]) -> bytes:
+    """Create a solid-colour RGBA PNG in memory."""
+    img = Image.new("RGBA", (width, height), color)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class TestRemoveBackground:
+    """Tests for the chroma-key background removal function."""
+
+    def _get_all_pixels(self, img: Image.Image) -> list[tuple[int, int, int, int]]:
+        """Return all pixels in the image as a flat list of RGBA tuples."""
+        raw = img.tobytes()
+        return [
+            (raw[i], raw[i + 1], raw[i + 2], raw[i + 3])
+            for i in range(0, len(raw), 4)
+        ]
+
+    def test_flat_magenta_png_becomes_fully_transparent(self) -> None:
+        """A solid magenta image should have every pixel alpha=0 after processing."""
+        magenta_png = _make_png(4, 4, (255, 0, 255, 255))
+        result_bytes = remove_background(magenta_png)
+
+        img = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
+        pixels = self._get_all_pixels(img)
+        assert all(a == 0 for _, _, _, a in pixels), "All pixels should be transparent"
+
+    def test_non_chroma_pixels_are_preserved(self) -> None:
+        """Pixels that are not near magenta must keep their original colour and opacity."""
+        blue_png = _make_png(4, 4, (0, 0, 255, 255))
+        result_bytes = remove_background(blue_png)
+
+        img = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
+        pixels = self._get_all_pixels(img)
+        assert all(a == 255 for _, _, _, a in pixels), "Blue pixels should remain opaque"
+        assert all(r == 0 and g == 0 and b == 255 for r, g, b, _ in pixels)
+
+    def test_mixed_image_transparent_background_opaque_body(self) -> None:
+        """Magenta background pixels become transparent; non-magenta body pixels stay opaque."""
+        # 2×2 image: top row magenta, bottom row blue
+        img = Image.new("RGBA", (2, 2), (255, 0, 255, 255))
+        img.putpixel((0, 1), (0, 0, 255, 255))
+        img.putpixel((1, 1), (0, 0, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+
+        result_bytes = remove_background(buf.getvalue())
+        out = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
+
+        # Top row (magenta) → transparent
+        assert out.getpixel((0, 0))[3] == 0
+        assert out.getpixel((1, 0))[3] == 0
+        # Bottom row (blue) → opaque
+        assert out.getpixel((0, 1))[3] == 255
+        assert out.getpixel((1, 1))[3] == 255
+
+    def test_returns_valid_png_bytes(self) -> None:
+        """Output must be valid PNG bytes."""
+        png = _make_png(2, 2, (255, 0, 255, 255))
+        result = remove_background(png)
+
+        assert result[:8] == b"\x89PNG\r\n\x1a\n", "Result should start with PNG magic bytes"
+
+    def test_tolerance_boundary_included(self) -> None:
+        """Pixel within tolerance of chroma colour should also become transparent."""
+        # tolerance=40 by default; use a colour 30 units away from magenta on each channel
+        near_magenta = (255 - 30, 0 + 30, 255 - 30, 255)  # still within tolerance
+        png = _make_png(2, 2, near_magenta)
+        result_bytes = remove_background(png)
+
+        img = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
+        pixels = self._get_all_pixels(img)
+        assert all(a == 0 for _, _, _, a in pixels)
+
+    def test_custom_chroma_and_tolerance(self) -> None:
+        """Custom chroma colour and tolerance should be respected."""
+        red_png = _make_png(2, 2, (255, 0, 0, 255))
+        result_bytes = remove_background(red_png, chroma=(255, 0, 0), tolerance=10)
+
+        img = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
+        pixels = self._get_all_pixels(img)
+        assert all(a == 0 for _, _, _, a in pixels)
