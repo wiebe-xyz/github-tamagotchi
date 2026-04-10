@@ -225,6 +225,9 @@
                         >&#120143; Share</a>
                         <button class="share-btn share-copy" id="copy-link-btn" data-url="{{ page_url }}">&#128279; Copy link</button>
                         <a href="/pet/{{ repo_owner }}/{{ repo_name }}/insights" class="share-btn">&#128200; Insights</a>
+                        {% if user and (user.is_admin or user.github_login | lower == repo_owner | lower) %}
+                        <a href="/pet/{{ repo_owner }}/{{ repo_name }}/admin" class="share-btn">&#9881; Settings</a>
+                        {% endif %}
                     </div>
                 </div>
             </section>

@@ -1300,3 +1300,27 @@ class GitHubService:
             return None
         return max(author_counts, key=lambda k: author_counts[k])
 
+    async def get_repo_permission(self, owner: str, repo: str, username: str) -> str | None:
+        """Get the permission level of a user on a repo.
+
+        Returns one of: "admin", "write", "read", "none", or None on error.
+        Uses the authenticated user's token (self.token) to call the API.
+        """
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/repos/{owner}/{repo}/collaborators/{username}/permission",
+                    headers=self._get_headers(),
+                )
+                self._check_rate_limit(resp)
+                if resp.status_code == 404:
+                    return "none"
+                resp.raise_for_status()
+                data = resp.json()
+                permission: str = data.get("permission", "none")
+                return permission
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning("Failed to get repo permission", error=str(e))
+                return None
