@@ -8,6 +8,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueCon
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
+    from github_tamagotchi.models.excluded_contributor import ExcludedContributor
     from github_tamagotchi.models.image_job import ImageGenerationJob
 
 
@@ -132,7 +133,26 @@ class Pet(Base):
         Boolean, nullable=False, default=True, server_default="true"
     )
 
+    # Contributor badges visibility (opt-out by repo admin)
+    contributor_badges_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
+    # Admin-configurable thresholds
+    hungry_after_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default="3"
+    )
+    pr_review_sla_hours: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=48, server_default="48"
+    )
+    issue_response_sla_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=7, server_default="7"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"
+    )
+    excluded_contributors: Mapped[list["ExcludedContributor"]] = relationship(
+        "ExcludedContributor", back_populates="pet", cascade="all, delete-orphan"
     )

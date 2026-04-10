@@ -7,6 +7,7 @@ from github_tamagotchi.models.contributor_relationship import (
     ContributorRelationship,
     ContributorStanding,
 )
+from github_tamagotchi.models.excluded_contributor import ExcludedContributor
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.job_run import JobRun
 from github_tamagotchi.models.milestone import PetMilestone
@@ -21,6 +22,7 @@ __all__ = [
     "AlertType",
     "ContributorRelationship",
     "ContributorStanding",
+    "ExcludedContributor",
     "ImageGenerationJob",
     "JobRun",
     "JobStatus",

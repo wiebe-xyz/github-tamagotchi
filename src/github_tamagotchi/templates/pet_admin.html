@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin — {{ pet.name }} | GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .admin-section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .admin-section h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text);
+        }
+        .form-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .form-row:last-child {
+            border-bottom: none;
+        }
+        .form-label {
+            font-size: 0.9rem;
+            color: var(--text);
+        }
+        .form-label small {
+            display: block;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            margin-top: 0.15rem;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: rgba(255,255,255,0.15);
+            border-radius: 24px;
+            transition: 0.2s;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+        input:checked + .toggle-slider {
+            background-color: var(--accent, #7c3aed);
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+        .threshold-input {
+            width: 80px;
+            padding: 0.35rem 0.5rem;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.9rem;
+            text-align: right;
+        }
+        .threshold-input:focus {
+            outline: 2px solid var(--accent, #7c3aed);
+            outline-offset: 2px;
+        }
+        .danger-zone {
+            border-color: rgba(220, 38, 38, 0.4);
+        }
+        .danger-zone h2 {
+            color: #f87171;
+        }
+        .btn {
+            padding: 0.45rem 1rem;
+            border-radius: 7px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.15s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-primary {
+            background: var(--accent, #7c3aed);
+            color: white;
+        }
+        .btn-danger {
+            background: rgba(220, 38, 38, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(220, 38, 38, 0.35);
+        }
+        .btn-ghost {
+            background: rgba(255,255,255,0.07);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .save-bar {
+            display: none;
+            position: sticky;
+            bottom: 1.5rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.75rem 1.25rem;
+            margin-top: 1rem;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .save-bar.visible {
+            display: flex;
+        }
+        .contributor-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        .contributor-table th {
+            text-align: left;
+            color: var(--text-muted);
+            font-weight: 500;
+            padding: 0.4rem 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .contributor-table td {
+            padding: 0.5rem 0.6rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            vertical-align: middle;
+        }
+        .contributor-table tr:last-child td {
+            border-bottom: none;
+        }
+        .add-exclude-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .add-exclude-row input {
+            flex: 1;
+            padding: 0.4rem 0.6rem;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.875rem;
+        }
+        .add-exclude-row input::placeholder { color: var(--text-muted); }
+        .add-exclude-row input:focus {
+            outline: 2px solid var(--accent, #7c3aed);
+            outline-offset: 2px;
+        }
+        .toast {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            background: #16a34a;
+            color: white;
+            padding: 0.6rem 1.1rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.2s, transform 0.2s;
+            pointer-events: none;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast.error {
+            background: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/pet/{{ repo_owner }}/{{ repo_name }}" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">{{ pet.name }}</a>
+                {% if user and user.is_admin %}
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                {% endif %}
+            </div>
+            <div class="user-info">
+                {% if user.github_avatar_url %}
+                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                {% endif %}
+                <span class="user-name">{{ user.github_login }}</span>
+                <button class="logout-button" id="logout-btn">Log out</button>
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container" style="max-width: 740px;">
+
+            <!-- Header -->
+            <div style="margin-bottom: 2rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
+                    <a href="/pet/{{ repo_owner }}/{{ repo_name }}" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem;">&larr; {{ repo_owner }}/{{ repo_name }}</a>
+                </div>
+                <h1 style="font-size: 1.6rem; font-weight: 700;">Pet Settings</h1>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.2rem;">Manage {{ pet.name }}'s settings and contributor access.</p>
+            </div>
+
+            <!-- Pet Settings -->
+            <div class="admin-section">
+                <h2>Pet Settings</h2>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Pet name
+                        <small>Rename your pet (1–20 characters)</small>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input
+                            id="pet-name"
+                            type="text"
+                            value="{{ pet.name }}"
+                            maxlength="20"
+                            style="width: 140px; padding: 0.35rem 0.5rem; background: rgba(255,255,255,0.07); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;"
+                        >
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Blame / Heroes board
+                        <small>Show who's responsible for pet health changes</small>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-blame" {% if pet.blame_board_enabled %}checked{% endif %}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Contributor badges
+                        <small>Allow contributors to embed standing badges</small>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-badges" {% if pet.contributor_badges_enabled %}checked{% endif %}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Leaderboard participation
+                        <small>Show this pet on the public leaderboard</small>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-leaderboard" {% if not pet.leaderboard_opt_out %}checked{% endif %}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Threshold Customization -->
+            <div class="admin-section">
+                <h2>Health Thresholds</h2>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Days before "Hungry"
+                        <small>Pet gets hungry if no commit in this many days</small>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="number" id="threshold-hungry" class="threshold-input"
+                               value="{{ pet.hungry_after_days }}" min="1" max="30">
+                        <span style="color: var(--text-muted); font-size: 0.8rem;">days</span>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        PR review SLA
+                        <small>Hours before an open PR is considered overdue</small>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="number" id="threshold-pr" class="threshold-input"
+                               value="{{ pet.pr_review_sla_hours }}" min="1" max="336">
+                        <span style="color: var(--text-muted); font-size: 0.8rem;">hours</span>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Issue response SLA
+                        <small>Days before an open issue is considered neglected</small>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="number" id="threshold-issue" class="threshold-input"
+                               value="{{ pet.issue_response_sla_days }}" min="1" max="90">
+                        <span style="color: var(--text-muted); font-size: 0.8rem;">days</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Save bar for settings + thresholds -->
+            <div class="save-bar" id="save-bar">
+                <span style="flex: 1; color: var(--text-muted); font-size: 0.875rem;">You have unsaved changes.</span>
+                <button class="btn btn-ghost" id="btn-discard">Discard</button>
+                <button class="btn btn-primary" id="btn-save">Save changes</button>
+            </div>
+
+            <!-- Contributor Management -->
+            <div class="admin-section">
+                <h2>Excluded Contributors</h2>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Excluded contributors are hidden from the blame board, heroes board, and badges. Useful for bots or ex-employees.</p>
+
+                {% if excluded_contributors %}
+                <table class="contributor-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Excluded by</th>
+                            <th>Since</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="excluded-table-body">
+                    {% for ec in excluded_contributors %}
+                        <tr id="row-{{ ec.github_login }}">
+                            <td>
+                                <a href="https://github.com/{{ ec.github_login }}" target="_blank" rel="noopener"
+                                   style="color: var(--text); text-decoration: none;">
+                                    @{{ ec.github_login }}
+                                </a>
+                            </td>
+                            <td style="color: var(--text-muted);">@{{ ec.excluded_by }}</td>
+                            <td style="color: var(--text-muted);">{{ ec.excluded_at.strftime('%b %d, %Y') }}</td>
+                            <td style="text-align: right;">
+                                <button class="btn btn-ghost" style="font-size: 0.78rem; padding: 0.25rem 0.6rem;"
+                                        onclick="unexclude('{{ ec.github_login }}')">
+                                    Remove
+                                </button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div id="excluded-table-body">
+                    <p style="color: var(--text-muted); font-size: 0.875rem;">No contributors excluded.</p>
+                </div>
+                {% endif %}
+
+                <div class="add-exclude-row">
+                    <input type="text" id="exclude-login" placeholder="GitHub username to exclude" maxlength="255">
+                    <button class="btn btn-primary" onclick="excludeContributor()">Exclude</button>
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="admin-section danger-zone">
+                <h2>Danger Zone</h2>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Reset pet
+                        <small>Kills the pet and starts fresh at generation {{ pet.generation + 1 }}. All XP and streaks are lost.</small>
+                    </div>
+                    <button class="btn btn-danger" onclick="confirmReset()">Reset pet</button>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-label">
+                        Delete pet
+                        <small>Permanently removes this pet and all its history.</small>
+                    </div>
+                    <button class="btn btn-danger" onclick="confirmDelete()">Delete pet</button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Toast notification -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Confirmation modal -->
+    <div id="modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; align-items:center; justify-content:center;">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; max-width: 400px; width: 90%;">
+            <h3 id="modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;"></h3>
+            <p id="modal-body" style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.5rem;"></p>
+            <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-danger" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const REPO_OWNER = {{ repo_owner | tojson }};
+    const REPO_NAME = {{ repo_name | tojson }};
+    const API_BASE = `/api/v1/pets/${REPO_OWNER}/${REPO_NAME}/admin`;
+
+    // --- Save bar dirty tracking ---
+    let dirty = false;
+    const saveBar = document.getElementById('save-bar');
+
+    function markDirty() {
+        dirty = true;
+        saveBar.classList.add('visible');
+    }
+
+    ['pet-name', 'threshold-hungry', 'threshold-pr', 'threshold-issue'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', markDirty);
+    });
+    ['toggle-blame', 'toggle-badges', 'toggle-leaderboard'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', markDirty);
+    });
+
+    document.getElementById('btn-discard')?.addEventListener('click', () => {
+        location.reload();
+    });
+
+    document.getElementById('btn-save')?.addEventListener('click', saveSettings);
+
+    async function saveSettings() {
+        const payload = {
+            name: document.getElementById('pet-name').value.trim() || null,
+            blame_board_enabled: document.getElementById('toggle-blame').checked,
+            contributor_badges_enabled: document.getElementById('toggle-badges').checked,
+            leaderboard_opt_out: !document.getElementById('toggle-leaderboard').checked,
+            hungry_after_days: parseInt(document.getElementById('threshold-hungry').value, 10) || null,
+            pr_review_sla_hours: parseInt(document.getElementById('threshold-pr').value, 10) || null,
+            issue_response_sla_days: parseInt(document.getElementById('threshold-issue').value, 10) || null,
+        };
+
+        try {
+            const res = await fetch(`${API_BASE}/settings`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                showToast(err.detail || 'Save failed', true);
+                return;
+            }
+            dirty = false;
+            saveBar.classList.remove('visible');
+            showToast('Settings saved');
+        } catch (e) {
+            showToast('Save failed', true);
+        }
+    }
+
+    // --- Contributor exclusion ---
+    async function excludeContributor() {
+        const login = document.getElementById('exclude-login').value.trim();
+        if (!login) return;
+
+        const res = await fetch(`${API_BASE}/contributors/exclude?github_login=${encodeURIComponent(login)}`, {
+            method: 'POST',
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast(err.detail || 'Failed to exclude', true);
+            return;
+        }
+        document.getElementById('exclude-login').value = '';
+        showToast(`@${login} excluded`);
+        // Reload page to refresh the table
+        location.reload();
+    }
+
+    async function unexclude(login) {
+        const res = await fetch(`${API_BASE}/contributors/${encodeURIComponent(login)}/exclude`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) {
+            showToast('Failed to remove exclusion', true);
+            return;
+        }
+        const row = document.getElementById(`row-${login}`);
+        if (row) row.remove();
+        showToast(`@${login} exclusion removed`);
+    }
+
+    // --- Danger zone ---
+    function confirmReset() {
+        showModal(
+            'Reset pet?',
+            'This will kill {{ pet.name }} and restart at generation {{ pet.generation + 1 }}. All XP, streaks, and history are lost. This cannot be undone.',
+            async () => {
+                const res = await fetch(`${API_BASE}/reset`, { method: 'POST' });
+                if (!res.ok) { showToast('Reset failed', true); return; }
+                showToast('Pet reset. Starting fresh...');
+                setTimeout(() => location.href = `/pet/${REPO_OWNER}/${REPO_NAME}`, 1500);
+            }
+        );
+    }
+
+    function confirmDelete() {
+        showModal(
+            'Delete pet?',
+            'This will permanently delete {{ pet.name }} and all its data. This cannot be undone.',
+            async () => {
+                const res = await fetch(API_BASE, { method: 'DELETE' });
+                if (!res.ok) { showToast('Delete failed', true); return; }
+                showToast('Pet deleted.');
+                setTimeout(() => location.href = '/dashboard', 1500);
+            }
+        );
+    }
+
+    // --- Modal ---
+    let modalCallback = null;
+    function showModal(title, body, onConfirm) {
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-body').textContent = body;
+        modalCallback = onConfirm;
+        const overlay = document.getElementById('modal-overlay');
+        overlay.style.display = 'flex';
+    }
+    function closeModal() {
+        document.getElementById('modal-overlay').style.display = 'none';
+        modalCallback = null;
+    }
+    document.getElementById('modal-confirm').addEventListener('click', async () => {
+        closeModal();
+        if (modalCallback) await modalCallback();
+    });
+    document.getElementById('modal-overlay').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeModal();
+    });
+
+    // --- Toast ---
+    let toastTimer;
+    function showToast(msg, error = false) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.className = 'toast show' + (error ? ' error' : '');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { el.className = 'toast'; }, 3000);
+    }
+
+    // --- Logout ---
+    document.getElementById('logout-btn')?.addEventListener('click', async () => {
+        await fetch('/auth/logout', { method: 'POST' });
+        location.href = '/';
+    });
+    </script>
+</body>
+</html>

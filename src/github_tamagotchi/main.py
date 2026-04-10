@@ -827,6 +827,60 @@ async def pet_insights(
     )
 
 
+@app.get("/pet/{repo_owner}/{repo_name}/admin", response_class=HTMLResponse)
+async def pet_admin_page(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    user: OptionalUser,
+    session: DbSession,
+) -> Response:
+    """Pet admin panel — accessible only to the repo's GitHub admin."""
+    from sqlalchemy import select as _select
+
+    from github_tamagotchi.models.excluded_contributor import ExcludedContributor
+    from github_tamagotchi.services.token_encryption import decrypt_token
+
+    if not user:
+        return RedirectResponse(url="/auth/github", status_code=302)
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    # Check repo admin permission (site admins bypass)
+    is_repo_admin = user.is_admin
+    if not is_repo_admin and user.encrypted_token:
+        token = decrypt_token(user.encrypted_token)
+        gh = GitHubService(token=token)
+        try:
+            permission = await gh.get_repo_permission(repo_owner, repo_name, user.github_login)
+            is_repo_admin = permission == "admin"
+        except Exception:
+            pass
+
+    if not is_repo_admin:
+        raise HTTPException(status_code=403, detail="Repo admin permission required")
+
+    result = await session.execute(
+        _select(ExcludedContributor).where(ExcludedContributor.pet_id == pet.id)
+    )
+    excluded_contributors = list(result.scalars().all())
+
+    return templates.TemplateResponse(
+        request,
+        "pet_admin.html",
+        {
+            "user": user,
+            "pet": pet,
+            "repo_owner": repo_owner,
+            "repo_name": repo_name,
+            "excluded_contributors": excluded_contributors,
+            "base_url": settings.base_url,
+        },
+    )
+
+
 AdminUser = Annotated[User, Depends(get_admin_user)]
 
 
