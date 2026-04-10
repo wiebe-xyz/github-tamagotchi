@@ -100,11 +100,6 @@ class Pet(Base):
     personality_tidiness: Mapped[float | None] = mapped_column(Float, nullable=True)  # messy→neat
     personality_appetite: Mapped[float | None] = mapped_column(Float, nullable=True)  # light→hungry
 
-    # Last-known health metric snapshots
-    last_contributor_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
-
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
