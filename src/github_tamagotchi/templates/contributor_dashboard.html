@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ username }}'s Dashboard - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                {% if user %}
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                {% if user.is_admin %}
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                {% endif %}
+                {% endif %}
+                <a href="/leaderboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Leaderboard</a>
+            </div>
+            <div class="user-info">
+                {% if user %}
+                    {% if user.github_avatar_url %}
+                    <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                    {% endif %}
+                    <span class="user-name">{{ user.github_login }}</span>
+                    <button class="logout-button" id="logout-btn">Log out</button>
+                {% else %}
+                    <a href="/auth/github" class="cta-button" style="padding: 0.4rem 1rem; font-size: 0.875rem;">Login with GitHub</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+
+            <!-- Header -->
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+                <img src="https://github.com/{{ username }}.png?size=64" alt="{{ username }}" style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--surface-light);">
+                <div>
+                    <h1 style="font-size: 1.75rem; font-weight: 700; margin: 0;">{{ username }}</h1>
+                    <div style="color: var(--text-muted); font-size: 0.9rem;">Contributor Dashboard</div>
+                </div>
+            </div>
+
+            <!-- Stats summary -->
+            <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 2.5rem; margin-top: 1.5rem;">
+                <div class="feature" style="padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.6rem; font-weight: 700;">{{ total_repos }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.8rem;">Repos</div>
+                </div>
+                <div class="feature" style="padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.6rem; font-weight: 700;">{{ my_pets | length }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.8rem;">Owned Pets</div>
+                </div>
+                <div class="feature" style="padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.6rem; font-weight: 700;">{{ favorite_count }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.8rem;">Favorites</div>
+                </div>
+                <div class="feature" style="padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.6rem; font-weight: 700;">{{ total_score }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.8rem;">Commits (30d)</div>
+                </div>
+            </div>
+
+            <!-- Your Pets -->
+            <h2 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 1rem;">Your Pets</h2>
+
+            {% if my_pets %}
+            <div class="feature-grid" style="margin-bottom: 3rem;">
+                {% for pet in my_pets %}
+                <div class="feature" style="padding: 1.25rem; display: flex; flex-direction: column; gap: 0.6rem;{% if pet.is_dead %} opacity: 0.6; filter: grayscale(0.8);{% endif %}">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <span style="font-size: 1.75rem;">
+                            {% if pet.is_dead %}&#129680;
+                            {% elif pet.stage == "egg" %}🥚
+                            {% elif pet.stage == "baby" %}🐣
+                            {% elif pet.stage == "child" %}🐥
+                            {% elif pet.stage == "teen" %}🐦
+                            {% elif pet.stage == "adult" %}🦉
+                            {% elif pet.stage == "elder" %}🦅
+                            {% else %}🥚
+                            {% endif %}
+                        </span>
+                        <div>
+                            <div style="font-weight: 600;">{{ pet.name }}{% if pet.generation > 1 %} <span style="font-size:0.65em; background: linear-gradient(135deg, #b8860b, #ffd700); color:#1a1a1a; padding:0.1em 0.4em; border-radius:99px;">Gen {{ pet.generation }}</span>{% endif %}</div>
+                            <div style="color: var(--text-muted); font-size: 0.8rem;">{{ pet.repo_owner }}/{{ pet.repo_name }}</div>
+                        </div>
+                    </div>
+                    {% if not pet.is_dead %}
+                    <div style="display: flex; gap: 0.4rem; font-size: 0.8rem;">
+                        <span style="background: var(--surface-light); padding: 0.15rem 0.5rem; border-radius: 99px;">{{ pet.stage | capitalize }}</span>
+                        <span style="background: var(--surface-light); padding: 0.15rem 0.5rem; border-radius: 99px;">{{ pet.mood | capitalize }}</span>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.2rem;">
+                            <span style="color: var(--text-muted);">Health</span>
+                            <span>{{ pet.health }}%</span>
+                        </div>
+                        <div style="background: var(--surface-light); border-radius: 4px; height: 5px; overflow: hidden;">
+                            <div style="background: {% if pet.health >= 70 %}var(--secondary){% elif pet.health >= 30 %}var(--accent){% else %}#ef4444{% endif %}; width: {{ pet.health }}%; height: 100%;"></div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div style="font-size: 0.8rem; color: #9e9e9e;">
+                        Deceased{% if pet.cause_of_death %} &mdash; {{ pet.cause_of_death | capitalize }}{% endif %}
+                    </div>
+                    {% endif %}
+                    <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}" class="secondary-btn" style="text-align: center; font-size: 0.85rem; margin-top: auto;">
+                        {% if pet.is_dead %}View Memorial{% else %}View Profile{% endif %}
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="padding: 2rem 0 3rem; color: var(--text-muted); font-size: 0.95rem;">
+                No registered pets for <strong>{{ username }}</strong>'s repos yet.
+            </div>
+            {% endif %}
+
+            <!-- Team Pets -->
+            <h2 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 1rem;">Team Pets <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted);">({{ username }}'s standing)</span></h2>
+
+            {% if team_pets %}
+            <div style="overflow-x: auto; margin-bottom: 3rem;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--surface-light);">
+                            <th style="text-align: left; padding: 0.5rem 0.75rem; color: var(--text-muted); font-weight: 600;">Pet</th>
+                            <th style="text-align: left; padding: 0.5rem 0.75rem; color: var(--text-muted); font-weight: 600;">Repo</th>
+                            <th style="text-align: left; padding: 0.5rem 0.75rem; color: var(--text-muted); font-weight: 600;">Standing</th>
+                            <th style="text-align: right; padding: 0.5rem 0.75rem; color: var(--text-muted); font-weight: 600;">Last Active</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in team_pets %}
+                        <tr style="border-bottom: 1px solid var(--surface-light);">
+                            <td style="padding: 0.75rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-size: 1.25rem;">
+                                        {% if entry.pet.stage == "egg" %}🥚
+                                        {% elif entry.pet.stage == "baby" %}🐣
+                                        {% elif entry.pet.stage == "child" %}🐥
+                                        {% elif entry.pet.stage == "teen" %}🐦
+                                        {% elif entry.pet.stage == "adult" %}🦉
+                                        {% elif entry.pet.stage == "elder" %}🦅
+                                        {% else %}🥚
+                                        {% endif %}
+                                    </span>
+                                    <a href="/pet/{{ entry.pet.repo_owner }}/{{ entry.pet.repo_name }}" style="color: var(--text-primary); font-weight: 600; text-decoration: none;">{{ entry.pet.name }}</a>
+                                </div>
+                            </td>
+                            <td style="padding: 0.75rem; color: var(--text-muted);">
+                                <a href="https://github.com/{{ entry.pet.repo_owner }}/{{ entry.pet.repo_name }}" target="_blank" rel="noopener" style="color: var(--text-muted); text-decoration: none;">{{ entry.pet.repo_owner }}/{{ entry.pet.repo_name }}</a>
+                            </td>
+                            <td style="padding: 0.75rem;">
+                                {% if entry.standing == "favorite" %}
+                                <span style="background: rgba(var(--secondary-rgb, 34,197,94), 0.15); color: #22c55e; padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.8rem;">😍 Favorite</span>
+                                {% elif entry.standing == "good" %}
+                                <span style="background: rgba(59,130,246,0.12); color: #60a5fa; padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.8rem;">😊 Good</span>
+                                {% elif entry.standing == "doghouse" %}
+                                <span style="background: rgba(249,115,22,0.12); color: #fb923c; padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.8rem;">😤 Doghouse</span>
+                                {% else %}
+                                <span style="background: var(--surface-light); color: var(--text-muted); padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.8rem;">😢 Absent</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding: 0.75rem; text-align: right; color: var(--text-muted); font-size: 0.85rem;">
+                                {% if entry.days_since == 0 %}today
+                                {% elif entry.days_since == 1 %}yesterday
+                                {% else %}{{ entry.days_since }} days ago
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Redemption Path (for absent entries) -->
+            {% set absent_pets = team_pets | selectattr("standing", "equalto", "absent") | list %}
+            {% if absent_pets %}
+            <div style="background: var(--surface-light); border-radius: 8px; padding: 1.25rem; margin-bottom: 2rem;">
+                <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem;">Redemption Path</h3>
+                <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 0.75rem;">These pets miss you! Get back in their good graces:</p>
+                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                    {% for entry in absent_pets %}
+                    <li style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
+                        <span>&#128279;</span>
+                        <a href="https://github.com/{{ entry.pet.repo_owner }}/{{ entry.pet.repo_name }}" target="_blank" rel="noopener" style="color: var(--accent);">{{ entry.pet.repo_owner }}/{{ entry.pet.repo_name }}</a>
+                        <span style="color: var(--text-muted);">&mdash; last seen {{ entry.days_since }} days ago</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% else %}
+            <div style="padding: 2rem 0; color: var(--text-muted); font-size: 0.95rem;">
+                {% if my_pets %}
+                No contribution activity found in other registered repos.
+                {% else %}
+                No pets found. <strong>{{ username }}</strong> hasn't contributed to any registered repos yet.
+                {% endif %}
+            </div>
+            {% endif %}
+
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    {% if user %}
+    <script>
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async () => {
+                await fetch('/auth/logout', { method: 'POST' });
+                window.location.href = '/';
+            });
+        }
+    </script>
+    {% endif %}
+</body>
+</html>

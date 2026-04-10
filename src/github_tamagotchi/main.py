@@ -445,6 +445,76 @@ async def register_complete_page(
         },
     )
 
+
+@app.get("/dashboard/{username}", response_class=HTMLResponse)
+async def contributor_dashboard(
+    request: Request,
+    username: str,
+    user: OptionalUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Personal pet dashboard showing a contributor's standing across all pets."""
+    from sqlalchemy import select as sa_select
+
+    result = await session.execute(sa_select(Pet))
+    all_pets = result.scalars().all()
+
+    # Pets owned by this user (their GitHub repos)
+    my_pets = [p for p in all_pets if p.repo_owner.lower() == username.lower()]
+
+    # Other pets (living) — check if user contributes
+    other_pets = [p for p in all_pets if p.repo_owner.lower() != username.lower() and not p.is_dead]
+
+    github_service = GitHubService()
+    team_pets = []
+    for pet in other_pets:
+        try:
+            stats = await github_service.get_contributor_stats(
+                pet.repo_owner, pet.repo_name, username
+            )
+            if stats.days_since_last_commit is None:
+                continue  # never contributed here
+            if stats.is_top_contributor:
+                standing = "favorite"
+            elif stats.commits_30d > 0:
+                standing = "good"
+            else:
+                standing = "absent"
+            team_pets.append(
+                {
+                    "pet": pet,
+                    "standing": standing,
+                    "commits_30d": stats.commits_30d,
+                    "days_since": stats.days_since_last_commit,
+                }
+            )
+        except Exception:
+            logger.warning(
+                "contributor_dashboard_error",
+                username=username,
+                repo=f"{pet.repo_owner}/{pet.repo_name}",
+            )
+
+    favorite_count = sum(1 for t in team_pets if t["standing"] == "favorite")
+    doghouse_count = sum(1 for t in team_pets if t["standing"] == "doghouse")
+    total_score: int = sum(t["commits_30d"] for t in team_pets)  # type: ignore[misc]
+
+    return templates.TemplateResponse(
+        request,
+        "contributor_dashboard.html",
+        {
+            "user": user,
+            "username": username,
+            "my_pets": my_pets,
+            "team_pets": team_pets,
+            "total_repos": len(team_pets) + len(my_pets),
+            "favorite_count": favorite_count,
+            "doghouse_count": doghouse_count,
+            "total_score": total_score,
+        },
+    )
+
+
 @app.get("/leaderboard", response_class=HTMLResponse)
 async def leaderboard_page(
     request: Request, user: OptionalUser, session: DbSession
