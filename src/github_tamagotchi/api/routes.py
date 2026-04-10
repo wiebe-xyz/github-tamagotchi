@@ -26,7 +26,9 @@ from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE, STYLES, get_pet_appearance
 from github_tamagotchi.services.image_queue import get_image_provider
 from github_tamagotchi.services.naming import generate_name_from_repo, is_valid_pet_name
+from github_tamagotchi.services.openrouter import OpenRouterService
 from github_tamagotchi.services.pet_logic import SKIN_UNLOCK_CONDITIONS, get_unlocked_skins
+from github_tamagotchi.services.sprite_sheet import compose_animated_gif
 from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.token_encryption import decrypt_token
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
@@ -989,6 +991,18 @@ async def _update_images_generated_at(
     await session.commit()
 
 
+async def _update_canonical_appearance(
+    session: AsyncSession, repo_owner: str, repo_name: str, canonical_appearance: str
+) -> None:
+    """Store the canonical appearance description for a pet."""
+    await session.execute(
+        update(Pet)
+        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+        .values(canonical_appearance=canonical_appearance)
+    )
+    await session.commit()
+
+
 @router.get(
     "/pets/{repo_owner}/{repo_name}/image/{stage}",
     responses={
@@ -1062,6 +1076,128 @@ async def get_pet_image(
     except Exception as e:
         logger.error("Failed to generate image: %s", e)
         raise HTTPException(status_code=503, detail="Image generation failed") from None
+
+
+@router.get(
+    "/pets/{repo_owner}/{repo_name}/image/{stage}/animated",
+    responses={
+        200: {"content": {"image/gif": {}}, "description": "Animated pet GIF"},
+        404: {"description": "Animated GIF not found"},
+        503: {"description": "Sprite sheet generation not available"},
+    },
+)
+async def get_pet_animated_gif(
+    repo_owner: str,
+    repo_name: str,
+    stage: str,
+    session: DbSession,
+    storage: StorageDep,
+) -> Response:
+    """Get the animated GIF for a pet at a specific stage.
+
+    If the GIF doesn't exist it will be generated on demand using the OpenRouter
+    provider (sprite sheet generation requires a prompt-based image API).
+
+    The idle loop plays automatically; the mood frame sequence is chosen
+    server-side based on the current pet state.
+    """
+    valid_stages = [s.value for s in PetStage]
+    if stage not in valid_stages:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
+        )
+
+    if not settings.minio_endpoint:
+        raise HTTPException(status_code=503, detail="Image storage not configured")
+
+    # Return cached GIF if it already exists
+    try:
+        gif_data = await storage.get_animated_gif(repo_owner, repo_name, stage)
+    except Exception as e:
+        logger.error("Failed to get animated GIF from storage: %s", e)
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
+
+    if gif_data:
+        return Response(
+            content=gif_data,
+            media_type="image/gif",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    # Sprite sheet generation only supported with OpenRouter
+    if not settings.image_generation_enabled or settings.image_generation_provider != "openrouter":
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Animated GIF not found and sprite sheet generation "
+                "requires OpenRouter provider"
+            ),
+        )
+
+    # Fetch the pet to get mood, health, style, and stored canonical appearance
+    pet = await pet_crud.get_pet(session, repo_owner, repo_name)
+    mood = pet.mood if pet else "content"
+    health = pet.health if pet else 100
+    style = pet.style if pet else DEFAULT_STYLE
+    stored_appearance = pet.canonical_appearance if pet else None
+
+    try:
+        openrouter = OpenRouterService()
+        sheet_result = await openrouter.generate_sprite_sheet(
+            repo_owner,
+            repo_name,
+            stage,
+            style=style,
+            canonical_appearance=stored_appearance,
+        )
+    except Exception as e:
+        logger.error("Sprite sheet generation failed: %s", e)
+        raise HTTPException(status_code=503, detail="Sprite sheet generation failed") from None
+
+    if not sheet_result.success or not sheet_result.sprite_sheet_data:
+        raise HTTPException(
+            status_code=503,
+            detail=sheet_result.error or "Sprite sheet generation failed",
+        )
+
+    # Store sprite sheet and individual frames
+    try:
+        await storage.upload_sprite_sheet(
+            repo_owner, repo_name, stage, sheet_result.sprite_sheet_data
+        )
+        for idx, frame_bytes in enumerate(sheet_result.frames):
+            await storage.upload_frame(repo_owner, repo_name, stage, idx, frame_bytes)
+    except Exception as e:
+        logger.warning("Failed to store sprite sheet assets: %s", e)
+        # Non-fatal: continue to compose and return the GIF
+
+    # Compose the mood-driven animated GIF
+    try:
+        gif_data = compose_animated_gif(sheet_result.frames, mood=mood, health=health)
+    except Exception as e:
+        logger.error("GIF composition failed: %s", e)
+        raise HTTPException(status_code=503, detail="GIF composition failed") from None
+
+    # Persist the GIF and update canonical appearance in the DB
+    try:
+        await storage.upload_animated_gif(repo_owner, repo_name, stage, gif_data)
+    except Exception as e:
+        logger.warning("Failed to store animated GIF: %s", e)
+
+    if pet and not pet.canonical_appearance and sheet_result.canonical_appearance:
+        try:
+            await _update_canonical_appearance(
+                session, repo_owner, repo_name, sheet_result.canonical_appearance
+            )
+        except Exception as e:
+            logger.warning("Failed to update canonical appearance: %s", e)
+
+    return Response(
+        content=gif_data,
+        media_type="image/gif",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.post(

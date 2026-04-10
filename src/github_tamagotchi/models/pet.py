@@ -4,7 +4,17 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -168,6 +178,9 @@ class Pet(Base):
     dependent_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+
+    # Canonical appearance description used for sprite sheet generation consistency
+    canonical_appearance: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(

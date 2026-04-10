@@ -220,3 +220,116 @@ class StorageService:
         object_path = self._get_object_path(owner, repo, stage)
         protocol = "https" if self.secure else "http"
         return f"{protocol}://{self.endpoint}/{self.bucket}/{object_path}"
+
+    # --- Sprite sheet and animated GIF storage ---
+
+    def _get_spritesheet_path(self, owner: str, repo: str, stage: str) -> str:
+        """Build the object path for a sprite sheet."""
+        _validate_path_component(owner, "owner")
+        _validate_path_component(repo, "repo")
+        return f"pets/{owner}/{repo}/{stage}_spritesheet.png"
+
+    def _get_frame_path(self, owner: str, repo: str, stage: str, frame_index: int) -> str:
+        """Build the object path for an individual frame."""
+        _validate_path_component(owner, "owner")
+        _validate_path_component(repo, "repo")
+        return f"pets/{owner}/{repo}/{stage}_frame_{frame_index}.png"
+
+    def _get_animated_gif_path(self, owner: str, repo: str, stage: str) -> str:
+        """Build the object path for an animated GIF."""
+        _validate_path_component(owner, "owner")
+        _validate_path_component(repo, "repo")
+        return f"pets/{owner}/{repo}/{stage}_animated.gif"
+
+    async def _upload_raw(
+        self, object_path: str, data: bytes, content_type: str
+    ) -> str:
+        """Upload raw bytes to an arbitrary object path."""
+        try:
+            await self.ensure_bucket_exists()
+            await asyncio.to_thread(
+                self.client.put_object,
+                self.bucket,
+                object_path,
+                io.BytesIO(data),
+                len(data),
+                content_type,
+            )
+            logger.debug("Uploaded object", path=object_path)
+            return object_path
+        except S3Error as e:
+            logger.error("Failed to upload object", error=str(e), path=object_path)
+            raise
+
+    async def _get_raw(self, object_path: str) -> bytes | None:
+        """Retrieve raw bytes from an arbitrary object path."""
+        try:
+            response = await asyncio.to_thread(
+                self.client.get_object, self.bucket, object_path
+            )
+            data = response.read()
+            response.close()
+            response.release_conn()
+            return data
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return None
+            logger.error("Failed to get object", error=str(e), path=object_path)
+            raise
+
+    async def _object_exists(self, object_path: str) -> bool:
+        """Check if an arbitrary object path exists."""
+        try:
+            await asyncio.to_thread(self.client.stat_object, self.bucket, object_path)
+            return True
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return False
+            raise
+
+    async def upload_sprite_sheet(
+        self, owner: str, repo: str, stage: str, image_data: bytes
+    ) -> str:
+        """Upload a sprite sheet to storage."""
+        object_path = self._get_spritesheet_path(owner, repo, stage)
+        return await self._upload_raw(object_path, image_data, "image/png")
+
+    async def get_sprite_sheet(
+        self, owner: str, repo: str, stage: str
+    ) -> bytes | None:
+        """Retrieve a sprite sheet from storage."""
+        object_path = self._get_spritesheet_path(owner, repo, stage)
+        return await self._get_raw(object_path)
+
+    async def upload_frame(
+        self, owner: str, repo: str, stage: str, frame_index: int, image_data: bytes
+    ) -> str:
+        """Upload an individual frame to storage."""
+        object_path = self._get_frame_path(owner, repo, stage, frame_index)
+        return await self._upload_raw(object_path, image_data, "image/png")
+
+    async def get_frame(
+        self, owner: str, repo: str, stage: str, frame_index: int
+    ) -> bytes | None:
+        """Retrieve an individual frame from storage."""
+        object_path = self._get_frame_path(owner, repo, stage, frame_index)
+        return await self._get_raw(object_path)
+
+    async def upload_animated_gif(
+        self, owner: str, repo: str, stage: str, gif_data: bytes
+    ) -> str:
+        """Upload an animated GIF to storage."""
+        object_path = self._get_animated_gif_path(owner, repo, stage)
+        return await self._upload_raw(object_path, gif_data, "image/gif")
+
+    async def get_animated_gif(
+        self, owner: str, repo: str, stage: str
+    ) -> bytes | None:
+        """Retrieve an animated GIF from storage."""
+        object_path = self._get_animated_gif_path(owner, repo, stage)
+        return await self._get_raw(object_path)
+
+    async def animated_gif_exists(self, owner: str, repo: str, stage: str) -> bool:
+        """Check if an animated GIF exists in storage."""
+        object_path = self._get_animated_gif_path(owner, repo, stage)
+        return await self._object_exists(object_path)
