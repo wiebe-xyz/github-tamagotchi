@@ -204,6 +204,17 @@
                     {% endif %}
                     {% endif %}
 
+                    <!-- Evolution milestone banner (populated by JS) -->
+                    <div id="milestone-banner" style="display:none; margin-top:1rem; margin-bottom:0.75rem; padding:0.9rem 1.1rem; border-radius:10px; background:linear-gradient(135deg,rgba(255,215,0,0.12),rgba(255,215,0,0.04)); border:1px solid rgba(255,215,0,0.3);">
+                        <div style="font-size:0.8rem; color:rgba(255,255,255,0.55); margin-bottom:0.35rem; letter-spacing:0.04em; text-transform:uppercase;">Latest Evolution</div>
+                        <div id="milestone-text" style="font-size:1rem; font-weight:600; color:rgba(255,255,255,0.9);"></div>
+                        <div id="milestone-meta" style="font-size:0.8rem; color:rgba(255,255,255,0.5); margin-top:0.25rem;"></div>
+                        <div style="margin-top:0.7rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <a id="milestone-tweet-btn" href="#" target="_blank" rel="noopener" class="share-btn share-twitter" style="font-size:0.85rem; padding:0.35rem 0.9rem;">&#120143; Share on X</a>
+                            <button id="milestone-copy-btn" class="share-btn share-copy" style="font-size:0.85rem; padding:0.35rem 0.9rem;">&#128279; Copy link</button>
+                        </div>
+                    </div>
+
                     <!-- Share buttons -->
                     <div class="share-row">
                         <a
@@ -213,6 +224,7 @@
                             class="share-btn share-twitter"
                         >&#120143; Share</a>
                         <button class="share-btn share-copy" id="copy-link-btn" data-url="{{ page_url }}">&#128279; Copy link</button>
+                        <a href="/pet/{{ repo_owner }}/{{ repo_name }}/insights" class="share-btn">&#128200; Insights</a>
                     </div>
                 </div>
             </section>
@@ -522,6 +534,48 @@
                 }
             });
         }
+
+        // Evolution milestones
+        (async function loadMilestone() {
+            try {
+                const resp = await fetch('/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/milestones');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (!data.milestones || data.milestones.length === 0) return;
+
+                const m = data.milestones[0];
+                // Only show banner if milestone is within 30 days
+                const ageMs = Date.now() - new Date(m.created_at).getTime();
+                if (ageMs > 30 * 86400 * 1000) return;
+
+                const banner = document.getElementById('milestone-banner');
+                const milestoneText = document.getElementById('milestone-text');
+                const milestoneMeta = document.getElementById('milestone-meta');
+                const tweetBtn = document.getElementById('milestone-tweet-btn');
+                const copyBtn = document.getElementById('milestone-copy-btn');
+
+                milestoneText.textContent = `\uD83C\uDF89 {{ pet.name }} evolved from ${m.old_stage.charAt(0).toUpperCase() + m.old_stage.slice(1)} to ${m.new_stage.charAt(0).toUpperCase() + m.new_stage.slice(1)}!`;
+                milestoneMeta.textContent = `${m.experience} XP \u00b7 ${m.age_days} day${m.age_days !== 1 ? 's' : ''} old`;
+
+                const tweetText = encodeURIComponent(
+                    `\uD83C\uDF89 {{ pet.name }} just evolved to ${m.new_stage.charAt(0).toUpperCase() + m.new_stage.slice(1)}!\n${m.experience} XP and ${m.age_days} days of care later\u2026\n`
+                );
+                const pageUrl = encodeURIComponent('{{ page_url }}');
+                tweetBtn.href = `https://twitter.com/intent/tweet?text=${tweetText}&url=${pageUrl}`;
+
+                copyBtn.addEventListener('click', () => {
+                    navigator.clipboard.writeText('{{ page_url }}').then(() => {
+                        const orig = copyBtn.innerHTML;
+                        copyBtn.innerHTML = '\u2713 Copied!';
+                        setTimeout(() => { copyBtn.innerHTML = orig; }, 2000);
+                    });
+                });
+
+                banner.style.display = 'block';
+            } catch {
+                // silently ignore
+            }
+        })();
 
         // Achievements
         const ACHIEVEMENTS_API = '/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/achievements';
