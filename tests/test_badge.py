@@ -4,7 +4,12 @@ import base64
 
 from httpx import AsyncClient
 
-from github_tamagotchi.services.badge import MOOD_ANIMATION, generate_badge_svg
+from github_tamagotchi.services.badge import (
+    BADGE_STYLES,
+    DEFAULT_BADGE_STYLE,
+    MOOD_ANIMATION,
+    generate_badge_svg,
+)
 
 # A minimal 1x1 transparent PNG, base64-encoded, used as a stand-in sprite in tests.
 _DUMMY_PNG_BYTES = (
@@ -238,6 +243,7 @@ class TestBadgeEndpoint:
         response = await async_client.get("/api/v1/pets/nobody/norepo/badge.svg")
         assert response.status_code == 404
 
+<<<<<<< HEAD
     async def test_badge_falls_back_to_emoji_when_no_image(self, async_client: AsyncClient) -> None:
         """Badge endpoint returns emoji-based SVG when no sprite is in storage."""
         await async_client.post(
@@ -252,3 +258,55 @@ class TestBadgeEndpoint:
         assert body.strip().startswith("<svg")
         # Emoji fallback badge is 120px wide
         assert 'width="120"' in body
+=======
+
+class TestBadgeStyles:
+    """Tests for the three badge style variants."""
+
+    def test_default_badge_style_is_playful(self) -> None:
+        assert DEFAULT_BADGE_STYLE == "playful"
+
+    def test_badge_styles_set_contains_all_three(self) -> None:
+        assert BADGE_STYLES == {"playful", "minimal", "maintained"}
+
+    def test_playful_style_returns_svg(self) -> None:
+        svg = generate_badge_svg("Fluffy", "egg", "content", 80, badge_style="playful")
+        assert svg.strip().startswith("<svg")
+        assert "Fluffy" in svg
+
+    def test_minimal_style_returns_svg(self) -> None:
+        svg = generate_badge_svg("Fluffy", "egg", "content", 80, badge_style="minimal")
+        assert svg.strip().startswith("<svg")
+        assert "Fluffy" in svg
+
+    def test_maintained_style_returns_svg(self) -> None:
+        svg = generate_badge_svg("Fluffy", "egg", "content", 80, badge_style="maintained")
+        assert svg.strip().startswith("<svg")
+        assert "Fluffy" in svg
+
+    def test_minimal_dead_badge(self) -> None:
+        svg = generate_badge_svg(
+            "Ghost", "egg", "content", 0, is_dead=True, badge_style="minimal"
+        )
+        assert "Deceased" in svg
+
+    def test_maintained_dead_badge(self) -> None:
+        svg = generate_badge_svg(
+            "Ghost", "egg", "content", 0, is_dead=True, badge_style="maintained"
+        )
+        assert "deceased" in svg
+
+    def test_maintained_healthy_shows_healthy(self) -> None:
+        svg = generate_badge_svg("A", "adult", "happy", 90, badge_style="maintained")
+        assert "healthy" in svg
+
+    def test_maintained_critical_shows_critical(self) -> None:
+        svg = generate_badge_svg("A", "adult", "sick", 20, badge_style="maintained")
+        assert "critical" in svg
+
+    def test_unknown_badge_style_falls_back_to_playful(self) -> None:
+        """Unrecognised badge_style falls back to playful layout."""
+        svg_playful = generate_badge_svg("X", "egg", "content", 50, badge_style="playful")
+        svg_unknown = generate_badge_svg("X", "egg", "content", 50, badge_style="unknown")
+        assert svg_playful == svg_unknown
+>>>>>>> e7d4a2f (feat: add pet naming and customization options)

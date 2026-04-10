@@ -60,6 +60,9 @@ class Pet(Base):
     style: Mapped[str] = mapped_column(
         String(30), nullable=False, default="kawaii", server_default="kawaii"
     )
+    badge_style: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="playful", server_default="playful"
+    )
 
     # Streak tracking
     commit_streak: Mapped[int] = mapped_column(

@@ -56,6 +56,9 @@ _KEYFRAMES = (
     "@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}"
 )
 
+BADGE_STYLES = {"playful", "minimal", "maintained"}
+DEFAULT_BADGE_STYLE = "playful"
+
 _CENTER = 'text-anchor="middle" dominant-baseline="middle"'
 _START = 'text-anchor="start" dominant-baseline="middle"'
 _END = 'text-anchor="end" dominant-baseline="middle"'
@@ -94,94 +97,16 @@ def _sprite_image_element(b64: str, anim_name: str | None, anim_timing: str | No
     return [img_elem]
 
 
-def generate_badge_svg(
-    name: str,
+def _playful_badge(
+    display_name: str,
     stage: str,
     mood: str,
     health: int,
     *,
-    is_dead: bool = False,
-    died_at: datetime | None = None,
-    created_at: datetime | None = None,
     commit_streak: int = 0,
     pet_image_b64: str | None = None,
 ) -> str:
-    """Generate an SVG badge representing the current pet state.
-
-    Args:
-        name: Pet name.
-        stage: Pet stage string.
-        mood: Pet mood string.
-        health: Pet health (0–100).
-        is_dead: Whether the pet is deceased.
-        died_at: Datetime the pet died (for RIP label).
-        created_at: Datetime the pet was created (for RIP label).
-        commit_streak: Current commit streak count.
-        pet_image_b64: Base64-encoded PNG sprite, or None to use emoji fallback.
-    """
-    # Truncate name to keep badge width manageable
-    display_name = name if len(name) <= 14 else name[:13] + "…"
-
-    has_sprite = bool(pet_image_b64)
-    width = _SPRITE_W if has_sprite else 120
-
-    if is_dead:
-        accent = "#7f8c8d"
-        born_year = created_at.year if created_at else "?"
-        died_year = died_at.year if died_at else "?"
-        rip_label = f"RIP {born_year}–{died_year}"
-
-        defs_inner: list[str] = [
-            '    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">',
-            '      <stop offset="0" stop-color="#1a1a1a"/>',
-            '      <stop offset="1" stop-color="#2c2c2c"/>',
-            "    </linearGradient>",
-        ]
-        if has_sprite:
-            defs_inner.append(
-                '    <filter id="gs">'
-                '<feColorMatrix type="saturate" values="0"/>'
-                "</filter>"
-            )
-
-        lines: list[str] = [
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="80"'
-            f' role="img" aria-label="Pet: {display_name} (Deceased)">',
-            f"  <title>{display_name} (Deceased)</title>",
-            "  <defs>",
-            *defs_inner,
-            "  </defs>",
-            f'  <rect width="{width}" height="80" rx="6" fill="url(#bg)"/>',
-            f'  <rect width="{width}" height="3" fill="{accent}"/>',
-        ]
-
-        if has_sprite:
-            assert pet_image_b64 is not None
-            lines.append(
-                f'  <image x="{_SPRITE_X}" y="{_SPRITE_Y}" width="{_SPRITE_SIZE}"'
-                f' height="{_SPRITE_SIZE}" href="data:image/png;base64,{pet_image_b64}"'
-                f' filter="url(#gs)"/>'
-            )
-            tx = _TEXT_X
-            tcenter = _TEXT_RIGHT
-        else:
-            lines.append(f'  <text x="18" y="44" font-size="28" {_CENTER}>🪦</text>')
-            lines.append(f'  <text x="38" y="30" font-size="12" {_START}>💀</text>')
-            tx = 38
-            tcenter = 60
-
-        lines += [
-            f'  <text x="{tx}" y="30" font-size="10" fill="#9e9e9e" {_START}'
-            f' font-family="monospace">{display_name}</text>',
-            f'  <text x="{tx}" y="44" font-size="8" fill="#7f8c8d" {_START}'
-            f' font-family="sans-serif">Deceased</text>',
-            f'  <text x="{tcenter}" y="60" font-size="7" fill="#7f8c8d" {_CENTER}'
-            f' font-family="sans-serif">{rip_label}</text>',
-            "</svg>",
-        ]
-        return "\n".join(lines)
-
-    # --- Living pet ---
+    """Dark gradient badge with emoji sprites (original style)."""
     stage_sprite = STAGE_EMOJI.get(stage, "🥚")
     mood_sprite = MOOD_EMOJI.get(mood, "😌")
     accent = MOOD_COLOR.get(mood, "#3498db")
@@ -189,6 +114,9 @@ def generate_badge_svg(
     health_pct = max(0, min(100, health))
     stage_label = stage.capitalize()
     mood_label = mood.capitalize()
+
+    has_sprite = bool(pet_image_b64)
+    width = _SPRITE_W if has_sprite else 120
 
     if has_sprite:
         # 160px wide layout with sprite image
@@ -287,3 +215,255 @@ def generate_badge_svg(
 
     lines.append("</svg>")
     return "\n".join(lines)
+
+
+def _minimal_badge(
+    display_name: str,
+    stage: str,
+    mood: str,
+    health: int,
+    *,
+    commit_streak: int = 0,
+) -> str:
+    """Clean, text-only badge with minimal decoration."""
+    hp_color = _health_color(health)
+    health_pct = max(0, min(100, health))
+    stage_label = stage.capitalize()
+    mood_label = mood.capitalize()
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"'
+        f' role="img" aria-label="Pet: {display_name}">',
+        f"  <title>{display_name} ({stage_label})</title>",
+        '  <rect width="120" height="60" rx="4" fill="#f8f9fa"/>',
+        '  <rect width="120" height="2" rx="1" fill="#dee2e6"/>',
+        '  <rect x="0" y="58" width="120" height="2" rx="1" fill="#dee2e6"/>',
+        f'  <text x="8" y="20" font-size="10" fill="#212529" {_START}'
+        f' font-family="monospace" font-weight="bold">{display_name}</text>',
+        f'  <text x="8" y="35" font-size="8" fill="#6c757d" {_START}'
+        f' font-family="sans-serif">{stage_label} · {mood_label}</text>',
+        f'  <text x="8" y="49" font-size="7" fill="#adb5bd" {_START}'
+        f' font-family="sans-serif">HP</text>',
+        '  <rect x="22" y="44" width="86" height="4" rx="2" fill="#e9ecef"/>',
+        f'  <rect x="22" y="44" width="{round(health_pct * 0.86)}" height="4"'
+        f' rx="2" fill="{hp_color}"/>',
+    ]
+
+    if commit_streak >= 7:
+        lines.append(
+            f'  <text x="112" y="20" font-size="7" fill="#fd7e14" {_END}'
+            f' font-family="sans-serif">🔥{commit_streak}</text>'
+        )
+
+    lines.append("</svg>")
+    return "\n".join(lines)
+
+
+def _maintained_badge(display_name: str, stage: str, health: int) -> str:
+    """Shields.io-style "maintained" badge."""
+    health_pct = max(0, min(100, health))
+
+    if health_pct >= 70:
+        status_text = "healthy"
+        status_color = "#2ecc71"
+    elif health_pct >= 40:
+        status_text = "struggling"
+        status_color = "#f39c12"
+    else:
+        status_text = "critical"
+        status_color = "#e74c3c"
+
+    stage_label = stage.capitalize()
+    label_w = 68
+    value_w = 52
+    total_w = label_w + value_w
+    label_x = label_w // 2
+    value_x = label_w + value_w // 2
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="20"'
+        f' role="img" aria-label="{display_name}: {status_text}">',
+        f"  <title>{display_name} ({stage_label}) – {status_text}</title>",
+        "  <defs>",
+        '    <linearGradient id="s" x2="0" y2="100%">',
+        '      <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>',
+        '      <stop offset="1" stop-opacity=".1"/>',
+        "    </linearGradient>",
+        f'    <clipPath id="r"><rect width="{total_w}" height="20" rx="3"/></clipPath>',
+        "  </defs>",
+        '  <g clip-path="url(#r)">',
+        f'    <rect width="{label_w}" height="20" fill="#555"/>',
+        f'    <rect x="{label_w}" width="{value_w}" height="20" fill="{status_color}"/>',
+        f'    <rect width="{total_w}" height="20" fill="url(#s)"/>',
+        "  </g>",
+        f'  <text x="{label_x}" y="14" font-size="9" fill="#fff" text-anchor="middle"'
+        f' font-family="DejaVu Sans,Verdana,Geneva,sans-serif">{display_name}</text>',
+        f'  <text x="{value_x}" y="14" font-size="9" fill="#fff" text-anchor="middle"'
+        f' font-family="DejaVu Sans,Verdana,Geneva,sans-serif">{status_text}</text>',
+        "</svg>",
+    ]
+    return "\n".join(lines)
+
+
+def _dead_badge(
+    display_name: str,
+    *,
+    died_at: datetime | None = None,
+    created_at: datetime | None = None,
+    badge_style: str = DEFAULT_BADGE_STYLE,
+    pet_image_b64: str | None = None,
+) -> str:
+    """Badge for a deceased pet (all styles share same deceased rendering)."""
+    born_year = created_at.year if created_at else "?"
+    died_year = died_at.year if died_at else "?"
+    rip_label = f"RIP {born_year}–{died_year}"
+
+    if badge_style == "maintained":
+        label_w = 68
+        value_w = 52
+        total_w = label_w + value_w
+        label_x = label_w // 2
+        value_x = label_w + value_w // 2
+        lines = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="20"'
+            f' role="img" aria-label="{display_name}: deceased">',
+            f"  <title>{display_name} (Deceased)</title>",
+            "  <defs>",
+            f'    <clipPath id="r"><rect width="{total_w}" height="20" rx="3"/></clipPath>',
+            "  </defs>",
+            '  <g clip-path="url(#r)">',
+            f'    <rect width="{label_w}" height="20" fill="#555"/>',
+            f'    <rect x="{label_w}" width="{value_w}" height="20" fill="#7f8c8d"/>',
+            "  </g>",
+            f'  <text x="{label_x}" y="14" font-size="9" fill="#fff" text-anchor="middle"'
+            f' font-family="DejaVu Sans,Verdana,Geneva,sans-serif">{display_name}</text>',
+            f'  <text x="{value_x}" y="14" font-size="9" fill="#fff" text-anchor="middle"'
+            f' font-family="DejaVu Sans,Verdana,Geneva,sans-serif">deceased</text>',
+            "</svg>",
+        ]
+        return "\n".join(lines)
+
+    if badge_style == "minimal":
+        lines = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"'
+            f' role="img" aria-label="Pet: {display_name} (Deceased)">',
+            f"  <title>{display_name} (Deceased)</title>",
+            '  <rect width="120" height="60" rx="4" fill="#f8f9fa"/>',
+            '  <rect width="120" height="2" rx="1" fill="#dee2e6"/>',
+            '  <rect x="0" y="58" width="120" height="2" rx="1" fill="#dee2e6"/>',
+            f'  <text x="8" y="20" font-size="10" fill="#495057" {_START}'
+            f' font-family="monospace" font-weight="bold">{display_name}</text>',
+            f'  <text x="8" y="35" font-size="8" fill="#adb5bd" {_START}'
+            f' font-family="sans-serif">Deceased</text>',
+            f'  <text x="8" y="50" font-size="7" fill="#ced4da" {_START}'
+            f' font-family="sans-serif">{rip_label}</text>',
+            "</svg>",
+        ]
+        return "\n".join(lines)
+
+    # playful (default) — supports sprite with greyscale filter
+    accent = "#7f8c8d"
+    has_sprite = bool(pet_image_b64)
+    width = _SPRITE_W if has_sprite else 120
+
+    defs_inner: list[str] = [
+        '    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">',
+        '      <stop offset="0" stop-color="#1a1a1a"/>',
+        '      <stop offset="1" stop-color="#2c2c2c"/>',
+        "    </linearGradient>",
+    ]
+    if has_sprite:
+        defs_inner.append(
+            '    <filter id="gs">'
+            '<feColorMatrix type="saturate" values="0"/>'
+            "</filter>"
+        )
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="80"'
+        f' role="img" aria-label="Pet: {display_name} (Deceased)">',
+        f"  <title>{display_name} (Deceased)</title>",
+        "  <defs>",
+        *defs_inner,
+        "  </defs>",
+        f'  <rect width="{width}" height="80" rx="6" fill="url(#bg)"/>',
+        f'  <rect width="{width}" height="3" fill="{accent}"/>',
+    ]
+
+    if has_sprite:
+        assert pet_image_b64 is not None
+        lines.append(
+            f'  <image x="{_SPRITE_X}" y="{_SPRITE_Y}" width="{_SPRITE_SIZE}"'
+            f' height="{_SPRITE_SIZE}" href="data:image/png;base64,{pet_image_b64}"'
+            f' filter="url(#gs)"/>'
+        )
+        tx = _TEXT_X
+        tcenter = _TEXT_RIGHT
+    else:
+        lines.append(f'  <text x="18" y="44" font-size="28" {_CENTER}>🪦</text>')
+        lines.append(f'  <text x="38" y="30" font-size="12" {_START}>💀</text>')
+        tx = 38
+        tcenter = 60
+
+    lines += [
+        f'  <text x="{tx}" y="30" font-size="10" fill="#9e9e9e" {_START}'
+        f' font-family="monospace">{display_name}</text>',
+        f'  <text x="{tx}" y="44" font-size="8" fill="#7f8c8d" {_START}'
+        f' font-family="sans-serif">Deceased</text>',
+        f'  <text x="{tcenter}" y="60" font-size="7" fill="#7f8c8d" {_CENTER}'
+        f' font-family="sans-serif">{rip_label}</text>',
+        "</svg>",
+    ]
+    return "\n".join(lines)
+
+
+def generate_badge_svg(
+    name: str,
+    stage: str,
+    mood: str,
+    health: int,
+    *,
+    is_dead: bool = False,
+    died_at: datetime | None = None,
+    created_at: datetime | None = None,
+    commit_streak: int = 0,
+    pet_image_b64: str | None = None,
+    badge_style: str = DEFAULT_BADGE_STYLE,
+) -> str:
+    """Generate an SVG badge representing the current pet state.
+
+    Args:
+        name: Pet name.
+        stage: Pet stage string.
+        mood: Pet mood string.
+        health: Pet health (0–100).
+        is_dead: Whether the pet is deceased.
+        died_at: Datetime the pet died (for RIP label).
+        created_at: Datetime the pet was created (for RIP label).
+        commit_streak: Current commit streak count.
+        pet_image_b64: Base64-encoded PNG sprite, or None to use emoji fallback.
+        badge_style: Visual style — "playful", "minimal", or "maintained".
+    """
+    display_name = name if len(name) <= 14 else name[:13] + "…"
+
+    if is_dead:
+        return _dead_badge(
+            display_name,
+            died_at=died_at,
+            created_at=created_at,
+            badge_style=badge_style,
+            pet_image_b64=pet_image_b64,
+        )
+
+    if badge_style == "minimal":
+        return _minimal_badge(
+            display_name, stage, mood, health, commit_streak=commit_streak
+        )
+
+    if badge_style == "maintained":
+        return _maintained_badge(display_name, stage, health)
+
+    # Default: playful
+    return _playful_badge(
+        display_name, stage, mood, health, commit_streak=commit_streak, pet_image_b64=pet_image_b64
+    )
