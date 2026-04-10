@@ -651,3 +651,140 @@ class GitHubService:
             except Exception as e:
                 logger.warning("Failed to list user repos", error=str(e))
                 return []
+
+    async def get_contributor_stats(self, owner: str, repo: str, username: str) -> ContributorStats:
+        """Fetch activity stats for a specific contributor in a repository."""
+        async with httpx.AsyncClient() as client:
+            since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+
+            # Get user's commits in last 30d and all commits in last 30d (for top-contributor check)
+            user_commits, all_commits = await self._fetch_commits_parallel(
+                client, owner, repo, username, since_30d
+            )
+
+            commits_30d = len(user_commits)
+
+            # Determine last commit date (from user commits, or fall back to all-time lookup)
+            last_commit_at: datetime | None = None
+            if user_commits:
+                raw_date = (
+                    user_commits[0]
+                    .get("commit", {})
+                    .get("committer", {})
+                    .get("date")
+                )
+                if raw_date:
+                    last_commit_at = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+            elif commits_30d == 0:
+                # Try 90d window to detect absence vs. complete stranger
+                last_commit_at = await self._get_user_last_commit(client, owner, repo, username)
+
+            # Determine if this user is the top contributor in last 30d
+            is_top_contributor = False
+            if commits_30d > 0 and all_commits:
+                author_counts: dict[str, int] = {}
+                for c in all_commits:
+                    login = c["author"].get("login") if c.get("author") else None
+                    if login:
+                        author_counts[login] = author_counts.get(login, 0) + 1
+                top_count = max(author_counts.values(), default=0)
+                user_count = author_counts.get(username, 0)
+                is_top_contributor = user_count >= 3 and user_count == top_count
+
+            # Check CI status of user's latest commit
+            has_failed_ci = False
+            if user_commits:
+                latest_sha = user_commits[0].get("sha", "")
+                if latest_sha:
+                    has_failed_ci = await self._has_failed_ci(client, owner, repo, latest_sha)
+
+            days_since: int | None = None
+            if last_commit_at:
+                days_since = max(0, (datetime.now(UTC) - last_commit_at).days)
+
+            return ContributorStats(
+                commits_30d=commits_30d,
+                last_commit_at=last_commit_at,
+                is_top_contributor=is_top_contributor,
+                has_failed_ci=has_failed_ci,
+                days_since_last_commit=days_since,
+            )
+
+    async def _fetch_commits_parallel(
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        username: str,
+        since: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Fetch user-specific and all commits concurrently."""
+        import asyncio
+
+        async def _fetch(params: dict[str, Any]) -> list[dict[str, Any]]:
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/repos/{owner}/{repo}/commits",
+                    headers=self._get_headers(),
+                    params=params,
+                )
+                self._check_rate_limit(resp)
+                resp.raise_for_status()
+                result: list[dict[str, Any]] = resp.json()
+                return result
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning("Failed to fetch commits", error=str(e))
+                return []
+
+        user_task = _fetch({"author": username, "since": since, "per_page": 100})
+        all_task = _fetch({"since": since, "per_page": 100})
+        return await asyncio.gather(user_task, all_task)
+
+    async def _get_user_last_commit(
+        self, client: httpx.AsyncClient, owner: str, repo: str, username: str
+    ) -> datetime | None:
+        """Get the date of a user's last commit regardless of time window."""
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits",
+                headers=self._get_headers(),
+                params={"author": username, "per_page": 1},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            commits: list[dict[str, Any]] = resp.json()
+            if commits:
+                raw_date = commits[0].get("commit", {}).get("committer", {}).get("date")
+                if raw_date:
+                    return datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get user last commit", error=str(e))
+        return None
+
+    async def _has_failed_ci(
+        self, client: httpx.AsyncClient, owner: str, repo: str, sha: str
+    ) -> bool:
+        """Return True if the given commit has any failing CI check runs."""
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
+                headers=self._get_headers(),
+                params={"per_page": 30},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+            runs: list[dict[str, Any]] = data.get("check_runs", [])
+            return any(
+                r.get("conclusion") in ("failure", "timed_out", "action_required")
+                for r in runs
+            )
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get check runs", sha=sha, error=str(e))
+        return False

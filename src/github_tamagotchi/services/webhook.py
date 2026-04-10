@@ -9,6 +9,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.pet_logic import get_next_stage
 
@@ -82,6 +83,7 @@ async def handle_push_event(payload: dict[str, Any], db: AsyncSession) -> str:
     new_stage = get_next_stage(current_stage, pet.experience)
     if new_stage != current_stage:
         pet.stage = new_stage.value
+        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
         logger.info(
             "pet_evolved_via_webhook",
             pet_id=pet.id,
@@ -134,6 +136,7 @@ async def handle_pull_request_event(payload: dict[str, Any], db: AsyncSession) -
     new_stage = get_next_stage(current_stage, pet.experience)
     if new_stage != current_stage:
         pet.stage = new_stage.value
+        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
 
     await db.commit()
 
@@ -171,6 +174,7 @@ async def handle_issues_event(payload: dict[str, Any], db: AsyncSession) -> str:
     new_stage = get_next_stage(current_stage, pet.experience)
     if new_stage != current_stage:
         pet.stage = new_stage.value
+        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
 
     await db.commit()
 
@@ -215,6 +219,7 @@ async def handle_check_run_event(payload: dict[str, Any], db: AsyncSession) -> s
     new_stage = get_next_stage(current_stage, pet.experience)
     if new_stage != current_stage:
         pet.stage = new_stage.value
+        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
 
     await db.commit()
 
