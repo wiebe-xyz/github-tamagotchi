@@ -16,26 +16,13 @@ async def test_root_endpoint(async_client: AsyncClient) -> None:
     assert data["docs"] == "/docs"
 
 
-async def test_health_check_returns_database_status(async_client: AsyncClient) -> None:
-    """Test health check includes database connectivity status."""
+async def test_liveness_returns_ok(async_client: AsyncClient) -> None:
+    """Liveness check returns 200 with status ok."""
     response = await async_client.get("/api/v1/health")
     assert response.status_code == 200
 
     data = response.json()
-    assert data["status"] == "healthy"
-    assert data["version"] == __version__
-    assert data["database"] == "connected"
-
-
-async def test_health_check_response_schema(async_client: AsyncClient) -> None:
-    """Test health check response matches expected schema."""
-    response = await async_client.get("/api/v1/health")
-    assert response.status_code == 200
-
-    data = response.json()
-    assert "status" in data
-    assert "version" in data
-    assert "database" in data
+    assert data["status"] == "ok"
 
 
 async def test_create_pet_validates_request_body(async_client: AsyncClient) -> None:

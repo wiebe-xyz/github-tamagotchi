@@ -134,7 +134,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /api/v1/health
+              path: /api/v1/health/ready
               port: 8000
             periodSeconds: 5
             failureThreshold: 3
@@ -275,7 +275,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /api/v1/health
+              path: /api/v1/health/ready
               port: 8000
             periodSeconds: 5
             failureThreshold: 3
