@@ -243,7 +243,6 @@ class TestBadgeEndpoint:
         response = await async_client.get("/api/v1/pets/nobody/norepo/badge.svg")
         assert response.status_code == 404
 
-<<<<<<< HEAD
     async def test_badge_falls_back_to_emoji_when_no_image(self, async_client: AsyncClient) -> None:
         """Badge endpoint returns emoji-based SVG when no sprite is in storage."""
         await async_client.post(
@@ -258,7 +257,7 @@ class TestBadgeEndpoint:
         assert body.strip().startswith("<svg")
         # Emoji fallback badge is 120px wide
         assert 'width="120"' in body
-=======
+
 
 class TestBadgeStyles:
     """Tests for the three badge style variants."""
@@ -309,4 +308,3 @@ class TestBadgeStyles:
         svg_playful = generate_badge_svg("X", "egg", "content", 50, badge_style="playful")
         svg_unknown = generate_badge_svg("X", "egg", "content", 50, badge_style="unknown")
         assert svg_playful == svg_unknown
->>>>>>> e7d4a2f (feat: add pet naming and customization options)
