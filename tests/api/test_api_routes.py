@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
+
 class TestHealthEndpoint:
     """Tests for the health check endpoint."""
 

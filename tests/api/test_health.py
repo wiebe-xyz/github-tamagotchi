@@ -9,11 +9,11 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from github_tamagotchi import __version__
-from github_tamagotchi.api.health import CheckResult, health_router
 from github_tamagotchi.api.auth import get_admin_user
+from github_tamagotchi.api.health import CheckResult, health_router
 from github_tamagotchi.core.database import get_session
-from tests.conftest import get_test_session, test_engine
 from github_tamagotchi.models.pet import Base
+from tests.conftest import get_test_session, test_engine
 
 
 class TestLivenessEndpoint:
