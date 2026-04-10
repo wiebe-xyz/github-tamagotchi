@@ -1,5 +1,6 @@
 """GitHub API service for repository health metrics."""
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -37,6 +38,7 @@ class RepoHealth:
     security_alerts_high: int = 0
     security_alerts_medium: int = 0
     security_alerts_low: int = 0
+    dependent_count: int = 0
 
 
 @dataclass
@@ -177,6 +179,9 @@ class GitHubService:
             # Get security alerts
             security_counts = await self._get_security_alerts(client, owner, repo)
 
+            # Get dependent count (repos/packages that depend on this one)
+            dependent_count = await self._get_dependent_count(client, owner, repo)
+
             return RepoHealth(
                 last_commit_at=last_commit_at,
                 open_prs_count=open_prs_count,
@@ -191,6 +196,7 @@ class GitHubService:
                 security_alerts_high=security_counts["high"],
                 security_alerts_medium=security_counts["medium"],
                 security_alerts_low=security_counts["low"],
+                dependent_count=dependent_count,
             )
 
     async def _get_last_commit(
@@ -375,6 +381,31 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get contributor count", error=str(e))
+        return 0
+
+    async def _get_dependent_count(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> int:
+        """Get the number of repositories that depend on this repo.
+
+        Scrapes the GitHub network/dependents page since there is no REST API.
+        Returns 0 on any error or when the page is unavailable.
+        """
+        try:
+            resp = await client.get(
+                f"https://github.com/{owner}/{repo}/network/dependents",
+                headers={"Accept": "text/html"},
+                follow_redirects=True,
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return 0
+            # Parse "N Repositories" or "N,NNN Repositories" from the page
+            match = re.search(r"([\d,]+)\s+Repositor", resp.text)
+            if match:
+                return int(match.group(1).replace(",", ""))
+        except Exception as e:
+            logger.warning("Failed to get dependent count", error=str(e))
         return 0
 
     async def get_contributor_stats(self, owner: str, repo: str, username: str) -> ContributorStats:

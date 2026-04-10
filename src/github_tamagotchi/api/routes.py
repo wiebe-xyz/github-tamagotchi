@@ -122,6 +122,7 @@ class PetResponse(BaseModel):
     updated_at: datetime
     last_fed_at: datetime | None
     last_checked_at: datetime | None
+    dependent_count: int
 
 
 class PetListResponse(BaseModel):
@@ -604,6 +605,7 @@ async def get_pet_badge(
         commit_streak=pet.commit_streak,
         pet_image_b64=pet_image_b64,
         badge_style=style if style is not None else pet.badge_style,
+        dependent_count=pet.dependent_count,
     )
     return Response(
         content=svg_content,

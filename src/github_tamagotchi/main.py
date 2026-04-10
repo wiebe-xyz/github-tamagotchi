@@ -163,9 +163,10 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                             experience=new_experience,
                         )
 
-                    # Store last-known release and contributor snapshots
+                    # Store last-known release, contributor, and dependent snapshots
                     pet.last_release_count = health.release_count_30d
                     pet.last_contributor_count = health.contributor_count
+                    pet.dependent_count = health.dependent_count
 
                     # Update last_fed_at if there was a recent commit
                     if health.last_commit_at:

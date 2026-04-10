@@ -160,6 +160,11 @@ class Pet(Base):
         Integer, nullable=False, default=7, server_default="7"
     )
 
+    # Dependent count — repos/packages that depend on this one (responsibility indicator)
+    dependent_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"

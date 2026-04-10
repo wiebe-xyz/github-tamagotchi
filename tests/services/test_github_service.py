@@ -708,3 +708,66 @@ class TestGetContributorCount90d:
             result = await service._get_contributor_count_90d(client, "owner", "repo")
 
         assert result == 1
+
+
+class TestGetDependentCount:
+    """Tests for _get_dependent_count method."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_count_from_html(self) -> None:
+        """Should parse dependent count from GitHub network/dependents page."""
+        html = (
+            "<html><body>"
+            '<a href="/owner/repo/network/dependents?dependent_type=REPOSITORY">'
+            "1,234 Repositories"
+            "</a></body></html>"
+        )
+        respx.get("https://github.com/owner/repo/network/dependents").mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_dependent_count(client, "owner", "repo")
+
+        assert result == 1234
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_count_without_comma(self) -> None:
+        """Should handle counts without comma separators."""
+        html = "<html><body>42 Repositories</body></html>"
+        respx.get("https://github.com/owner/repo/network/dependents").mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_dependent_count(client, "owner", "repo")
+
+        assert result == 42
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_zero_on_404(self) -> None:
+        """Should return 0 when page is not found."""
+        respx.get("https://github.com/owner/repo/network/dependents").mock(
+            return_value=httpx.Response(404)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_dependent_count(client, "owner", "repo")
+
+        assert result == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_match(self) -> None:
+        """Should return 0 when page has no recognisable count."""
+        respx.get("https://github.com/owner/repo/network/dependents").mock(
+            return_value=httpx.Response(200, text="<html><body>No dependents</body></html>")
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_dependent_count(client, "owner", "repo")
+
+        assert result == 0
