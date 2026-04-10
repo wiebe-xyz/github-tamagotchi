@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ pet.name }} Insights — {{ repo_owner }}/{{ repo_name }} | GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .insights-page {
+            padding-top: 5rem;
+            min-height: 100vh;
+            background: var(--background);
+        }
+
+        .insights-header {
+            padding: 2.5rem 0 1.5rem;
+            border-bottom: 1px solid var(--surface-light);
+            margin-bottom: 2rem;
+        }
+
+        .insights-breadcrumb {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+        }
+
+        .insights-breadcrumb a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+
+        .insights-breadcrumb a:hover {
+            color: var(--primary);
+        }
+
+        .insights-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .insights-subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .insights-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .insight-card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .insight-card--full {
+            grid-column: span 2;
+        }
+
+        .insight-card-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .insight-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.1;
+            margin-bottom: 0.25rem;
+        }
+
+        .insight-unit {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .insight-na {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Bar chart */
+        .bar-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.5rem;
+            height: 80px;
+            margin-top: 0.5rem;
+        }
+
+        .bar-chart-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.25rem;
+            height: 100%;
+            justify-content: flex-end;
+        }
+
+        .bar-chart-bar {
+            width: 100%;
+            background: var(--primary);
+            border-radius: 4px 4px 0 0;
+            min-height: 4px;
+            transition: background 0.2s;
+        }
+
+        .bar-chart-bar:hover {
+            background: var(--accent);
+        }
+
+        .bar-chart-label {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            margin-top: 4px;
+        }
+
+        .bar-chart-count {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+
+        /* CI pass rate ring / progress */
+        .pass-rate-bar {
+            height: 8px;
+            background: var(--surface-light);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .pass-rate-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: var(--secondary);
+        }
+
+        .pass-rate-fill--warn {
+            background: #f97316;
+        }
+
+        .pass-rate-fill--danger {
+            background: #ef4444;
+        }
+
+        /* Pet correlation section */
+        .correlations-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .correlation-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: var(--surface-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .correlation-icon {
+            font-size: 1.25rem;
+            flex-shrink: 0;
+            margin-top: 0.05rem;
+        }
+
+        .unavailable-notice {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 640px) {
+            .insights-grid {
+                grid-template-columns: 1fr;
+            }
+            .insight-card--full {
+                grid-column: span 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            {% if user %}
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                {% if user.is_admin %}
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                {% endif %}
+            </div>
+            {% endif %}
+            <div class="user-info">
+                {% if user %}
+                    {% if user.github_avatar_url %}
+                    <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                    {% endif %}
+                    <span class="user-name">{{ user.github_login }}</span>
+                    <button class="logout-button" id="logout-btn">Log out</button>
+                {% else %}
+                    <a href="/auth/github" class="cta-button" style="padding: 0.4rem 1rem; font-size: 0.875rem;">Login with GitHub</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main class="insights-page">
+        <div class="container">
+            <div class="insights-header">
+                <div class="insights-breadcrumb">
+                    <a href="/pet/{{ repo_owner }}/{{ repo_name }}">&#8592; Back to {{ pet.name }}</a>
+                    &nbsp;/&nbsp;
+                    <a href="https://github.com/{{ repo_owner }}/{{ repo_name }}" target="_blank" rel="noopener">{{ repo_owner }}/{{ repo_name }}</a>
+                </div>
+                <h1 class="insights-title">Repo Health Insights</h1>
+                <p class="insights-subtitle">How <strong>{{ repo_owner }}/{{ repo_name }}</strong> is doing — and what it means for {{ pet.name }}.</p>
+            </div>
+
+            {% if insights is none %}
+            <div class="unavailable-notice">
+                <p style="font-size:2rem; margin-bottom:1rem;">&#128268;</p>
+                <p>Could not load insights right now. GitHub API may be rate-limited or unavailable.</p>
+                <p style="margin-top:0.5rem; font-size:0.875rem; color:var(--text-muted);">Try again in a few minutes.</p>
+            </div>
+            {% else %}
+
+            <div class="insights-grid">
+
+                <!-- Commit frequency -->
+                <div class="insight-card insight-card--full">
+                    <div class="insight-card-title">&#128200; Commit Frequency — Last 4 Weeks</div>
+                    {% set max_commits = insights.weekly_commits | map(attribute='count') | max %}
+                    {% if max_commits == 0 %}
+                    <p style="color:var(--text-muted); font-size:0.9rem;">No commits in the last 28 days.</p>
+                    {% else %}
+                    <div class="bar-chart">
+                        {% for week in insights.weekly_commits %}
+                        <div class="bar-chart-col">
+                            <div class="bar-chart-count">{{ week.count }}</div>
+                            <div class="bar-chart-bar" style="height: {{ ((week.count / max_commits) * 64) | int }}px;" title="{{ week.count }} commits"></div>
+                            <div class="bar-chart-label">{{ week.week_label }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p style="margin-top:0.75rem; font-size:0.875rem; color:var(--text-muted);">{{ insights.total_commits_30d }} total commits</p>
+                    {% endif %}
+                </div>
+
+                <!-- PR lifecycle -->
+                <div class="insight-card">
+                    <div class="insight-card-title">&#128257; PR Lifecycle</div>
+                    {% if insights.avg_pr_merge_hours is not none %}
+                        {% if insights.avg_pr_merge_hours < 24 %}
+                        <div class="insight-value" style="color: var(--secondary);">
+                            {{ "%.1f"|format(insights.avg_pr_merge_hours) }} <span class="insight-unit">hrs avg to merge</span>
+                        </div>
+                        {% elif insights.avg_pr_merge_hours < 168 %}
+                        <div class="insight-value">
+                            {{ "%.1f"|format(insights.avg_pr_merge_hours / 24) }} <span class="insight-unit">days avg to merge</span>
+                        </div>
+                        {% else %}
+                        <div class="insight-value" style="color: #f97316;">
+                            {{ "%.1f"|format(insights.avg_pr_merge_hours / 24) }} <span class="insight-unit">days avg to merge</span>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                    <div class="insight-na">No merged PRs found</div>
+                    {% endif %}
+                    <p style="margin-top:0.5rem; font-size:0.8rem; color:var(--text-muted);">{{ insights.open_prs_count }} open PR{% if insights.open_prs_count != 1 %}s{% endif %} right now</p>
+                </div>
+
+                <!-- Issue response time -->
+                <div class="insight-card">
+                    <div class="insight-card-title">&#128172; Issue Response Time</div>
+                    {% if insights.avg_issue_response_hours is not none %}
+                        {% if insights.avg_issue_response_hours < 24 %}
+                        <div class="insight-value" style="color: var(--secondary);">
+                            {{ "%.1f"|format(insights.avg_issue_response_hours) }} <span class="insight-unit">hrs avg first response</span>
+                        </div>
+                        {% elif insights.avg_issue_response_hours < 168 %}
+                        <div class="insight-value">
+                            {{ "%.1f"|format(insights.avg_issue_response_hours / 24) }} <span class="insight-unit">days avg first response</span>
+                        </div>
+                        {% else %}
+                        <div class="insight-value" style="color: #f97316;">
+                            {{ "%.1f"|format(insights.avg_issue_response_hours / 24) }} <span class="insight-unit">days avg first response</span>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                    <div class="insight-na">No issues with responses</div>
+                    {% endif %}
+                </div>
+
+                <!-- CI health -->
+                <div class="insight-card">
+                    <div class="insight-card-title">&#9989; CI Health</div>
+                    {% if insights.ci_pass_rate is not none %}
+                        {% set pct = (insights.ci_pass_rate * 100) | int %}
+                        <div class="insight-value" {% if pct < 60 %}style="color:#ef4444;"{% elif pct < 80 %}style="color:#f97316;"{% else %}style="color:var(--secondary);"{% endif %}>
+                            {{ pct }}% <span class="insight-unit">pass rate</span>
+                        </div>
+                        <div class="pass-rate-bar">
+                            <div class="pass-rate-fill {% if pct < 60 %}pass-rate-fill--danger{% elif pct < 80 %}pass-rate-fill--warn{% endif %}" style="width: {{ pct }}%;"></div>
+                        </div>
+                        <p style="font-size:0.8rem; color:var(--text-muted);">Based on last {{ insights.ci_runs_checked }} CI run{% if insights.ci_runs_checked != 1 %}s{% endif %}</p>
+                    {% else %}
+                    <div class="insight-na">No CI data found</div>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.5rem;">This repo may not use GitHub Actions.</p>
+                    {% endif %}
+                </div>
+
+                <!-- Contributor activity -->
+                <div class="insight-card">
+                    <div class="insight-card-title">&#128101; Contributor Activity</div>
+                    <div class="insight-value">
+                        {{ insights.contributor_count_90d }}
+                        <span class="insight-unit">active in last 90 days</span>
+                    </div>
+                    {% if insights.contributor_count_90d == 1 %}
+                    <p style="margin-top:0.5rem; font-size:0.8rem; color:#f97316;">Bus factor: 1 — high risk if this contributor is unavailable.</p>
+                    {% elif insights.contributor_count_90d == 0 %}
+                    <p style="margin-top:0.5rem; font-size:0.8rem; color:#ef4444;">No recent contributors.</p>
+                    {% else %}
+                    <p style="margin-top:0.5rem; font-size:0.8rem; color:var(--text-muted);">{{ insights.contributor_count_90d }} contributor{% if insights.contributor_count_90d != 1 %}s{% endif %} sharing the load.</p>
+                    {% endif %}
+                </div>
+
+            </div>
+
+            <!-- Pet correlation -->
+            {% if pet_correlations %}
+            <div class="profile-section" style="margin-bottom:2.5rem;">
+                <h2>How this affects {{ pet.name }}</h2>
+                <ul class="correlations-list">
+                    {% for msg in pet_correlations %}
+                    <li class="correlation-item">
+                        <span class="correlation-icon">&#128049;</span>
+                        <span>{{ msg }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% endif %}
+
+            <!-- Back link -->
+            <div style="margin-bottom:3rem;">
+                <a href="/pet/{{ repo_owner }}/{{ repo_name }}" class="cta-button" style="display:inline-block;">&#8592; Back to {{ pet.name }}</a>
+            </div>
+
+        </div>
+    </main>
+
+    {% if user %}
+    <script>
+    document.getElementById('logout-btn')?.addEventListener('click', async () => {
+        await fetch('/auth/logout', { method: 'POST' });
+        window.location.href = '/';
+    });
+    </script>
+    {% endif %}
+</body>
+</html>

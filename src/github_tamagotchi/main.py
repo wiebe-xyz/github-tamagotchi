@@ -39,7 +39,7 @@ from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
 from github_tamagotchi.services.achievements import check_and_unlock_achievements
 from github_tamagotchi.services.alerting import AlertChecker
-from github_tamagotchi.services.github import GitHubService, RateLimitError
+from github_tamagotchi.services.github import GitHubService, RateLimitError, RepoInsights
 from github_tamagotchi.services.pet_logic import (
     EVOLUTION_THRESHOLDS,
     calculate_experience,
@@ -565,6 +565,76 @@ async def pet_profile(
             "now_utc": now,
         },
         headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
+@app.get("/pet/{repo_owner}/{repo_name}/insights", response_class=HTMLResponse)
+async def pet_insights(
+    request: Request,
+    repo_owner: str,
+    repo_name: str,
+    user: OptionalUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Repo health insights page for a pet."""
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    github_service = GitHubService()
+    insights: RepoInsights | None = None
+    try:
+        insights = await github_service.get_repo_insights(repo_owner, repo_name)
+    except RateLimitError:
+        pass
+    except Exception:
+        pass
+
+    # Build pet correlation messages based on insights
+    pet_correlations: list[str] = []
+    if insights:
+        if insights.total_commits_30d == 0:
+            pet_correlations.append(f"{pet.name} has been starving — no commits in the last month.")
+        elif insights.total_commits_30d < 5:
+            pet_correlations.append(
+                f"Only {insights.total_commits_30d} commits this month kept {pet.name} barely fed."
+            )
+        else:
+            pet_correlations.append(
+                f"{insights.total_commits_30d} commits this month kept {pet.name} well nourished."
+            )
+
+        if insights.ci_pass_rate is not None:
+            pct = int(insights.ci_pass_rate * 100)
+            if pct < 60:
+                pet_correlations.append(
+                    f"CI failures ({pct}% pass rate) have been stressing {pet.name} out."
+                )
+            elif pct >= 90:
+                pet_correlations.append(
+                    f"Great CI health ({pct}% pass rate) keeps {pet.name} thriving."
+                )
+
+        if insights.avg_pr_merge_hours is not None:
+            days = insights.avg_pr_merge_hours / 24
+            if days > 7:
+                pet_correlations.append(
+                    f"PRs sitting open for {days:.1f} days on average make {pet.name} anxious."
+                )
+
+    return templates.TemplateResponse(
+        request,
+        "pet_insights.html",
+        {
+            "user": user,
+            "pet": pet,
+            "repo_owner": repo_owner,
+            "repo_name": repo_name,
+            "insights": insights,
+            "pet_correlations": pet_correlations,
+            "base_url": settings.base_url,
+        },
+        headers={"Cache-Control": "public, max-age=300"},
     )
 
 
