@@ -31,7 +31,10 @@ def upgrade() -> None:
         sa.Column("sins", sa.JSON(), nullable=False, server_default="[]"),
         sa.Column("good_deeds", sa.JSON(), nullable=False, server_default="[]"),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
         ),
         sa.ForeignKeyConstraint(["pet_id"], ["pets.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
