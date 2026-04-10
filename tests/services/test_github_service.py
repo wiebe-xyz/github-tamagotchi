@@ -371,6 +371,101 @@ class TestAgeCalculations:
         assert 0 <= age < 1
 
 
+class TestGetSecurityAlerts:
+    """Tests for fetching Dependabot security alerts."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_counts_by_severity(
+        self, mock_security_alerts_response: list[dict[str, Any]]
+    ) -> None:
+        """Should return alert counts grouped by severity."""
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(200, json=mock_security_alerts_response)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_security_alerts(client, "owner", "repo")
+
+        assert result["critical"] == 1
+        assert result["high"] == 1
+        assert result["medium"] == 1
+        assert result["low"] == 1
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_zeros_when_no_alerts(
+        self, mock_security_alerts_empty: list[dict[str, Any]]
+    ) -> None:
+        """Should return all zeros when there are no open alerts."""
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(200, json=mock_security_alerts_empty)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_security_alerts(client, "owner", "repo")
+
+        assert result == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_zeros_on_404(self) -> None:
+        """Should return zeros when Dependabot is not enabled (404)."""
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(404, json={"message": "Not Found"})
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_security_alerts(client, "owner", "repo")
+
+        assert result == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_zeros_on_error(self) -> None:
+        """Should return zeros when API call fails."""
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(500)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_security_alerts(client, "owner", "repo")
+
+        assert result == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_raises_rate_limit_error(self) -> None:
+        """Should propagate RateLimitError when rate limit is hit."""
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(
+                403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}
+            )
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(RateLimitError):
+                await service._get_security_alerts(client, "owner", "repo")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_counts_multiple_alerts_per_severity(self) -> None:
+        """Should count multiple alerts of the same severity correctly."""
+        alerts = [
+            {"number": i, "state": "open", "security_advisory": {"severity": "critical"}}
+            for i in range(1, 4)
+        ]
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(200, json=alerts)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_security_alerts(client, "owner", "repo")
+
+        assert result["critical"] == 3
+        assert result["high"] == 0
+
+
 class TestGetRepoHealth:
     """Tests for the main get_repo_health method."""
 
@@ -383,6 +478,7 @@ class TestGetRepoHealth:
         mock_issues_response: list[dict[str, Any]],
         mock_repo_response: dict[str, Any],
         mock_status_response_success: dict[str, Any],
+        mock_security_alerts_empty: list[dict[str, Any]],
     ) -> None:
         """Should return a complete RepoHealth object."""
         respx.get("https://api.github.com/repos/owner/repo/commits").mock(
@@ -400,6 +496,9 @@ class TestGetRepoHealth:
         respx.get("https://api.github.com/repos/owner/repo/commits/main/status").mock(
             return_value=httpx.Response(200, json=mock_status_response_success)
         )
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(200, json=mock_security_alerts_empty)
+        )
 
         service = GitHubService(token="test")
         result = await service.get_repo_health("owner", "repo")
@@ -410,6 +509,47 @@ class TestGetRepoHealth:
         assert result.open_issues_count == 2  # 3 - 1 PR filtered
         assert result.last_ci_success is True
         assert result.has_stale_dependencies is False
+        assert result.security_alerts_critical == 0
+        assert result.security_alerts_high == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_security_alert_counts(
+        self,
+        mock_commit_response: list[dict[str, Any]],
+        mock_prs_response: list[dict[str, Any]],
+        mock_issues_response: list[dict[str, Any]],
+        mock_repo_response: dict[str, Any],
+        mock_status_response_success: dict[str, Any],
+        mock_security_alerts_response: list[dict[str, Any]],
+    ) -> None:
+        """Should include security alert counts in RepoHealth."""
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(200, json=mock_commit_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/pulls").mock(
+            return_value=httpx.Response(200, json=mock_prs_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/issues").mock(
+            return_value=httpx.Response(200, json=mock_issues_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo").mock(
+            return_value=httpx.Response(200, json=mock_repo_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/commits/main/status").mock(
+            return_value=httpx.Response(200, json=mock_status_response_success)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(200, json=mock_security_alerts_response)
+        )
+
+        service = GitHubService(token="test")
+        result = await service.get_repo_health("owner", "repo")
+
+        assert result.security_alerts_critical == 1
+        assert result.security_alerts_high == 1
+        assert result.security_alerts_medium == 1
+        assert result.security_alerts_low == 1
 
     @respx.mock
     @pytest.mark.asyncio
@@ -428,6 +568,9 @@ class TestGetRepoHealth:
         respx.get("https://api.github.com/repos/owner/repo/releases").mock(
             return_value=httpx.Response(500)
         )
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(500)
+        )
 
         service = GitHubService(token="test")
         result = await service.get_repo_health("owner", "repo")
@@ -439,6 +582,8 @@ class TestGetRepoHealth:
         assert result.last_ci_success is None
         assert result.release_count_30d == 0
         assert result.contributor_count == 0
+        assert result.security_alerts_critical == 0
+        assert result.security_alerts_high == 0
 
 
 class TestGetReleaseCount30d:
