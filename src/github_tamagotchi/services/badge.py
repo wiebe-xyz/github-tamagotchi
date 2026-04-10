@@ -33,9 +33,40 @@ MOOD_COLOR: dict[str, str] = {
     PetMood.DANCING: "#1abc9c",
 }
 
+# (animation-name, timing) per mood
+MOOD_ANIMATION: dict[str, tuple[str, str]] = {
+    PetMood.HAPPY: ("bounce", "1s ease-in-out infinite"),
+    PetMood.DANCING: ("bounce", "0.6s ease-in-out infinite"),
+    PetMood.CONTENT: ("float", "3s ease-in-out infinite"),
+    PetMood.HUNGRY: ("shake", "0.5s ease-in-out infinite"),
+    PetMood.WORRIED: ("shake", "0.8s ease-in-out infinite"),
+    PetMood.LONELY: ("pulse", "2s ease-in-out infinite"),
+    PetMood.SICK: ("pulse", "1.5s ease-in-out infinite"),
+}
+
+_KEYFRAMES = (
+    "@keyframes bounce{"
+    "0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}"
+    "@keyframes float{"
+    "0%,100%{transform:translateY(0) rotate(-1deg)}"
+    "50%{transform:translateY(-2px) rotate(1deg)}}"
+    "@keyframes shake{"
+    "0%,100%{transform:translateX(0)}"
+    "25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}"
+    "@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}"
+)
+
 _CENTER = 'text-anchor="middle" dominant-baseline="middle"'
 _START = 'text-anchor="start" dominant-baseline="middle"'
 _END = 'text-anchor="end" dominant-baseline="middle"'
+
+# Layout constants for sprite badge (160px wide)
+_SPRITE_W = 160
+_SPRITE_X = 4       # sprite image x offset
+_SPRITE_Y = 9       # sprite image y offset
+_SPRITE_SIZE = 56   # sprite image width and height
+_TEXT_X = 66        # x start of right-side text column
+_TEXT_RIGHT = 156   # x end of right-side text (for right-aligned elements)
 
 
 def _health_color(health: int) -> str:
@@ -44,6 +75,23 @@ def _health_color(health: int) -> str:
     if health >= 40:
         return "#f39c12"
     return "#e74c3c"
+
+
+def _sprite_image_element(b64: str, anim_name: str | None, anim_timing: str | None) -> list[str]:
+    """Build SVG elements for an embedded sprite image with optional animation."""
+    img_elem = (
+        f'  <image x="{_SPRITE_X}" y="{_SPRITE_Y}" width="{_SPRITE_SIZE}" height="{_SPRITE_SIZE}"'
+        f' href="data:image/png;base64,{b64}"/>'
+    )
+    if anim_name:
+        cx = _SPRITE_X + _SPRITE_SIZE // 2
+        cy = _SPRITE_Y + _SPRITE_SIZE // 2
+        return [
+            f'  <g style="animation:{anim_name} {anim_timing};transform-origin:{cx}px {cy}px">',
+            f"  {img_elem.strip()}",
+            "  </g>",
+        ]
+    return [img_elem]
 
 
 def generate_badge_svg(
@@ -56,85 +104,186 @@ def generate_badge_svg(
     died_at: datetime | None = None,
     created_at: datetime | None = None,
     commit_streak: int = 0,
+    pet_image_b64: str | None = None,
 ) -> str:
-    """Generate an SVG badge representing the current pet state."""
+    """Generate an SVG badge representing the current pet state.
+
+    Args:
+        name: Pet name.
+        stage: Pet stage string.
+        mood: Pet mood string.
+        health: Pet health (0–100).
+        is_dead: Whether the pet is deceased.
+        died_at: Datetime the pet died (for RIP label).
+        created_at: Datetime the pet was created (for RIP label).
+        commit_streak: Current commit streak count.
+        pet_image_b64: Base64-encoded PNG sprite, or None to use emoji fallback.
+    """
     # Truncate name to keep badge width manageable
     display_name = name if len(name) <= 14 else name[:13] + "…"
 
+    has_sprite = bool(pet_image_b64)
+    width = _SPRITE_W if has_sprite else 120
+
     if is_dead:
-        stage_sprite = "🪦"
-        mood_sprite = "💀"
         accent = "#7f8c8d"
         born_year = created_at.year if created_at else "?"
         died_year = died_at.year if died_at else "?"
         rip_label = f"RIP {born_year}–{died_year}"
-        lines = [
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"'
-            f' role="img" aria-label="Pet: {display_name} (Deceased)">',
-            f"  <title>{display_name} (Deceased)</title>",
-            "  <defs>",
+
+        defs_inner: list[str] = [
             '    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">',
             '      <stop offset="0" stop-color="#1a1a1a"/>',
             '      <stop offset="1" stop-color="#2c2c2c"/>',
             "    </linearGradient>",
+        ]
+        if has_sprite:
+            defs_inner.append(
+                '    <filter id="gs">'
+                '<feColorMatrix type="saturate" values="0"/>'
+                "</filter>"
+            )
+
+        lines: list[str] = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="80"'
+            f' role="img" aria-label="Pet: {display_name} (Deceased)">',
+            f"  <title>{display_name} (Deceased)</title>",
+            "  <defs>",
+            *defs_inner,
             "  </defs>",
-            '  <rect width="120" height="80" rx="6" fill="url(#bg)"/>',
-            f'  <rect width="120" height="3" fill="{accent}"/>',
-            f'  <text x="18" y="44" font-size="28" {_CENTER}>{stage_sprite}</text>',
-            f'  <text x="38" y="30" font-size="12" {_START}>{mood_sprite}</text>',
-            f'  <text x="38" y="44" font-size="10" fill="#9e9e9e" {_START}'
+            f'  <rect width="{width}" height="80" rx="6" fill="url(#bg)"/>',
+            f'  <rect width="{width}" height="3" fill="{accent}"/>',
+        ]
+
+        if has_sprite:
+            assert pet_image_b64 is not None
+            lines.append(
+                f'  <image x="{_SPRITE_X}" y="{_SPRITE_Y}" width="{_SPRITE_SIZE}"'
+                f' height="{_SPRITE_SIZE}" href="data:image/png;base64,{pet_image_b64}"'
+                f' filter="url(#gs)"/>'
+            )
+            tx = _TEXT_X
+            tcenter = _TEXT_RIGHT
+        else:
+            lines.append(f'  <text x="18" y="44" font-size="28" {_CENTER}>🪦</text>')
+            lines.append(f'  <text x="38" y="30" font-size="12" {_START}>💀</text>')
+            tx = 38
+            tcenter = 60
+
+        lines += [
+            f'  <text x="{tx}" y="30" font-size="10" fill="#9e9e9e" {_START}'
             f' font-family="monospace">{display_name}</text>',
-            f'  <text x="38" y="57" font-size="8" fill="#7f8c8d" {_START}'
+            f'  <text x="{tx}" y="44" font-size="8" fill="#7f8c8d" {_START}'
             f' font-family="sans-serif">Deceased</text>',
-            f'  <text x="60" y="71" font-size="7" fill="#7f8c8d" {_CENTER}'
+            f'  <text x="{tcenter}" y="60" font-size="7" fill="#7f8c8d" {_CENTER}'
             f' font-family="sans-serif">{rip_label}</text>',
             "</svg>",
         ]
         return "\n".join(lines)
 
+    # --- Living pet ---
     stage_sprite = STAGE_EMOJI.get(stage, "🥚")
     mood_sprite = MOOD_EMOJI.get(mood, "😌")
     accent = MOOD_COLOR.get(mood, "#3498db")
     hp_color = _health_color(health)
     health_pct = max(0, min(100, health))
-    health_bar_width = round(health_pct * 0.65)  # 65px max bar width
-
     stage_label = stage.capitalize()
+    mood_label = mood.capitalize()
 
-    lines = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"'
-        f' role="img" aria-label="Pet: {display_name}">',
-        f"  <title>{display_name} ({stage_label})</title>",
-        "  <defs>",
-        '    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">',
-        '      <stop offset="0" stop-color="#1a1a2e"/>',
-        '      <stop offset="1" stop-color="#16213e"/>',
-        "    </linearGradient>",
-        '    <clipPath id="r">',
-        '      <rect width="120" height="80" rx="6"/>',
-        "    </clipPath>",
-        "  </defs>",
-        '  <rect width="120" height="80" rx="6" fill="url(#bg)"/>',
-        f'  <rect width="120" height="3" fill="{accent}"/>',
-        f'  <text x="18" y="44" font-size="28" {_CENTER}>{stage_sprite}</text>',
-        f'  <text x="38" y="30" font-size="12" {_START}>{mood_sprite}</text>',
-        f'  <text x="38" y="44" font-size="10" fill="#ecf0f1" {_START}'
-        f' font-family="monospace">{display_name}</text>',
-        f'  <text x="38" y="57" font-size="8" fill="#bdc3c7" {_START}'
-        f' font-family="sans-serif">{stage_label}</text>',
-        f'  <text x="16" y="71" font-size="7" fill="#7f8c8d" {_START}'
-        f' font-family="sans-serif">HP</text>',
-        '  <rect x="26" y="67" width="80" height="5" rx="2" fill="#2c3e50"/>',
-        f'  <rect x="26" y="67" width="{health_bar_width}" height="5" rx="2" fill="{hp_color}"/>',
-        f'  <text x="109" y="71" font-size="7" fill="{hp_color}" {_END}'
-        f' font-family="monospace">{health_pct}</text>',
-    ]
+    if has_sprite:
+        # 160px wide layout with sprite image
+        # HP bar: x=76 to x=148 → 72px max
+        health_bar_width = round(health_pct * 0.72)
 
-    if commit_streak >= 7:
-        lines.append(
-            f'  <text x="116" y="14" font-size="7" fill="#ff9800" {_END}'
-            f' font-family="monospace">🔥{commit_streak}</text>'
-        )
+        anim_pair = MOOD_ANIMATION.get(mood)
+        anim_name = anim_pair[0] if anim_pair else None
+        anim_timing = anim_pair[1] if anim_pair else None
+
+        defs_lines: list[str] = [
+            "  <defs>",
+            f"    <style>{_KEYFRAMES}</style>",
+            '    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">',
+            '      <stop offset="0" stop-color="#1a1a2e"/>',
+            '      <stop offset="1" stop-color="#16213e"/>',
+            "    </linearGradient>",
+            '    <clipPath id="r">',
+            f'      <rect width="{width}" height="80" rx="6"/>',
+            "    </clipPath>",
+            "  </defs>",
+        ]
+
+        lines = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="80"'
+            f' role="img" aria-label="Pet: {display_name}">',
+            f"  <title>{display_name} ({stage_label})</title>",
+            *defs_lines,
+            f'  <rect width="{width}" height="80" rx="6" fill="url(#bg)"/>',
+            f'  <rect width="{width}" height="3" fill="{accent}"/>',
+        ]
+
+        assert pet_image_b64 is not None
+        lines.extend(_sprite_image_element(pet_image_b64, anim_name, anim_timing))
+
+        lines += [
+            f'  <text x="{_TEXT_X}" y="22" font-size="10" fill="#ecf0f1" {_START}'
+            f' font-family="monospace">{display_name}</text>',
+            f'  <text x="{_TEXT_X}" y="35" font-size="8" fill="{accent}" {_START}'
+            f' font-family="sans-serif">{mood_label}</text>',
+            f'  <text x="{_TEXT_X}" y="48" font-size="8" fill="#bdc3c7" {_START}'
+            f' font-family="sans-serif">{stage_label}</text>',
+            f'  <text x="{_TEXT_X}" y="69" font-size="7" fill="#7f8c8d" {_START}'
+            f' font-family="sans-serif">HP</text>',
+            '  <rect x="76" y="65" width="73" height="5" rx="2" fill="#2c3e50"/>',
+            f'  <rect x="76" y="65" width="{health_bar_width}" height="5"'
+            f' rx="2" fill="{hp_color}"/>',
+            f'  <text x="{_TEXT_RIGHT}" y="69" font-size="7" fill="{hp_color}" {_END}'
+            f' font-family="monospace">{health_pct}</text>',
+        ]
+
+        if commit_streak >= 7:
+            lines.append(
+                f'  <text x="{_TEXT_RIGHT}" y="14" font-size="7" fill="#ff9800" {_END}'
+                f' font-family="monospace">🔥{commit_streak}</text>'
+            )
+    else:
+        # 120px wide layout with emoji (original)
+        health_bar_width = round(health_pct * 0.65)  # 65px max bar width
+
+        lines = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"'
+            f' role="img" aria-label="Pet: {display_name}">',
+            f"  <title>{display_name} ({stage_label})</title>",
+            "  <defs>",
+            '    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">',
+            '      <stop offset="0" stop-color="#1a1a2e"/>',
+            '      <stop offset="1" stop-color="#16213e"/>',
+            "    </linearGradient>",
+            '    <clipPath id="r">',
+            '      <rect width="120" height="80" rx="6"/>',
+            "    </clipPath>",
+            "  </defs>",
+            '  <rect width="120" height="80" rx="6" fill="url(#bg)"/>',
+            f'  <rect width="120" height="3" fill="{accent}"/>',
+            f'  <text x="18" y="44" font-size="28" {_CENTER}>{stage_sprite}</text>',
+            f'  <text x="38" y="30" font-size="12" {_START}>{mood_sprite}</text>',
+            f'  <text x="38" y="44" font-size="10" fill="#ecf0f1" {_START}'
+            f' font-family="monospace">{display_name}</text>',
+            f'  <text x="38" y="57" font-size="8" fill="#bdc3c7" {_START}'
+            f' font-family="sans-serif">{stage_label}</text>',
+            f'  <text x="16" y="71" font-size="7" fill="#7f8c8d" {_START}'
+            f' font-family="sans-serif">HP</text>',
+            '  <rect x="26" y="67" width="80" height="5" rx="2" fill="#2c3e50"/>',
+            f'  <rect x="26" y="67" width="{health_bar_width}" height="5"'
+            f' rx="2" fill="{hp_color}"/>',
+            f'  <text x="109" y="71" font-size="7" fill="{hp_color}" {_END}'
+            f' font-family="monospace">{health_pct}</text>',
+        ]
+
+        if commit_streak >= 7:
+            lines.append(
+                f'  <text x="116" y="14" font-size="7" fill="#ff9800" {_END}'
+                f' font-family="monospace">🔥{commit_streak}</text>'
+            )
 
     lines.append("</svg>")
     return "\n".join(lines)
