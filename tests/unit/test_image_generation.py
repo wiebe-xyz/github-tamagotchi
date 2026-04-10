@@ -350,9 +350,11 @@ class TestRemoveBackground:
 
     def _get_all_pixels(self, img: Image.Image) -> list[tuple[int, int, int, int]]:
         """Return all pixels in the image as a flat list of RGBA tuples."""
-        px = img.load()
-        w, h = img.size
-        return [px[x, y] for y in range(h) for x in range(w)]  # type: ignore[index]
+        raw = img.tobytes()
+        return [
+            (raw[i], raw[i + 1], raw[i + 2], raw[i + 3])
+            for i in range(0, len(raw), 4)
+        ]
 
     def test_flat_magenta_png_becomes_fully_transparent(self) -> None:
         """A solid magenta image should have every pixel alpha=0 after processing."""

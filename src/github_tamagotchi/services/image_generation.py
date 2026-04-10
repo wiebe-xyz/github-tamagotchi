@@ -142,19 +142,18 @@ def remove_background(
         PNG image data with the background replaced by transparency.
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
-    pixels = img.load()
-    width, height = img.size
-    for y in range(height):
-        for x in range(width):
-            r, g, b, a = pixels[x, y]  # type: ignore[index,misc]
-            if (
-                abs(r - chroma[0]) < tolerance
-                and abs(g - chroma[1]) < tolerance
-                and abs(b - chroma[2]) < tolerance
-            ):
-                pixels[x, y] = (r, g, b, 0)  # type: ignore[index,misc]
+    raw = bytearray(img.tobytes())
+    for i in range(0, len(raw), 4):
+        r, g, b = raw[i], raw[i + 1], raw[i + 2]
+        if (
+            abs(r - chroma[0]) < tolerance
+            and abs(g - chroma[1]) < tolerance
+            and abs(b - chroma[2]) < tolerance
+        ):
+            raw[i + 3] = 0
+    result = Image.frombytes("RGBA", img.size, bytes(raw))
     out = io.BytesIO()
-    img.save(out, format="PNG")
+    result.save(out, format="PNG")
     return out.getvalue()
 
 
