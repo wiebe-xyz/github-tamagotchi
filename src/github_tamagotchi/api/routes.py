@@ -20,9 +20,11 @@ from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.models.webhook_event import WebhookEvent
 from github_tamagotchi.services import image_queue
+from github_tamagotchi.services.badge import BADGE_STYLES
 from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE, STYLES, get_pet_appearance
 from github_tamagotchi.services.image_queue import get_image_provider
+from github_tamagotchi.services.naming import generate_name_from_repo, is_valid_pet_name
 from github_tamagotchi.services.storage import StorageService
 from github_tamagotchi.services.token_encryption import decrypt_token
 from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
@@ -47,7 +49,7 @@ class PetCreate(BaseModel):
 
     repo_owner: str = Field(..., min_length=1, max_length=255)
     repo_name: str = Field(..., min_length=1, max_length=255)
-    name: str = Field(..., min_length=1, max_length=100)
+    name: str | None = Field(None, min_length=1, max_length=20)
     style: str = Field(DEFAULT_STYLE, min_length=1, max_length=30)
 
 
@@ -65,6 +67,18 @@ class StyleUpdateRequest(BaseModel):
     style: str = Field(..., min_length=1, max_length=30)
 
 
+class PetRenameRequest(BaseModel):
+    """Request body for renaming a pet."""
+
+    name: str = Field(..., min_length=1, max_length=20)
+
+
+class BadgeStyleUpdateRequest(BaseModel):
+    """Request body for updating a pet's badge style."""
+
+    badge_style: str = Field(..., min_length=1, max_length=20)
+
+
 class PetResponse(BaseModel):
     """Response model for pet data."""
 
@@ -79,6 +93,7 @@ class PetResponse(BaseModel):
     health: int
     experience: int
     style: str
+    badge_style: str
     commit_streak: int
     longest_streak: int
     generation: int
@@ -301,11 +316,21 @@ async def create_pet(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Pet already exists for {pet_data.repo_owner}/{pet_data.repo_name}",
         )
+    # Generate a name from the repo if none was provided
+    if pet_data.name is None:
+        pet_name = generate_name_from_repo(pet_data.repo_owner, pet_data.repo_name)
+    else:
+        if not is_valid_pet_name(pet_data.name):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid pet name. Use 1-20 alphanumeric chars and spaces, no profanity.",
+            )
+        pet_name = pet_data.name
     pet = await pet_crud.create_pet(
         session,
         pet_data.repo_owner,
         pet_data.repo_name,
-        pet_data.name,
+        pet_name,
         user_id=user.id if user else None,
         style=pet_data.style,
     )
@@ -461,6 +486,7 @@ async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> 
         created_at=pet.created_at,
         commit_streak=pet.commit_streak,
         pet_image_b64=pet_image_b64,
+        badge_style=pet.badge_style,
     )
     return Response(
         content=svg_content,
@@ -521,6 +547,75 @@ async def update_pet_style(
     except ValueError:
         pass  # no valid provider configured, skip
     return PetResponse.model_validate(pet)
+
+
+@router.put("/pets/{repo_owner}/{repo_name}/name", response_model=PetResponse)
+async def rename_pet(
+    repo_owner: str,
+    repo_name: str,
+    rename_data: PetRenameRequest,
+    session: DbSession,
+    user: Annotated[User, Depends(get_current_user)],
+) -> PetResponse:
+    """Rename a pet. Requires ownership."""
+    if not is_valid_pet_name(rename_data.name):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid pet name. Use 1-20 alphanumeric characters and spaces, no profanity.",
+        )
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    if pet.user_id != user.id and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not own this pet",
+        )
+    pet.name = rename_data.name
+    await session.commit()
+    await session.refresh(pet)
+    return PetResponse.model_validate(pet)
+
+
+@router.put("/pets/{repo_owner}/{repo_name}/badge-style", response_model=PetResponse)
+async def update_pet_badge_style(
+    repo_owner: str,
+    repo_name: str,
+    badge_style_data: BadgeStyleUpdateRequest,
+    session: DbSession,
+    user: Annotated[User, Depends(get_current_user)],
+) -> PetResponse:
+    """Update the badge visual style for a pet. Requires ownership."""
+    if badge_style_data.badge_style not in BADGE_STYLES:
+        valid = ", ".join(sorted(BADGE_STYLES))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid badge style '{badge_style_data.badge_style}'. Must be one of: {valid}",
+        )
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if not pet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pet not found for {repo_owner}/{repo_name}",
+        )
+    if pet.user_id != user.id and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not own this pet",
+        )
+    pet.badge_style = badge_style_data.badge_style
+    await session.commit()
+    await session.refresh(pet)
+    return PetResponse.model_validate(pet)
+
+
+@router.get("/badge-styles", response_model=list[str])
+async def list_badge_styles() -> list[str]:
+    """Return the available badge style options."""
+    return sorted(BADGE_STYLES)
 
 
 @router.get("/pets/{repo_owner}/{repo_name}/characteristics", response_model=PetCharacteristics)
