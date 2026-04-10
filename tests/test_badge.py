@@ -802,3 +802,71 @@ class TestShowcaseEndpoint:
         body = response.text
         assert "UserAPet" in body
         assert "UserBPet" not in body
+
+
+class TestBadgeStarCosmetics:
+    """Tests for star/fork milestone cosmetic effects on the badge."""
+
+    def _make_badge(self, achievements: set[str]) -> str:
+        return generate_badge_svg(
+            "TestPet",
+            "adult",
+            "happy",
+            80,
+            unlocked_achievements=achievements,
+        )
+
+    def test_no_cosmetics_without_achievements(self) -> None:
+        svg = self._make_badge(set())
+        assert "★" not in svg
+        assert "stroke=" not in svg
+
+    def test_rising_flair_at_10_stars(self) -> None:
+        svg = self._make_badge({"stars_10"})
+        assert "★ Rising" in svg
+
+    def test_silver_border_at_100_stars(self) -> None:
+        svg = self._make_badge({"stars_10", "stars_100"})
+        assert "#c0c0c0" in svg
+
+    def test_gold_border_supersedes_silver(self) -> None:
+        svg = self._make_badge({"stars_10", "stars_100", "stars_500"})
+        assert "#ffd700" in svg
+        assert "#c0c0c0" not in svg
+
+    def test_popular_flair_at_1000_stars(self) -> None:
+        svg = self._make_badge({"stars_10", "stars_100", "stars_500", "stars_1000"})
+        assert "★ Popular" in svg
+
+    def test_celebrity_flair_at_10000_stars(self) -> None:
+        svg = self._make_badge(
+            {"stars_10", "stars_100", "stars_500", "stars_1000", "stars_10000"}
+        )
+        assert "★ Celebrity" in svg
+
+    def test_streak_takes_priority_over_flair(self) -> None:
+        svg = generate_badge_svg(
+            "TestPet",
+            "adult",
+            "happy",
+            80,
+            commit_streak=7,
+            unlocked_achievements={"stars_10000"},
+        )
+        assert "🔥" in svg
+        assert "★ Celebrity" not in svg
+
+    def test_no_border_without_star_milestones(self) -> None:
+        svg = self._make_badge({"forks_1", "forks_10"})
+        assert "#c0c0c0" not in svg
+        assert "#ffd700" not in svg
+
+    def test_none_achievements_treated_as_empty(self) -> None:
+        svg = generate_badge_svg("TestPet", "adult", "happy", 80, unlocked_achievements=None)
+        assert "★" not in svg
+        assert "#c0c0c0" not in svg
+
+    def test_svg_still_valid_with_border(self) -> None:
+        svg = self._make_badge({"stars_100"})
+        assert svg.startswith("<svg")
+        assert svg.endswith("</svg>")

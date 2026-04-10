@@ -39,6 +39,8 @@ class RepoHealth:
     security_alerts_medium: int = 0
     security_alerts_low: int = 0
     dependent_count: int = 0
+    star_count: int = 0
+    fork_count: int = 0
 
 
 @dataclass
@@ -186,6 +188,9 @@ class GitHubService:
             # Get dependent count (repos/packages that depend on this one)
             dependent_count = await self._get_dependent_count(client, owner, repo)
 
+            # Get star and fork counts
+            star_count, fork_count = await self._get_star_fork_counts(client, owner, repo)
+
             return RepoHealth(
                 last_commit_at=last_commit_at,
                 open_prs_count=open_prs_count,
@@ -201,6 +206,8 @@ class GitHubService:
                 security_alerts_medium=security_counts["medium"],
                 security_alerts_low=security_counts["low"],
                 dependent_count=dependent_count,
+                star_count=star_count,
+                fork_count=fork_count,
             )
 
     async def _get_last_commit(
@@ -321,6 +328,25 @@ class GitHubService:
         except Exception as e:
             logger.warning("Failed to get security alerts", error=str(e))
         return counts
+
+    async def _get_star_fork_counts(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> tuple[int, int]:
+        """Get the star and fork counts for the repository."""
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}",
+                headers=self._get_headers(),
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+            return data.get("stargazers_count", 0), data.get("forks_count", 0)
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get star/fork counts", error=str(e))
+        return 0, 0
 
     def _get_oldest_age_hours(self, items: list[dict[str, Any]]) -> float:
         """Get age in hours of the oldest item."""

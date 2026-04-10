@@ -108,6 +108,35 @@ def _format_dependent_count(count: int) -> str:
     return str(count)
 
 
+def _get_star_border(unlocked_achievements: set[str]) -> str | None:
+    """Return a border color if the pet has earned a star border achievement, else None."""
+    if "stars_500" in unlocked_achievements:
+        return "#ffd700"  # gold
+    if "stars_100" in unlocked_achievements:
+        return "#c0c0c0"  # silver
+    return None
+
+
+def _apply_star_border(svg: str, border_color: str, width: int, height: int) -> str:
+    """Inject a colored border rect into an SVG string just before </svg>."""
+    border_rect = (
+        f'  <rect x="1" y="1" width="{width - 2}" height="{height - 2}"'
+        f' rx="5" fill="none" stroke="{border_color}" stroke-width="2"/>'
+    )
+    return svg.replace("</svg>", f"{border_rect}\n</svg>")
+
+
+def _get_flair_text(unlocked_achievements: set[str]) -> str | None:
+    """Return flair text based on the highest earned star achievement, else None."""
+    if "stars_10000" in unlocked_achievements:
+        return "★ Celebrity"
+    if "stars_1000" in unlocked_achievements:
+        return "★ Popular"
+    if "stars_10" in unlocked_achievements:
+        return "★ Rising"
+    return None
+
+
 def _playful_badge(
     display_name: str,
     stage: str,
@@ -228,6 +257,11 @@ def _playful_badge(
             lines.append(
                 f'  <text x="116" y="14" font-size="7" fill="#ff9800" {_END}'
                 f' font-family="monospace">🔥{commit_streak}</text>'
+            )
+        elif flair_text:
+            lines.append(
+                f'  <text x="116" y="14" font-size="7" fill="#f1c40f" {_END}'
+                f' font-family="sans-serif">{flair_text}</text>'
             )
 
     lines.append("</svg>")
@@ -454,6 +488,7 @@ def generate_badge_svg(
     pet_image_b64: str | None = None,
     badge_style: str = DEFAULT_BADGE_STYLE,
     dependent_count: int = 0,
+    unlocked_achievements: set[str] | None = None,
 ) -> str:
     """Generate an SVG badge representing the current pet state.
 
@@ -469,8 +504,10 @@ def generate_badge_svg(
         pet_image_b64: Base64-encoded PNG sprite, or None to use emoji fallback.
         badge_style: Visual style — "playful", "minimal", or "maintained".
         dependent_count: Number of repos/packages that depend on this one.
+        unlocked_achievements: Set of achievement IDs for cosmetic effects.
     """
     display_name = name if len(name) <= 14 else name[:13] + "…"
+    achievements = unlocked_achievements or set()
 
     if is_dead:
         return _dead_badge(
@@ -489,16 +526,25 @@ def generate_badge_svg(
     if badge_style == "maintained":
         return _maintained_badge(display_name, stage, health)
 
-    # Default: playful — show dependent flair for high-responsibility packages
-    return _playful_badge(
+    # Default: playful — apply star cosmetics and dependent flair
+    flair_text = _get_flair_text(achievements) or _dependent_flair_text(dependent_count)
+    svg = _playful_badge(
         display_name,
         stage,
         mood,
         health,
         commit_streak=commit_streak,
         pet_image_b64=pet_image_b64,
-        flair_text=_dependent_flair_text(dependent_count),
+        flair_text=flair_text,
     )
+
+    border_color = _get_star_border(achievements)
+    if border_color:
+        has_sprite = bool(pet_image_b64)
+        width = _SPRITE_W if has_sprite else 120
+        svg = _apply_star_border(svg, border_color, width, 80)
+
+    return svg
 
 
 class ContributorStanding(StrEnum):

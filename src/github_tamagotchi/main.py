@@ -197,10 +197,12 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                             experience=new_experience,
                         )
 
-                    # Store last-known release, contributor, and dependent snapshots
+                    # Store last-known release, contributor, dependent, and popularity snapshots
                     pet.last_release_count = health.release_count_30d
                     pet.last_contributor_count = health.contributor_count
                     pet.dependent_count = health.dependent_count
+                    pet.star_count = health.star_count
+                    pet.fork_count = health.fork_count
 
                     # Update last_fed_at if there was a recent commit
                     if health.last_commit_at:
@@ -229,7 +231,12 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                         )
 
                     # Check and unlock achievements based on updated pet state
-                    newly_unlocked = await check_and_unlock_achievements(pet, session)
+                    newly_unlocked = await check_and_unlock_achievements(
+                        pet,
+                        session,
+                        star_count=health.star_count,
+                        fork_count=health.fork_count,
+                    )
                     if newly_unlocked:
                         logger.info(
                             "achievements_unlocked",
