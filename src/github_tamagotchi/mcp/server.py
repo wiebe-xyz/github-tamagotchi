@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from github_tamagotchi.core.database import async_session_factory
+from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.pet_logic import (
@@ -149,6 +150,7 @@ async def feed_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
         evolved = new_stage.value != old_stage
         if evolved:
             pet.stage = new_stage.value
+            await create_milestone(session, pet, old_stage, new_stage.value, pet.experience)
 
         await session.commit()
 
@@ -297,6 +299,7 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
         evolved = new_stage.value != old_stage
         if evolved:
             pet.stage = new_stage.value
+            await create_milestone(session, pet, old_stage, new_stage.value, pet.experience)
 
         pet.last_checked_at = datetime.now(UTC)
 

@@ -554,11 +554,12 @@
                 const tweetBtn = document.getElementById('milestone-tweet-btn');
                 const copyBtn = document.getElementById('milestone-copy-btn');
 
-                milestoneText.textContent = `\uD83C\uDF89 {{ pet.name }} evolved from ${m.old_stage.charAt(0).toUpperCase() + m.old_stage.slice(1)} to ${m.new_stage.charAt(0).toUpperCase() + m.new_stage.slice(1)}!`;
-                milestoneMeta.textContent = `${m.experience} XP \u00b7 ${m.age_days} day${m.age_days !== 1 ? 's' : ''} old`;
+                const capStage = s => s.charAt(0).toUpperCase() + s.slice(1);
+                milestoneText.textContent = `🎉 {{ pet.name }} evolved from ${capStage(m.old_stage)} to ${capStage(m.new_stage)}!`;
+                milestoneMeta.textContent = `${m.experience} XP · ${m.age_days} day${m.age_days !== 1 ? 's' : ''} old`;
 
                 const tweetText = encodeURIComponent(
-                    `\uD83C\uDF89 {{ pet.name }} just evolved to ${m.new_stage.charAt(0).toUpperCase() + m.new_stage.slice(1)}!\n${m.experience} XP and ${m.age_days} days of care later\u2026\n`
+                    `🎉 {{ pet.name }} just evolved to ${capStage(m.new_stage)}!\n${m.experience} XP and ${m.age_days} days of care later…\n`
                 );
                 const pageUrl = encodeURIComponent('{{ page_url }}');
                 tweetBtn.href = `https://twitter.com/intent/tweet?text=${tweetText}&url=${pageUrl}`;
@@ -566,7 +567,7 @@
                 copyBtn.addEventListener('click', () => {
                     navigator.clipboard.writeText('{{ page_url }}').then(() => {
                         const orig = copyBtn.innerHTML;
-                        copyBtn.innerHTML = '\u2713 Copied!';
+                        copyBtn.innerHTML = '✓ Copied!';
                         setTimeout(() => { copyBtn.innerHTML = orig; }, 2000);
                     });
                 });
