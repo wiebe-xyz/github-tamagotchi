@@ -1196,6 +1196,45 @@ async def get_leaderboard(session: DbSession) -> LeaderboardResponse:
     return LeaderboardResponse(categories=categories, cached_at=now)
 
 
+@router.get("/showcase/{username}.svg", response_class=Response)
+async def get_showcase(
+    username: str,
+    session: DbSession,
+    layout: str = Query(default="horizontal", pattern="^(horizontal|vertical|grid)$"),
+    theme: str = Query(default="dark", pattern="^(light|dark)$"),
+    max: int = Query(default=10, ge=1, le=50),
+) -> Response:
+    """Return an SVG showcase of all pets for a GitHub user.
+
+    Returns a 200 with an empty-state SVG when the user has no pets.
+    """
+    from github_tamagotchi.services.badge import generate_showcase_svg
+
+    pets = await pet_crud.get_pets_by_github_username(session, username, limit=max)
+
+    pets_data = [
+        {
+            "name": pet.name,
+            "stage": pet.stage,
+            "mood": pet.mood,
+            "health": pet.health,
+            "is_dead": pet.is_dead,
+        }
+        for pet in pets
+    ]
+
+    svg_content = generate_showcase_svg(pets_data, username, layout=layout, theme=theme)
+
+    return Response(
+        content=svg_content,
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+            "Content-Type": "image/svg+xml; charset=utf-8",
+        },
+    )
+
+
 @router.get("/contributor/{repo_owner}/{repo_name}/{username}.svg", response_class=Response)
 async def get_contributor_badge(
     repo_owner: str,
