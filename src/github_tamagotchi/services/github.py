@@ -1180,3 +1180,34 @@ class GitHubService:
                 logger.warning("Failed to list user repos", error=str(e))
                 return []
 
+    async def get_top_contributor(self, owner: str, repo: str) -> str | None:
+        """Return the GitHub login of the top committer in the last 30 days, or None."""
+        async with httpx.AsyncClient() as client:
+            since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/repos/{owner}/{repo}/commits",
+                    headers=self._get_headers(),
+                    params={"since": since_30d, "per_page": 100},
+                )
+                self._check_rate_limit(resp)
+                resp.raise_for_status()
+                commits: list[dict[str, Any]] = resp.json()
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning(
+                    "Failed to get top contributor", repo=f"{owner}/{repo}", error=str(e)
+                )
+                return None
+
+        author_counts: dict[str, int] = {}
+        for c in commits:
+            login = c["author"].get("login") if c.get("author") else None
+            if login:
+                author_counts[login] = author_counts.get(login, 0) + 1
+
+        if not author_counts:
+            return None
+        return max(author_counts, key=lambda k: author_counts[k])
+

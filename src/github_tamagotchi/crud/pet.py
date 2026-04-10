@@ -133,6 +133,18 @@ async def get_pets_by_github_username(
     return list(result.scalars().all())
 
 
+async def get_org_pets(db: AsyncSession, org_name: str) -> list[Pet]:
+    """Get all pets belonging to an org, case-insensitive, ordered by health desc."""
+    from sqlalchemy import func as sqlfunc
+
+    result = await db.execute(
+        select(Pet)
+        .where(sqlfunc.lower(Pet.repo_owner) == org_name.lower())
+        .order_by(Pet.health.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def delete_pet(db: AsyncSession, pet: Pet) -> None:
     """Delete a pet."""
     await db.delete(pet)
