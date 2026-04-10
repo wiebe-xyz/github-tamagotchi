@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 import structlog
 
+from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.core.config import settings
 
 logger = structlog.get_logger()
@@ -141,21 +142,35 @@ class GitHubService:
 
     def _check_rate_limit(self, response: httpx.Response) -> None:
         """Check if rate limit was hit and raise RateLimitError if so."""
-        if response.status_code == 403:
-            remaining = response.headers.get("X-RateLimit-Remaining")
-            if remaining is not None and int(remaining) == 0:
-                reset_timestamp = response.headers.get("X-RateLimit-Reset")
-                reset_time = None
-                if reset_timestamp:
-                    reset_time = datetime.fromtimestamp(int(reset_timestamp), tz=UTC)
-                logger.warning(
-                    "github_rate_limited",
-                    reset_time=reset_time.isoformat() if reset_time else None,
-                )
-                raise RateLimitError(
-                    "GitHub API rate limit exceeded",
-                    reset_time=reset_time,
-                )
+        remaining = response.headers.get("X-RateLimit-Remaining")
+        if remaining is not None:
+            metrics_service.github_api_rate_limit_remaining.set(int(remaining))
+
+        # Extract the resource type from the URL path (e.g. "commits", "pulls") for labelling.
+        # response.url requires a request to be set; fall back to "unknown" in test scenarios.
+        endpoint_label = "unknown"
+        try:
+            url_path = str(response.url.path)
+            path_parts = [p for p in url_path.split("/") if p]
+            if path_parts:
+                endpoint_label = path_parts[-1]
+        except RuntimeError:
+            pass
+        metrics_service.github_api_requests_total.labels(
+            endpoint=endpoint_label,
+            status=str(response.status_code),
+        ).inc()
+
+        if response.status_code == 403 and remaining is not None and int(remaining) == 0:
+            metrics_service.github_api_errors_total.labels(error_type="rate_limited").inc()
+            reset_timestamp = response.headers.get("X-RateLimit-Reset")
+            reset_time = None
+            if reset_timestamp:
+                reset_time = datetime.fromtimestamp(int(reset_timestamp), tz=UTC)
+            raise RateLimitError(
+                "GitHub API rate limit exceeded",
+                reset_time=reset_time,
+            )
 
     async def get_repo_health(self, owner: str, repo: str) -> RepoHealth:
         """Fetch health metrics for a repository."""
@@ -230,7 +245,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("github_error", endpoint="commits", error=str(e))
+            logger.warning("Failed to get last commit", error=str(e))
         return None
 
     async def _get_open_prs(
@@ -250,7 +265,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("github_error", endpoint="pulls", error=str(e))
+            logger.warning("Failed to get open PRs", error=str(e))
         return []
 
     async def _get_open_issues(
@@ -271,7 +286,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("github_error", endpoint="issues", error=str(e))
+            logger.warning("Failed to get open issues", error=str(e))
         return []
 
     async def _get_ci_status(self, client: httpx.AsyncClient, owner: str, repo: str) -> bool | None:
@@ -299,7 +314,7 @@ class GitHubService:
         except RateLimitError:
             raise
         except Exception as e:
-            logger.warning("github_error", endpoint="check_status", error=str(e))
+            logger.warning("Failed to get CI status", error=str(e))
         return None
 
     async def _get_security_alerts(
@@ -386,7 +401,6 @@ class GitHubService:
         except Exception as e:
             logger.warning("Failed to get releases", error=str(e))
         return 0
-
 
     async def _get_contributor_count_90d(
         self, client: httpx.AsyncClient, owner: str, repo: str

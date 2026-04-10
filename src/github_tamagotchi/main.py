@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import sentry_sdk
 import structlog
@@ -17,6 +17,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Req
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
@@ -24,6 +25,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi import __version__
+from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.alerts import alert_router
 from github_tamagotchi.api.auth import auth_router, get_admin_user, get_optional_user
 from github_tamagotchi.api.health import health_router
@@ -59,37 +61,6 @@ from github_tamagotchi.services.pet_logic import (
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-
-def configure_logging(debug: bool = False) -> None:
-    """Configure structlog for JSON structured logging to stdout."""
-    shared_processors: list[Any] = [
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
-    ]
-
-    if debug:
-        processors: list[Any] = [
-            *shared_processors,
-            structlog.dev.ConsoleRenderer(),
-        ]
-    else:
-        processors = [
-            *shared_processors,
-            structlog.processors.dict_tracebacks,
-            structlog.processors.JSONRenderer(),
-        ]
-
-    structlog.configure(
-        processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
-
-
-configure_logging(debug=bool(os.getenv("DEBUG")))
 logger = structlog.get_logger()
 
 # Track consecutive poll failures for alerting
@@ -112,6 +83,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
     evolved_count = 0
     rate_limited = False
     error_messages: list[str] = []
+    poll_start = time.monotonic()
 
     async with async_session_factory() as session:
         # Create a JobRun record
@@ -147,9 +119,6 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     # Fetch health metrics from GitHub
                     health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
 
-                    old_health = pet.health
-                    old_mood = pet.mood
-
                     # Calculate state changes
                     health_delta = calculate_health_delta(health)
                     experience_gained = calculate_experience(health)
@@ -183,6 +152,10 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     if new_stage != current_stage:
                         pet.stage = new_stage.value
                         evolved_count += 1
+                        metrics_service.evolutions_total.labels(
+                            from_stage=current_stage.value,
+                            to_stage=new_stage.value,
+                        ).inc()
                         await create_milestone(
                             session, pet, current_stage.value, new_stage.value, new_experience
                         )
@@ -221,6 +194,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                         pet.is_dead = True
                         pet.died_at = now
                         pet.cause_of_death = cause
+                        metrics_service.deaths_total.labels(cause=cause).inc()
                         logger.info(
                             "pet_died",
                             pet_id=pet.id,
@@ -273,16 +247,6 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
 
                     updated_count += 1
 
-                    logger.info(
-                        "pet_polled",
-                        pet_id=pet.id,
-                        pet_name=pet.name,
-                        repo=f"{pet.repo_owner}/{pet.repo_name}",
-                        health_before=old_health,
-                        health_after=new_health,
-                        mood_changed=(old_mood != new_mood.value),
-                    )
-
                     logger.debug(
                         "pet_updated",
                         pet_id=pet.id,
@@ -311,6 +275,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
 
                 except Exception as e:
                     error_count += 1
+                    metrics_service.poll_errors_total.inc()
                     error_messages.append(f"{pet.repo_owner}/{pet.repo_name}: {e}")
                     logger.error(
                         "poll_pet_error",
@@ -333,11 +298,44 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     rate_limited=rate_limited,
                 )
 
+            # --- Business metrics gauges ---
+            now_ts = datetime.now(UTC)
+            seven_days_ago = now_ts.timestamp() - 7 * 86400
+            dead_count = 0
+            dying_count = 0
+            active_count = 0
+            # Refresh pet stage/mood gauge counts
+            stage_mood_counts: dict[tuple[str, str], int] = {}
+            for pet in pets:
+                key = (pet.stage, pet.mood)
+                stage_mood_counts[key] = stage_mood_counts.get(key, 0) + 1
+                if pet.is_dead:
+                    dead_count += 1
+                elif pet.grace_period_started is not None:
+                    dying_count += 1
+                if (
+                    pet.last_fed_at is not None
+                    and pet.last_fed_at.timestamp() >= seven_days_ago
+                ):
+                    active_count += 1
+            for (stage, mood), count in stage_mood_counts.items():
+                metrics_service.pets_total.labels(stage=stage, mood=mood).set(count)
+            metrics_service.pets_dead_total.set(dead_count)
+            metrics_service.pets_dying.set(dying_count)
+            metrics_service.pets_active.set(active_count)
+
         final_status = "success"
     except Exception as e:
         final_status = "failed"
         error_messages.append(f"Unhandled error: {e}")
         logger.error("poll_failed", error=str(e))
+
+    # Record poll duration and processed count
+    poll_duration = time.monotonic() - poll_start
+    metrics_service.poll_duration_seconds.observe(poll_duration)
+    metrics_service.poll_pets_processed.set(updated_count)
+    if final_status == "success":
+        metrics_service.poll_last_success_timestamp.set(time.time())
 
     # Update the JobRun with results
     async with async_session_factory() as session:
@@ -482,6 +480,32 @@ app.mount("/mcp", mcp_app)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next: object) -> Response:
+    """Track HTTP request counts and durations."""
+    start = time.monotonic()
+    response: Response = await call_next(request)  # type: ignore[operator]
+    duration = time.monotonic() - start
+
+    route = request.scope.get("route")
+    endpoint = route.path if route else request.url.path
+
+    metrics_service.http_requests_total.labels(
+        method=request.method,
+        endpoint=endpoint,
+        status=str(response.status_code),
+    ).inc()
+    metrics_service.http_request_duration_seconds.labels(endpoint=endpoint).observe(duration)
+
+    return response
+
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Expose Prometheus metrics."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
