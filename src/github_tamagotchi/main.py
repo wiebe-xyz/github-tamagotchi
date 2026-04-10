@@ -632,7 +632,7 @@ async def org_overview(
     caretaker_counts: dict[str, int] = {}
     for entry in pet_entries:
         caretaker = entry["top_caretaker"]
-        if caretaker:
+        if isinstance(caretaker, str):
             caretaker_counts[caretaker] = caretaker_counts.get(caretaker, 0) + 1
     org_leaderboard = sorted(caretaker_counts.items(), key=lambda x: x[1], reverse=True)[:10]
 
