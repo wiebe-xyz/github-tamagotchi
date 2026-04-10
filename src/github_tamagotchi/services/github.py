@@ -82,6 +82,18 @@ class ContributorStats:
 
 
 @dataclass
+class AllContributorActivity:
+    """Activity for all contributors in a repository over the last 30 days."""
+
+    # Maps github_username -> commit count in last 30d
+    commits_by_user: dict[str, int]
+    # Maps github_username -> merged PR count in last 30d
+    merged_prs_by_user: dict[str, int]
+    # Maps github_username -> last activity datetime
+    last_activity_by_user: dict[str, datetime]
+
+
+@dataclass
 class BlameEntry:
     """A single blame entry showing who is responsible for a pet health issue."""
 
@@ -505,6 +517,83 @@ class GitHubService:
         except Exception as e:
             logger.warning("Failed to get check runs", sha=sha, error=str(e))
         return False
+
+    async def get_all_contributor_activity(
+        self, owner: str, repo: str
+    ) -> AllContributorActivity:
+        """Fetch commit and PR activity for all contributors in the last 30 days."""
+        async with httpx.AsyncClient() as client:
+            since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+
+            commits_by_user: dict[str, int] = {}
+            last_activity_by_user: dict[str, datetime] = {}
+
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/repos/{owner}/{repo}/commits",
+                    headers=self._get_headers(),
+                    params={"since": since_30d, "per_page": 100},
+                )
+                self._check_rate_limit(resp)
+                resp.raise_for_status()
+                commits: list[dict[str, Any]] = resp.json()
+                for commit in commits:
+                    login = (
+                        commit["author"].get("login") if commit.get("author") else None
+                    )
+                    if not login:
+                        continue
+                    commits_by_user[login] = commits_by_user.get(login, 0) + 1
+                    raw_date = commit.get("commit", {}).get("committer", {}).get("date")
+                    if raw_date:
+                        commit_dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                        existing = last_activity_by_user.get(login)
+                        if existing is None or commit_dt > existing:
+                            last_activity_by_user[login] = commit_dt
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning("Failed to fetch all contributor commits", error=str(e))
+
+            merged_prs_by_user: dict[str, int] = {}
+
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/repos/{owner}/{repo}/pulls",
+                    headers=self._get_headers(),
+                    params={"state": "closed", "per_page": 100},
+                )
+                self._check_rate_limit(resp)
+                resp.raise_for_status()
+                prs: list[dict[str, Any]] = resp.json()
+                cutoff = datetime.now(UTC) - timedelta(days=30)
+                for pr in prs:
+                    merged_at_raw = pr.get("merged_at")
+                    if not merged_at_raw:
+                        continue
+                    merged_at = datetime.fromisoformat(merged_at_raw.replace("Z", "+00:00"))
+                    if merged_at < cutoff:
+                        continue
+                    merged_by = pr.get("merged_by") or {}
+                    login = merged_by.get("login")
+                    if not login:
+                        continue
+                    merged_prs_by_user[login] = merged_prs_by_user.get(login, 0) + 1
+                    existing = last_activity_by_user.get(login)
+                    if existing is None or merged_at > existing:
+                        last_activity_by_user[login] = merged_at
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning(
+                    "Failed to fetch merged PRs for contributor activity", error=str(e)
+                )
+
+            return AllContributorActivity(
+                commits_by_user=commits_by_user,
+                merged_prs_by_user=merged_prs_by_user,
+                last_activity_by_user=last_activity_by_user,
+            )
 
     async def get_repo_insights(self, owner: str, repo: str) -> RepoInsights:
         """Fetch detailed insights metrics for a repository."""

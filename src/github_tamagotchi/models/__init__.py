@@ -3,6 +3,10 @@
 from github_tamagotchi.models.achievement import PetAchievement
 from github_tamagotchi.models.alert import Alert, AlertSeverity, AlertStatus, AlertType
 from github_tamagotchi.models.comment import PetComment
+from github_tamagotchi.models.contributor_relationship import (
+    ContributorRelationship,
+    ContributorStanding,
+)
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.job_run import JobRun
 from github_tamagotchi.models.milestone import PetMilestone
@@ -15,6 +19,8 @@ __all__ = [
     "AlertSeverity",
     "AlertStatus",
     "AlertType",
+    "ContributorRelationship",
+    "ContributorStanding",
     "ImageGenerationJob",
     "JobRun",
     "JobStatus",

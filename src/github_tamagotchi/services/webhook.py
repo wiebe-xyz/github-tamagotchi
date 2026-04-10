@@ -9,6 +9,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.crud.contributor_relationship import apply_score_delta
 from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.pet_logic import get_next_stage
@@ -73,9 +74,10 @@ async def handle_push_event(payload: dict[str, Any], db: AsyncSession) -> str:
     if not pet:
         return f"no pet found for {owner}/{name}"
 
+    now = datetime.now(UTC)
     pet.health = min(100, pet.health + PUSH_HEALTH_BONUS)
     pet.experience = pet.experience + PUSH_EXPERIENCE_BONUS
-    pet.last_fed_at = datetime.now(UTC)
+    pet.last_fed_at = now
     pet.mood = PetMood.HAPPY.value
 
     # Check for evolution
@@ -89,6 +91,18 @@ async def handle_push_event(payload: dict[str, Any], db: AsyncSession) -> str:
             pet_id=pet.id,
             old_stage=current_stage.value,
             new_stage=new_stage.value,
+        )
+
+    # Update contributor score for the pusher
+    pusher = payload.get("pusher", {}).get("name") or payload.get("sender", {}).get("login")
+    if pusher:
+        await apply_score_delta(
+            db=db,
+            pet_id=pet.id,
+            github_username=pusher,
+            delta=5,  # SCORE_PER_COMMIT
+            event_description="pushed commits",
+            now=now,
         )
 
     await db.commit()
@@ -115,6 +129,7 @@ async def handle_pull_request_event(payload: dict[str, Any], db: AsyncSession) -
         return f"no pet found for {owner}/{name}"
 
     action = payload.get("action", "")
+    now = datetime.now(UTC)
 
     if action == "opened":
         pet.mood = PetMood.WORRIED.value
@@ -125,6 +140,17 @@ async def handle_pull_request_event(payload: dict[str, Any], db: AsyncSession) -
             pet.mood = PetMood.HAPPY.value
             pet.health = min(100, pet.health + PR_MERGED_HEALTH_BONUS)
             pet.experience = pet.experience + PR_MERGED_EXPERIENCE_BONUS
+            # Credit the merger in contributor relationships
+            merged_by = (pr.get("merged_by") or {}).get("login")
+            if merged_by:
+                await apply_score_delta(
+                    db=db,
+                    pet_id=pet.id,
+                    github_username=merged_by,
+                    delta=10,  # SCORE_PER_MERGED_PR
+                    event_description="merged a PR",
+                    now=now,
+                )
         else:
             # PR closed without merge
             pet.mood = PetMood.CONTENT.value
@@ -205,6 +231,7 @@ async def handle_check_run_event(payload: dict[str, Any], db: AsyncSession) -> s
 
     check_run = payload.get("check_run", {})
     conclusion = check_run.get("conclusion", "")
+    now = datetime.now(UTC)
 
     if conclusion == "success":
         pet.health = min(100, pet.health + CI_SUCCESS_HEALTH_BONUS)
@@ -213,6 +240,17 @@ async def handle_check_run_event(payload: dict[str, Any], db: AsyncSession) -> s
     elif conclusion in ("failure", "timed_out"):
         pet.health = max(0, pet.health + CI_FAILURE_HEALTH_PENALTY)
         pet.mood = PetMood.WORRIED.value
+        # Penalise the person who triggered the failing check
+        sender = payload.get("sender", {}).get("login")
+        if sender:
+            await apply_score_delta(
+                db=db,
+                pet_id=pet.id,
+                github_username=sender,
+                delta=-20,
+                event_description="broke CI",
+                now=now,
+            )
 
     # Check for evolution
     current_stage = PetStage(pet.stage)
