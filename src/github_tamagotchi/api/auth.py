@@ -98,7 +98,8 @@ async def get_current_user(
 
 async def get_admin_user(user: Annotated[User, Depends(get_current_user)]) -> User:
     """Dependency to require admin access."""
-    if not user.is_admin:
+    is_admin = user.is_admin or (user.github_login in settings.admin_github_logins)
+    if not is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
