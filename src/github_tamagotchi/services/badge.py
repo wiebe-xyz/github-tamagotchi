@@ -1,7 +1,9 @@
 """SVG badge generation for pet state visualization."""
 
+import math
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from github_tamagotchi.models.pet import PetMood, PetStage
 
@@ -595,6 +597,124 @@ def generate_contributor_badge_svg(
             f'  <text x="10" y="43" font-size="9" fill="{accent}"'
             f' font-family="sans-serif" dominant-baseline="middle">{detail}</text>'
         )
+
+    lines.append("</svg>")
+    return "\n".join(lines)
+
+
+# ── Showcase widget ──────────────────────────────────────────────────────────
+
+_CARD_W = 90
+_CARD_H = 72
+_CARD_GAP = 6
+_CARD_PAD = 8
+
+# Theme configs: (card_bg, outer_bg, text_color, sub_color)
+_THEME: dict[str, tuple[str, str, str, str]] = {
+    "dark": ("#1a1a2e", "#16213e", "#ecf0f1", "#bdc3c7"),
+    "light": ("#f8f9fa", "#e9ecef", "#212529", "#6c757d"),
+}
+
+
+def _showcase_card(
+    pet: dict[str, Any],
+    x: int,
+    y: int,
+    card_bg: str,
+    text_color: str,
+) -> list[str]:
+    """Build SVG elements for a single pet card in the showcase."""
+    raw_name = pet["name"]
+    name = raw_name[:10] + "…" if len(raw_name) > 10 else raw_name
+    stage = pet.get("stage", "egg")
+    mood = pet.get("mood", "content")
+    is_dead = pet.get("is_dead", False)
+
+    stage_emoji = STAGE_EMOJI.get(stage, "🥚")
+    mood_color = MOOD_COLOR.get(mood, "#3498db")
+
+    accent = "#7f8c8d" if is_dead else mood_color
+    emoji = "🪦" if is_dead else stage_emoji
+
+    cx = x + _CARD_W // 2
+
+    return [
+        f'  <rect x="{x}" y="{y}" width="{_CARD_W}" height="{_CARD_H}" rx="6" fill="{card_bg}"/>',
+        f'  <rect x="{x}" y="{y}" width="{_CARD_W}" height="3" rx="1" fill="{accent}"/>',
+        f'  <text x="{cx}" y="{y + 30}" font-size="22"'
+        f' text-anchor="middle" dominant-baseline="middle">{emoji}</text>',
+        f'  <text x="{cx}" y="{y + 50}" font-size="8" fill="{text_color}"'
+        f' text-anchor="middle" dominant-baseline="middle" font-family="monospace">{name}</text>',
+        f'  <circle cx="{cx}" cy="{y + 64}" r="4" fill="{accent}" opacity="0.8"/>',
+    ]
+
+
+def _showcase_positions(n: int, layout: str) -> tuple[list[tuple[int, int]], int, int]:
+    """Compute (x, y) card positions and total (width, height) for a given layout."""
+    if layout == "vertical":
+        cols, rows = 1, n
+    elif layout == "grid":
+        cols = min(n, 3)
+        rows = math.ceil(n / cols)
+    else:  # horizontal
+        cols, rows = n, 1
+
+    total_w = _CARD_PAD + cols * (_CARD_W + _CARD_GAP) - _CARD_GAP + _CARD_PAD
+    total_h = _CARD_PAD + rows * (_CARD_H + _CARD_GAP) - _CARD_GAP + _CARD_PAD
+
+    positions: list[tuple[int, int]] = []
+    for i in range(n):
+        col = i % cols
+        row = i // cols
+        px = _CARD_PAD + col * (_CARD_W + _CARD_GAP)
+        py = _CARD_PAD + row * (_CARD_H + _CARD_GAP)
+        positions.append((px, py))
+
+    return positions, total_w, total_h
+
+
+def generate_showcase_svg(
+    pets: list[dict[str, Any]],
+    username: str,
+    *,
+    layout: str = "horizontal",
+    theme: str = "dark",
+) -> str:
+    """Generate an SVG showcase of all pets for a GitHub user.
+
+    Args:
+        pets: List of pet dicts with keys: name, stage, mood, health, is_dead.
+        username: GitHub username shown in the title.
+        layout: Card arrangement — "horizontal", "vertical", or "grid".
+        theme: Colour scheme — "dark" or "light".
+    """
+    card_bg, outer_bg, text_color, sub_color = _THEME.get(theme, _THEME["dark"])
+
+    if not pets:
+        width, height = 220, 44
+        return "\n".join([
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"'
+            f' role="img" aria-label="No pets for {username}">',
+            f"  <title>{username} has no pets yet</title>",
+            f'  <rect width="{width}" height="{height}" rx="6" fill="{outer_bg}"/>',
+            f'  <text x="{width // 2}" y="{height // 2}" font-size="10"'
+            f' fill="{sub_color}" text-anchor="middle" dominant-baseline="middle"'
+            f' font-family="sans-serif">No pets yet for @{username}</text>',
+            "</svg>",
+        ])
+
+    positions, total_w, total_h = _showcase_positions(len(pets), layout)
+    pet_word = "pets" if len(pets) != 1 else "pet"
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="{total_h}"'
+        f' role="img" aria-label="Pets for @{username}">',
+        f"  <title>@{username}'s pets ({len(pets)} {pet_word})</title>",
+        f'  <rect width="{total_w}" height="{total_h}" rx="8" fill="{outer_bg}"/>',
+    ]
+
+    for pet, (px, py) in zip(pets, positions, strict=True):
+        lines.extend(_showcase_card(pet, px, py, card_bg, text_color))
 
     lines.append("</svg>")
     return "\n".join(lines)
