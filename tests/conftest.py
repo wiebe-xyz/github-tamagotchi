@@ -14,6 +14,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from github_tamagotchi import __version__
+from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
 
@@ -53,8 +54,9 @@ def create_api_test_app() -> FastAPI:
     """Create a test FastAPI app for API testing (no templates/static)."""
     test_app = FastAPI(title="GitHub Tamagotchi Test")
 
-    # Include the production API router
+    # Include the production API routers
     test_app.include_router(router)
+    test_app.include_router(health_router)
 
     # Override the database session dependency
     test_app.dependency_overrides[get_session] = get_test_session
@@ -148,7 +150,7 @@ def client() -> Iterator[TestClient]:
     github_tamagotchi.services.image_queue.run_worker = mock_run_worker
 
     # Patch the scheduler
-    with patch("github_tamagotchi.main.scheduler") as mock_scheduler:
+    with patch("github_tamagotchi.core.scheduler.scheduler") as mock_scheduler:
         mock_scheduler.start = lambda: None
         mock_scheduler.shutdown = lambda: None
         mock_scheduler.add_job = lambda *args, **kwargs: None

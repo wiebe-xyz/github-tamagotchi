@@ -5,8 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
-from github_tamagotchi import __version__
-
 
 class TestHealthEndpoint:
     """Tests for the health check endpoint."""
@@ -16,17 +14,11 @@ class TestHealthEndpoint:
         response = client.get("/api/v1/health")
         assert response.status_code == 200
 
-    def test_health_returns_healthy_status(self, client: TestClient) -> None:
-        """Health endpoint should return healthy status."""
+    def test_health_returns_ok_status(self, client: TestClient) -> None:
+        """Health endpoint should return ok status for liveness."""
         response = client.get("/api/v1/health")
         data = response.json()
-        assert data["status"] == "healthy"
-
-    def test_health_returns_version(self, client: TestClient) -> None:
-        """Health endpoint should return current version."""
-        response = client.get("/api/v1/health")
-        data = response.json()
-        assert data["version"] == __version__
+        assert data["status"] == "ok"
 
 
 class TestPetsEndpointsAsync:

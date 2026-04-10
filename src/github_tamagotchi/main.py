@@ -13,7 +13,6 @@ from typing import Annotated, Any
 
 import sentry_sdk
 import structlog
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -27,9 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from github_tamagotchi import __version__
 from github_tamagotchi.api.alerts import alert_router
 from github_tamagotchi.api.auth import auth_router, get_admin_user, get_optional_user
+from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
+from github_tamagotchi.core.scheduler import scheduler, set_start_time
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.crud.contributor_relationship import upsert_contributor_relationship
 from github_tamagotchi.crud.milestone import create_milestone
@@ -90,8 +91,6 @@ def configure_logging(debug: bool = False) -> None:
 
 configure_logging(debug=bool(os.getenv("DEBUG")))
 logger = structlog.get_logger()
-
-scheduler = AsyncIOScheduler()
 
 # Track consecutive poll failures for alerting
 _consecutive_poll_failures = 0
@@ -425,6 +424,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         logger.info("Sentry initialized")
 
+    set_start_time()
+
     # Start scheduler for periodic polling
     scheduler.add_job(
         poll_repositories,
@@ -474,6 +475,7 @@ app = FastAPI(
 app.include_router(router)
 app.include_router(alert_router)
 app.include_router(auth_router)
+app.include_router(health_router)
 
 # Mount the MCP server at /mcp
 app.mount("/mcp", mcp_app)

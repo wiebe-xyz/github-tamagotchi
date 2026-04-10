@@ -10,13 +10,12 @@ from github_tamagotchi.models.pet import PetMood, PetStage
 class TestPetLifecycle:
     """Full pet lifecycle through the API."""
 
-    async def test_health_endpoint_with_db(self, e2e_client: AsyncClient) -> None:
-        """Health endpoint reports connected database."""
+    async def test_liveness_endpoint(self, e2e_client: AsyncClient) -> None:
+        """Liveness endpoint returns ok."""
         resp = await e2e_client.get("/api/v1/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "healthy"
-        assert data["database"] == "connected"
+        assert data["status"] == "ok"
 
     async def test_create_pet_via_api(self, e2e_client: AsyncClient) -> None:
         """Create a pet through the API and verify response."""

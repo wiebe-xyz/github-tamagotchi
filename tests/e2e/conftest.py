@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.models.pet import Base, Pet, PetMood, PetStage
@@ -38,6 +39,7 @@ def create_e2e_app() -> FastAPI:
     """Create E2E test app with DB but no external services."""
     app = FastAPI(title="GitHub Tamagotchi E2E", lifespan=e2e_lifespan)
     app.include_router(router)
+    app.include_router(health_router)
     app.dependency_overrides[get_session] = get_e2e_session
     return app
 

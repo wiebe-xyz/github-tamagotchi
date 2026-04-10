@@ -8,7 +8,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import text, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
@@ -169,14 +169,6 @@ class SkinSelectResponse(BaseModel):
 
     message: str
     pet: PetResponse
-
-class HealthResponse(BaseModel):
-    """Health check response."""
-
-    status: str
-    version: str
-    database: str
-
 
 class ImageProviderHealthResponse(BaseModel):
     """Image provider health check response."""
@@ -352,21 +344,6 @@ class LeaderboardResponse(BaseModel):
 
     categories: list[LeaderboardCategory]
     cached_at: datetime
-
-
-@router.get("/health", response_model=HealthResponse)
-async def health_check(session: DbSession) -> HealthResponse:
-    """Health check endpoint."""
-    from github_tamagotchi import __version__
-
-    try:
-        await session.execute(text("SELECT 1"))
-        db_status = "connected"
-    except Exception:
-        logger.exception("health_check_db_error")
-        db_status = "disconnected"
-
-    return HealthResponse(status="healthy", version=__version__, database=db_status)
 
 
 @router.get("/health/image-provider", response_model=ImageProviderHealthResponse)
