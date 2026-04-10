@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaderboard — GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="user-nav">
+        <div class="container">
+            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
+            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+                <a href="/leaderboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem; font-weight:600;">Leaderboard</a>
+                {% if user %}
+                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
+                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
+                {% if user.is_admin %}
+                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
+                {% endif %}
+                {% endif %}
+            </div>
+            <div class="user-info">
+                {% if user %}
+                    {% if user.github_avatar_url %}
+                    <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
+                    {% endif %}
+                    <span class="user-name">{{ user.github_login }}</span>
+                    <button class="logout-button" id="logout-btn">Log out</button>
+                {% else %}
+                    <a href="/auth/github" class="cta-button" style="padding:0.4rem 1rem; font-size:0.85rem;">Login</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <div style="text-align: center; margin-bottom: 3rem;">
+                <h1 style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;">&#127942; Hall of Fame</h1>
+                <p style="color: var(--text-muted); font-size: 1rem;">The most dedicated pets across all repositories. Updated hourly.</p>
+            </div>
+
+            {% if leaderboard_data %}
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 2rem;">
+                {% for category in leaderboard_data %}
+                <div class="feature" style="padding: 1.75rem;">
+                    <h2 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 0.25rem;">{{ category.title }}</h2>
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">{{ category.description }}</p>
+
+                    {% if category.entries %}
+                    <ol style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.6rem;">
+                        {% for entry in category.entries %}
+                        <li>
+                            <a href="/pet/{{ entry.pet.repo_owner }}/{{ entry.pet.repo_name }}"
+                               style="display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 8px; text-decoration: none; color: inherit; transition: background 0.15s;"
+                               onmouseover="this.style.background='rgba(255,255,255,0.05)'"
+                               onmouseout="this.style.background='transparent'">
+                                <span style="font-size: 1rem; font-weight: 700; width: 1.5rem; text-align: center; color: {% if entry.rank == 1 %}#ffd700{% elif entry.rank == 2 %}#c0c0c0{% elif entry.rank == 3 %}#cd7f32{% else %}var(--text-muted){% endif %};">
+                                    {% if entry.rank == 1 %}&#129351;
+                                    {% elif entry.rank == 2 %}&#129352;
+                                    {% elif entry.rank == 3 %}&#129353;
+                                    {% else %}{{ entry.rank }}{% endif %}
+                                </span>
+                                <span style="font-size: 1.25rem;">
+                                    {% if entry.pet.stage == "egg" %}🥚
+                                    {% elif entry.pet.stage == "baby" %}🐣
+                                    {% elif entry.pet.stage == "child" %}🐥
+                                    {% elif entry.pet.stage == "teen" %}🐦
+                                    {% elif entry.pet.stage == "adult" %}🦉
+                                    {% elif entry.pet.stage == "elder" %}🦅
+                                    {% else %}🥚{% endif %}
+                                </span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ entry.pet.name }}</div>
+                                    <div style="color: var(--text-muted); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ entry.pet.repo_owner }}/{{ entry.pet.repo_name }}</div>
+                                </div>
+                                <span style="font-size: 0.9rem; font-weight: 600; white-space: nowrap; color: var(--accent);">
+                                    {{ entry.value | int }} {{ category.value_label }}
+                                </span>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ol>
+                    {% else %}
+                    <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center; padding: 1rem 0;">No pets yet — be the first!</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="text-align: center; padding: 4rem 0; color: var(--text-muted);">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">&#129361;</div>
+                <p>No pets on the leaderboard yet. <a href="/auth/github" style="color: var(--accent);">Register your repo</a> to get started!</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid rgba(255,255,255,0.08);">
+        <a href="/" style="color: var(--text-muted); text-decoration: none;">GitHub Tamagotchi</a>
+        &nbsp;&middot;&nbsp;
+        Leaderboard refreshes hourly
+    </footer>
+
+    {% if user %}
+    <script>
+        document.getElementById('logout-btn')?.addEventListener('click', async () => {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    </script>
+    {% endif %}
+</body>
+</html>

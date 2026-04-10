@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.models.pet import Pet, PetMood
 
+# Simple in-memory leaderboard cache: stores (timestamp, data) per category
+_leaderboard_cache: dict[str, tuple[datetime, list[Pet]]] = {}
+_LEADERBOARD_CACHE_TTL_SECONDS = 3600  # 1 hour
+
 
 async def create_pet(
     db: AsyncSession,
@@ -79,6 +83,41 @@ async def get_pets_with_owners(
     )
     rows = [{"pet": row.Pet, "owner": row.User} for row in result]
     return rows, total
+
+
+async def get_leaderboard(
+    db: AsyncSession, category: str, limit: int = 10
+) -> list[Pet]:
+    """Return top pets for the given leaderboard category, with hourly caching.
+
+    Categories:
+      - "most_experienced": top by experience (XP)
+      - "longest_streak": top by longest_streak
+    """
+    now = datetime.now(UTC)
+    cache_key = f"{category}:{limit}"
+    cached = _leaderboard_cache.get(cache_key)
+    if cached is not None:
+        cached_at, cached_data = cached
+        if (now - cached_at).total_seconds() < _LEADERBOARD_CACHE_TTL_SECONDS:
+            return cached_data
+
+    base_filter = Pet.leaderboard_opt_out.is_(False), Pet.is_dead.is_(False)
+
+    if category == "most_experienced":
+        order_col = Pet.experience.desc()
+    elif category == "longest_streak":
+        order_col = Pet.longest_streak.desc()
+    else:
+        return []
+
+    result = await db.execute(
+        select(Pet).where(*base_filter).order_by(order_col).limit(limit)
+    )
+    pets = list(result.scalars().all())
+
+    _leaderboard_cache[cache_key] = (now, pets)
+    return pets
 
 
 async def delete_pet(db: AsyncSession, pet: Pet) -> None:

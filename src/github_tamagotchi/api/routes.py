@@ -207,6 +207,35 @@ class AchievementsResponse(BaseModel):
     achievements: list[AchievementItem]
 
 
+class LeaderboardEntry(BaseModel):
+    """A single entry on the leaderboard."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    rank: int
+    pet_name: str
+    repo_owner: str
+    repo_name: str
+    stage: str
+    value: int
+
+
+class LeaderboardCategory(BaseModel):
+    """A leaderboard category with its ranked entries."""
+
+    id: str
+    title: str
+    description: str
+    entries: list[LeaderboardEntry]
+
+
+class LeaderboardResponse(BaseModel):
+    """Response model for the full leaderboard."""
+
+    categories: list[LeaderboardCategory]
+    cached_at: datetime
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(session: DbSession) -> HealthResponse:
     """Health check endpoint."""
@@ -898,3 +927,50 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
         logger.exception("Failed to log webhook event")
 
     return WebhookResponse(status="processed", message=message)
+
+
+_LEADERBOARD_CATEGORIES = [
+    {
+        "id": "most_experienced",
+        "title": "Most Experienced",
+        "description": "Highest total XP earned",
+        "value_field": "experience",
+    },
+    {
+        "id": "longest_streak",
+        "title": "Longest Streak",
+        "description": "Most consecutive days with commits",
+        "value_field": "longest_streak",
+    },
+]
+
+
+@router.get("/leaderboard", response_model=LeaderboardResponse)
+async def get_leaderboard(session: DbSession) -> LeaderboardResponse:
+    """Return the public leaderboard with multiple categories (cached hourly)."""
+    categories: list[LeaderboardCategory] = []
+    now = datetime.now(UTC)
+
+    for cat in _LEADERBOARD_CATEGORIES:
+        pets = await pet_crud.get_leaderboard(session, cat["id"], limit=10)
+        entries = [
+            LeaderboardEntry(
+                rank=i + 1,
+                pet_name=p.name,
+                repo_owner=p.repo_owner,
+                repo_name=p.repo_name,
+                stage=p.stage,
+                value=getattr(p, cat["value_field"]),
+            )
+            for i, p in enumerate(pets)
+        ]
+        categories.append(
+            LeaderboardCategory(
+                id=cat["id"],
+                title=cat["title"],
+                description=cat["description"],
+                entries=entries,
+            )
+        )
+
+    return LeaderboardResponse(categories=categories, cached_at=now)
