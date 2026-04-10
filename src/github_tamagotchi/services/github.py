@@ -33,6 +33,10 @@ class RepoHealth:
     has_stale_dependencies: bool
     release_count_30d: int = field(default=0)
     contributor_count: int = field(default=0)
+    security_alerts_critical: int = 0
+    security_alerts_high: int = 0
+    security_alerts_medium: int = 0
+    security_alerts_low: int = 0
 
 
 @dataclass
@@ -158,6 +162,9 @@ class GitHubService:
             # Get contributor count (last 90 days)
             contributor_count = await self._get_contributor_count_90d(client, owner, repo)
 
+            # Get security alerts
+            security_counts = await self._get_security_alerts(client, owner, repo)
+
             return RepoHealth(
                 last_commit_at=last_commit_at,
                 open_prs_count=open_prs_count,
@@ -168,6 +175,10 @@ class GitHubService:
                 has_stale_dependencies=False,  # TODO: Check dependabot
                 release_count_30d=release_count_30d,
                 contributor_count=contributor_count,
+                security_alerts_critical=security_counts["critical"],
+                security_alerts_high=security_counts["high"],
+                security_alerts_medium=security_counts["medium"],
+                security_alerts_low=security_counts["low"],
             )
 
     async def _get_last_commit(
@@ -261,6 +272,33 @@ class GitHubService:
         except Exception as e:
             logger.warning("Failed to get CI status", error=str(e))
         return None
+
+    async def _get_security_alerts(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> dict[str, int]:
+        """Get open Dependabot security alert counts by severity."""
+        counts: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/dependabot/alerts",
+                headers=self._get_headers(),
+                params={"state": "open", "per_page": 100},
+            )
+            self._check_rate_limit(resp)
+            if resp.status_code == 404:
+                # Dependabot not enabled or no access — treat as no alerts
+                return counts
+            resp.raise_for_status()
+            alerts: list[dict[str, Any]] = resp.json()
+            for alert in alerts:
+                severity = alert.get("security_advisory", {}).get("severity", "").lower()
+                if severity in counts:
+                    counts[severity] += 1
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get security alerts", error=str(e))
+        return counts
 
     def _get_oldest_age_hours(self, items: list[dict[str, Any]]) -> float:
         """Get age in hours of the oldest item."""

@@ -10,6 +10,7 @@ from github_tamagotchi.services.pet_logic import (
     EVOLUTION_THRESHOLDS,
     HUNGRY_THRESHOLD_DAYS,
     LONELY_THRESHOLD_DAYS,
+    SECURITY_HEALTH_PENALTY,
     WORRIED_THRESHOLD_HOURS,
     calculate_experience,
     calculate_health_delta,
@@ -135,6 +136,63 @@ class TestCalculateMood:
             oldest_issue_age_days=None,
             last_ci_success=True,
             has_stale_dependencies=False,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.DANCING
+
+    def test_sick_when_critical_security_alert(self) -> None:
+        """Pet should be sick when there are critical security alerts."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            security_alerts_critical=1,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.SICK
+
+    def test_sick_when_high_security_alert(self) -> None:
+        """Pet should be sick when there are high severity security alerts."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            security_alerts_high=2,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.SICK
+
+    def test_security_alerts_take_priority_over_dancing(self) -> None:
+        """Critical security alerts take priority over CI success (dancing)."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            security_alerts_critical=1,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.SICK
+
+    def test_medium_low_security_alerts_do_not_cause_sick(self) -> None:
+        """Medium/low security alerts alone should not make pet sick."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            security_alerts_medium=3,
+            security_alerts_low=5,
         )
         assert calculate_mood(health, current_health=100) == PetMood.DANCING
 
@@ -340,6 +398,89 @@ class TestCalculateHealthDelta:
             contributor_count=4,
         )
         assert calculate_health_delta(active_health) > calculate_health_delta(base_health)
+
+    def test_critical_alert_penalty(self) -> None:
+        """Single critical alert should apply full penalty."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_critical=1,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["critical"]
+
+    def test_high_alert_penalty(self) -> None:
+        """Single high alert should apply penalty."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_high=1,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["high"]
+
+    def test_medium_alert_penalty(self) -> None:
+        """Single medium alert should apply penalty."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_medium=1,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["medium"]
+
+    def test_low_alert_penalty(self) -> None:
+        """Single low alert should apply penalty."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_low=1,
+        )
+        assert calculate_health_delta(health) == -SECURITY_HEALTH_PENALTY["low"]
+
+    def test_critical_alert_penalty_is_capped(self) -> None:
+        """Many critical alerts should be capped at max penalty."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            security_alerts_critical=100,
+        )
+        assert calculate_health_delta(health) == -40  # capped at 40
+
+    def test_no_security_alert_penalty_when_none(self) -> None:
+        """No security alerts means no penalty."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+        )
+        assert calculate_health_delta(health) == 0
 
 
 class TestCalculateExperience:

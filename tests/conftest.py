@@ -190,6 +190,10 @@ def healthy_repo() -> RepoHealth:
         oldest_issue_age_days=None,
         last_ci_success=True,
         has_stale_dependencies=False,
+        security_alerts_critical=0,
+        security_alerts_high=0,
+        security_alerts_medium=0,
+        security_alerts_low=0,
     )
 
 
@@ -204,6 +208,10 @@ def unhealthy_repo() -> RepoHealth:
         oldest_issue_age_days=30,
         last_ci_success=False,
         has_stale_dependencies=True,
+        security_alerts_critical=0,
+        security_alerts_high=0,
+        security_alerts_medium=0,
+        security_alerts_low=0,
     )
 
 
@@ -290,3 +298,36 @@ def mock_status_response_failure() -> dict[str, Any]:
         "state": "failure",
         "statuses": [],
     }
+
+
+@pytest.fixture
+def mock_security_alerts_response() -> list[dict[str, Any]]:
+    """Mock GitHub Dependabot alerts API response with mixed severities."""
+    return [
+        {
+            "number": 1,
+            "state": "open",
+            "security_advisory": {"severity": "critical", "summary": "Critical vuln"},
+        },
+        {
+            "number": 2,
+            "state": "open",
+            "security_advisory": {"severity": "high", "summary": "High vuln"},
+        },
+        {
+            "number": 3,
+            "state": "open",
+            "security_advisory": {"severity": "medium", "summary": "Medium vuln"},
+        },
+        {
+            "number": 4,
+            "state": "open",
+            "security_advisory": {"severity": "low", "summary": "Low vuln"},
+        },
+    ]
+
+
+@pytest.fixture
+def mock_security_alerts_empty() -> list[dict[str, Any]]:
+    """Mock GitHub Dependabot alerts API response with no alerts."""
+    return []

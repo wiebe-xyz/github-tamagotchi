@@ -14,6 +14,14 @@ HUNGRY_THRESHOLD_DAYS = 3  # No commits in 3 days = hungry
 WORRIED_THRESHOLD_HOURS = 48  # PR open > 48 hours = worried
 LONELY_THRESHOLD_DAYS = 7  # Issue unanswered > 1 week = lonely
 
+# Security alert health penalties per poll cycle
+SECURITY_HEALTH_PENALTY = {
+    "critical": 20,
+    "high": 10,
+    "medium": 5,
+    "low": 2,
+}
+
 # Experience thresholds for evolution
 EVOLUTION_THRESHOLDS = {
     PetStage.EGG: 0,
@@ -28,6 +36,10 @@ EVOLUTION_THRESHOLDS = {
 def calculate_mood(health: RepoHealth, current_health: int) -> PetMood:
     """Determine pet mood based on repository health metrics."""
     now = datetime.now(UTC)
+
+    # Check for sick (critical/high security alerts — highest priority)
+    if health.security_alerts_critical > 0 or health.security_alerts_high > 0:
+        return PetMood.SICK
 
     # Check for sick (stale dependencies)
     if health.has_stale_dependencies:
@@ -83,6 +95,16 @@ def calculate_health_delta(health: RepoHealth) -> int:
         delta -= 5
     if health.oldest_issue_age_days and health.oldest_issue_age_days > LONELY_THRESHOLD_DAYS:
         delta -= 5
+
+    # Security alert penalties (capped per severity to avoid instant death)
+    if health.security_alerts_critical > 0:
+        delta -= min(health.security_alerts_critical * SECURITY_HEALTH_PENALTY["critical"], 40)
+    if health.security_alerts_high > 0:
+        delta -= min(health.security_alerts_high * SECURITY_HEALTH_PENALTY["high"], 20)
+    if health.security_alerts_medium > 0:
+        delta -= min(health.security_alerts_medium * SECURITY_HEALTH_PENALTY["medium"], 10)
+    if health.security_alerts_low > 0:
+        delta -= min(health.security_alerts_low * SECURITY_HEALTH_PENALTY["low"], 4)
 
     return delta
 
