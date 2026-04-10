@@ -77,6 +77,33 @@ class ContributorStats:
     days_since_last_commit: int | None  # None if no commits ever found
 
 
+@dataclass
+class BlameEntry:
+    """A single blame entry showing who is responsible for a pet health issue."""
+
+    issue: str  # human-readable description of the problem
+    culprit: str  # GitHub username
+    how_long: str  # human-readable duration (e.g. "2 days", "4 hours")
+
+
+@dataclass
+class HeroEntry:
+    """A single hero entry showing who contributed positively to pet health."""
+
+    good_deed: str  # human-readable description of the good deed
+    hero: str  # GitHub username
+    when: str  # human-readable time (e.g. "Today", "This week")
+
+
+@dataclass
+class BlameBoardData:
+    """Aggregated blame/hero board data for a repository."""
+
+    is_healthy: bool
+    blame_entries: list[BlameEntry]
+    hero_entries: list[HeroEntry]
+
+
 class GitHubService:
     """Service for fetching GitHub repository health metrics."""
 
@@ -625,6 +652,469 @@ class GitHubService:
         except Exception as e:
             logger.warning("Failed to get CI pass rate", error=str(e))
         return None, 0
+
+    async def get_blame_board_data(
+        self, owner: str, repo: str, pet_health: int, pet_mood: str
+    ) -> BlameBoardData:
+        """Fetch blame/hero board data for a repository.
+
+        When the pet is unhealthy (health < 50 or mood is negative), returns blame
+        entries showing who is responsible. When healthy, returns hero entries showing
+        who deserves credit.
+        """
+        unhealthy_moods = {"sick", "hungry", "worried", "lonely"}
+        is_healthy = pet_health >= 50 and pet_mood not in unhealthy_moods
+
+        async with httpx.AsyncClient() as client:
+            if is_healthy:
+                hero_entries = await self._build_hero_entries(client, owner, repo)
+                return BlameBoardData(
+                    is_healthy=True,
+                    blame_entries=[],
+                    hero_entries=hero_entries,
+                )
+            else:
+                blame_entries = await self._build_blame_entries(
+                    client, owner, repo, pet_mood
+                )
+                return BlameBoardData(
+                    is_healthy=False,
+                    blame_entries=blame_entries,
+                    hero_entries=[],
+                )
+
+    def _format_duration(self, dt: datetime) -> str:
+        """Format a datetime as a human-readable 'how long ago' string."""
+        now = datetime.now(UTC)
+        delta = now - dt
+        total_hours = delta.total_seconds() / 3600
+        if total_hours < 2:
+            return "just now"
+        if total_hours < 24:
+            return f"{int(total_hours)} hours"
+        days = int(total_hours / 24)
+        if days == 1:
+            return "1 day"
+        return f"{days} days"
+
+    def _format_when(self, dt: datetime) -> str:
+        """Format a datetime as a human-readable 'when' string."""
+        now = datetime.now(UTC)
+        delta = now - dt
+        total_hours = delta.total_seconds() / 3600
+        if total_hours < 24:
+            return "Today"
+        if total_hours < 48:
+            return "Yesterday"
+        days = int(total_hours / 24)
+        if days <= 7:
+            return "This week"
+        return f"{days} days ago"
+
+    async def _build_blame_entries(
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        pet_mood: str,
+    ) -> list[BlameEntry]:
+        """Build blame entries for an unhealthy pet."""
+        entries: list[BlameEntry] = []
+
+        # Broken CI: find the author of the last failing commit on the default branch
+        ci_blame = await self._get_ci_blame(client, owner, repo)
+        if ci_blame:
+            entries.append(ci_blame)
+
+        # Stale PRs: find reviewers on long-open PRs
+        pr_blames = await self._get_stale_pr_blames(client, owner, repo)
+        entries.extend(pr_blames)
+
+        # No recent commits: show last committer
+        if pet_mood == "hungry" and not entries:
+            commit_blame = await self._get_last_committer_blame(client, owner, repo)
+            if commit_blame:
+                entries.append(commit_blame)
+
+        return entries[:5]  # cap at 5 entries
+
+    async def _get_ci_blame(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> BlameEntry | None:
+        """Return a blame entry if CI is currently broken."""
+        try:
+            # Get default branch
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}",
+                headers=self._get_headers(),
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            repo_data: dict[str, Any] = resp.json()
+            default_branch: str = repo_data["default_branch"]
+
+            # Get latest commit on default branch
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits",
+                headers=self._get_headers(),
+                params={"sha": default_branch, "per_page": 1},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            commits: list[dict[str, Any]] = resp.json()
+            if not commits:
+                return None
+
+            latest_commit = commits[0]
+            sha = latest_commit["sha"]
+            author_login: str | None = (
+                latest_commit["author"]["login"] if latest_commit.get("author") else None
+            )
+            commit_date_raw: str | None = (
+                latest_commit.get("commit", {}).get("committer", {}).get("date")
+            )
+
+            # Check CI status for this commit
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
+                headers={**self._get_headers(), "Accept": "application/vnd.github+json"},
+                params={"per_page": 30},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+            runs: list[dict[str, Any]] = data.get("check_runs", [])
+
+            has_failure = any(
+                r.get("conclusion") in ("failure", "timed_out", "action_required")
+                for r in runs
+                if r.get("status") == "completed"
+            )
+            all_success = runs and all(
+                r.get("conclusion") == "success"
+                for r in runs
+                if r.get("status") == "completed"
+            )
+
+            if not has_failure or all_success:
+                return None
+
+            if not author_login:
+                return None
+
+            how_long = "unknown"
+            if commit_date_raw:
+                commit_dt = datetime.fromisoformat(commit_date_raw.replace("Z", "+00:00"))
+                how_long = self._format_duration(commit_dt)
+
+            return BlameEntry(
+                issue="CI broken",
+                culprit=author_login,
+                how_long=how_long,
+            )
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get CI blame", error=str(e))
+        return None
+
+    async def _get_stale_pr_blames(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> list[BlameEntry]:
+        """Return blame entries for PRs with requested reviewers that are long overdue."""
+        entries: list[BlameEntry] = []
+        try:
+            prs = await self._get_open_prs(client, owner, repo)
+            now = datetime.now(UTC)
+            for pr in prs:
+                created_at_raw: str | None = pr.get("created_at")
+                if not created_at_raw:
+                    continue
+                created_at = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+                age_hours = (now - created_at).total_seconds() / 3600
+                if age_hours < 48:
+                    continue
+
+                # Get requested reviewers
+                reviewers: list[dict[str, Any]] = pr.get("requested_reviewers", [])
+                pr_title: str = pr.get("title", f"PR #{pr.get('number', '?')}")
+                pr_number: int = pr.get("number", 0)
+                display_title = f"PR #{pr_number} needs review"
+                if len(pr_title) <= 40:
+                    display_title = f'"{pr_title}" needs review'
+
+                how_long = self._format_duration(created_at)
+                if reviewers:
+                    for reviewer in reviewers[:2]:  # at most 2 reviewers per PR
+                        login: str | None = reviewer.get("login")
+                        if login:
+                            entries.append(
+                                BlameEntry(
+                                    issue=display_title,
+                                    culprit=login,
+                                    how_long=how_long,
+                                )
+                            )
+                else:
+                    # No reviewer assigned — blame the PR author
+                    pr_user: dict[str, Any] | None = pr.get("user")
+                    author_login: str | None = pr_user.get("login") if pr_user else None
+                    if author_login:
+                        entries.append(
+                            BlameEntry(
+                                issue=display_title,
+                                culprit=author_login,
+                                how_long=how_long,
+                            )
+                        )
+                if len(entries) >= 3:
+                    break
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get stale PR blames", error=str(e))
+        return entries
+
+    async def _get_last_committer_blame(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> BlameEntry | None:
+        """Return a blame entry for the last committer when repo has gone quiet."""
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits",
+                headers=self._get_headers(),
+                params={"per_page": 1},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            commits: list[dict[str, Any]] = resp.json()
+            if not commits:
+                return None
+
+            commit = commits[0]
+            author_login: str | None = (
+                commit["author"]["login"] if commit.get("author") else None
+            )
+            commit_date_raw: str | None = (
+                commit.get("commit", {}).get("committer", {}).get("date")
+            )
+            if not author_login or not commit_date_raw:
+                return None
+
+            commit_dt = datetime.fromisoformat(commit_date_raw.replace("Z", "+00:00"))
+            how_long = self._format_duration(commit_dt)
+            return BlameEntry(
+                issue="No recent commits",
+                culprit=author_login,
+                how_long=f"last commit {how_long} ago",
+            )
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get last committer", error=str(e))
+        return None
+
+    async def _build_hero_entries(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> list[HeroEntry]:
+        """Build hero entries for a healthy pet."""
+        entries: list[HeroEntry] = []
+
+        # Top committer in last 30d
+        top_committer = await self._get_top_committer_hero(client, owner, repo)
+        if top_committer:
+            entries.append(top_committer)
+
+        # Recent PR mergers
+        pr_heroes = await self._get_pr_merger_heroes(client, owner, repo)
+        entries.extend(pr_heroes)
+
+        # CI passing — author of latest commit
+        ci_hero = await self._get_ci_fixer_hero(client, owner, repo)
+        if ci_hero:
+            entries.append(ci_hero)
+
+        # Deduplicate by hero+deed pair while preserving order
+        seen: set[tuple[str, str]] = set()
+        unique: list[HeroEntry] = []
+        for e in entries:
+            key = (e.hero, e.good_deed)
+            if key not in seen:
+                seen.add(key)
+                unique.append(e)
+
+        return unique[:5]  # cap at 5 entries
+
+    async def _get_top_committer_hero(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> HeroEntry | None:
+        """Return a hero entry for the top committer in the last 30 days."""
+        try:
+            since = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits",
+                headers=self._get_headers(),
+                params={"since": since, "per_page": 100},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            commits: list[dict[str, Any]] = resp.json()
+            if not commits:
+                return None
+
+            counts: dict[str, int] = {}
+            for c in commits:
+                login = c["author"]["login"] if c.get("author") else None
+                if login:
+                    counts[login] = counts.get(login, 0) + 1
+
+            if not counts:
+                return None
+
+            top_login = max(counts, key=lambda k: counts[k])
+            top_count = counts[top_login]
+            if top_count < 2:
+                return None
+
+            return HeroEntry(
+                good_deed=f"Merged {top_count} commit{'s' if top_count != 1 else ''} (30d)",
+                hero=top_login,
+                when="This month",
+            )
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get top committer hero", error=str(e))
+        return None
+
+    async def _get_pr_merger_heroes(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> list[HeroEntry]:
+        """Return hero entries for contributors who merged PRs recently."""
+        entries: list[HeroEntry] = []
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/pulls",
+                headers=self._get_headers(),
+                params={
+                    "state": "closed",
+                    "per_page": 20,
+                    "sort": "updated",
+                    "direction": "desc",
+                },
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            prs: list[dict[str, Any]] = resp.json()
+
+            merger_counts: dict[str, int] = {}
+            merger_latest: dict[str, datetime] = {}
+            cutoff = datetime.now(UTC) - timedelta(days=30)
+
+            for pr in prs:
+                merged_at_raw: str | None = pr.get("merged_at")
+                merged_by: dict[str, Any] | None = pr.get("merged_by")
+                if not merged_at_raw or not merged_by:
+                    continue
+                merged_at = datetime.fromisoformat(merged_at_raw.replace("Z", "+00:00"))
+                if merged_at < cutoff:
+                    continue
+                login: str | None = merged_by.get("login")
+                if not login:
+                    continue
+                merger_counts[login] = merger_counts.get(login, 0) + 1
+                if login not in merger_latest or merged_at > merger_latest[login]:
+                    merger_latest[login] = merged_at
+
+            # Return top 2 mergers
+            sorted_mergers = sorted(merger_counts, key=lambda k: merger_counts[k], reverse=True)
+            for login in sorted_mergers[:2]:
+                count = merger_counts[login]
+                when = self._format_when(merger_latest[login])
+                entries.append(
+                    HeroEntry(
+                        good_deed=f"Merged {count} PR{'s' if count != 1 else ''}",
+                        hero=login,
+                        when=when,
+                    )
+                )
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get PR merger heroes", error=str(e))
+        return entries
+
+    async def _get_ci_fixer_hero(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> HeroEntry | None:
+        """Return a hero entry for the author of the latest successful commit with passing CI."""
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}",
+                headers=self._get_headers(),
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            repo_data: dict[str, Any] = resp.json()
+            default_branch: str = repo_data["default_branch"]
+
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits",
+                headers=self._get_headers(),
+                params={"sha": default_branch, "per_page": 1},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            commits: list[dict[str, Any]] = resp.json()
+            if not commits:
+                return None
+
+            commit = commits[0]
+            sha = commit["sha"]
+            author_login: str | None = (
+                commit["author"]["login"] if commit.get("author") else None
+            )
+            commit_date_raw: str | None = (
+                commit.get("commit", {}).get("committer", {}).get("date")
+            )
+
+            if not author_login:
+                return None
+
+            # Check if CI is passing for this commit
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
+                headers={**self._get_headers(), "Accept": "application/vnd.github+json"},
+                params={"per_page": 30},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+            runs: list[dict[str, Any]] = data.get("check_runs", [])
+
+            completed_runs = [r for r in runs if r.get("status") == "completed"]
+            if not completed_runs:
+                return None
+
+            all_pass = all(r.get("conclusion") == "success" for r in completed_runs)
+            if not all_pass:
+                return None
+
+            when = "Today"
+            if commit_date_raw:
+                commit_dt = datetime.fromisoformat(commit_date_raw.replace("Z", "+00:00"))
+                when = self._format_when(commit_dt)
+
+            return HeroEntry(
+                good_deed="CI passing",
+                hero=author_login,
+                when=when,
+            )
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to get CI fixer hero", error=str(e))
+        return None
 
     async def list_user_repos(
         self, page: int = 1, per_page: int = 100

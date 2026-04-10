@@ -288,6 +288,13 @@
                 </div>
             </section>
 
+            <!-- Blame / Heroes Board -->
+            <section class="profile-section" id="blame-board-section" style="margin-top: 2rem; display:none;">
+                <h2 id="blame-board-title"></h2>
+                <div id="blame-board-table" style="overflow-x:auto; margin-top:1rem;"></div>
+                <div id="blame-board-sins" style="margin-top:1rem;"></div>
+            </section>
+
             <!-- Comments Section -->
             <section class="profile-section" id="comments-section" style="margin-top: 2rem;">
                 <h2>Discussion</h2>
@@ -631,6 +638,64 @@
         }
 
         loadAchievements();
+
+        // Blame / Heroes Board
+        {% if not pet.is_dead %}
+        (async function loadBlameBoard() {
+            try {
+                const resp = await fetch('/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/blame-board');
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                if (!data.blame_board_enabled) return;
+
+                const section = document.getElementById('blame-board-section');
+                const title = document.getElementById('blame-board-title');
+                const tableWrap = document.getElementById('blame-board-table');
+                const sinsWrap = document.getElementById('blame-board-sins');
+
+                const entries = data.is_healthy ? data.hero_entries : data.blame_entries;
+                if (!entries || entries.length === 0) return;
+
+                if (data.is_healthy) {
+                    title.textContent = '\uD83D\uDE0A Why {{ pet.name }} is Happy';
+                } else {
+                    title.textContent = '\uD83D\uDE24 Why {{ pet.name }} is Upset';
+                }
+
+                // Build table
+                const table = document.createElement('table');
+                table.style.cssText = 'width:100%; border-collapse:collapse; font-size:0.9rem;';
+
+                const thead = document.createElement('thead');
+                thead.innerHTML = data.is_healthy
+                    ? '<tr><th style="text-align:left;padding:0.4rem 0.6rem;color:rgba(255,255,255,0.5);font-weight:600;border-bottom:1px solid rgba(255,255,255,0.1);">Good Deed</th><th style="text-align:left;padding:0.4rem 0.6rem;color:rgba(255,255,255,0.5);font-weight:600;border-bottom:1px solid rgba(255,255,255,0.1);">Hero</th><th style="text-align:left;padding:0.4rem 0.6rem;color:rgba(255,255,255,0.5);font-weight:600;border-bottom:1px solid rgba(255,255,255,0.1);">When</th></tr>'
+                    : '<tr><th style="text-align:left;padding:0.4rem 0.6rem;color:rgba(255,255,255,0.5);font-weight:600;border-bottom:1px solid rgba(255,255,255,0.1);">Issue</th><th style="text-align:left;padding:0.4rem 0.6rem;color:rgba(255,255,255,0.5);font-weight:600;border-bottom:1px solid rgba(255,255,255,0.1);">Culprit</th><th style="text-align:left;padding:0.4rem 0.6rem;color:rgba(255,255,255,0.5);font-weight:600;border-bottom:1px solid rgba(255,255,255,0.1);">How Long</th></tr>';
+                table.appendChild(thead);
+
+                const tbody = document.createElement('tbody');
+                entries.forEach(entry => {
+                    const tr = document.createElement('tr');
+                    const label = data.is_healthy ? entry.good_deed : entry.issue;
+                    const actor = data.is_healthy ? entry.hero : entry.culprit;
+                    const time = data.is_healthy ? entry.when : entry.how_long;
+                    const ghUrl = `https://github.com/${actor}`;
+                    tr.innerHTML = `
+                        <td style="padding:0.5rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.06);">${label.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>
+                        <td style="padding:0.5rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.06);"><a href="${ghUrl}" target="_blank" rel="noopener" style="color:#7c9bd6;text-decoration:none;">@${actor}</a></td>
+                        <td style="padding:0.5rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.06); color:rgba(255,255,255,0.55);">${time}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                table.appendChild(tbody);
+                tableWrap.appendChild(table);
+
+                section.style.display = 'block';
+            } catch {
+                // silently ignore
+            }
+        })();
+        {% endif %}
     </script>
 </body>
 </html>
