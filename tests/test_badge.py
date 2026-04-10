@@ -261,6 +261,69 @@ class TestBadgeEndpoint:
         # Emoji fallback badge is 120px wide
         assert 'width="120"' in body
 
+    async def test_style_query_param_minimal(self, async_client: AsyncClient) -> None:
+        """?style=minimal returns a minimal badge regardless of stored badge_style."""
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "styletest", "repo_name": "repo", "name": "Stylish"},
+        )
+
+        response = await async_client.get("/api/v1/pets/styletest/repo/badge.svg?style=minimal")
+        assert response.status_code == 200
+        body = response.text
+        assert body.strip().startswith("<svg")
+        # Minimal badge is 120px wide and 60px tall
+        assert 'width="120"' in body
+        assert 'height="60"' in body
+
+    async def test_style_query_param_maintained(self, async_client: AsyncClient) -> None:
+        """?style=maintained returns a shields.io-style maintained badge."""
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "styletest2", "repo_name": "repo", "name": "Trusty"},
+        )
+
+        response = await async_client.get("/api/v1/pets/styletest2/repo/badge.svg?style=maintained")
+        assert response.status_code == 200
+        body = response.text
+        assert body.strip().startswith("<svg")
+        # Maintained badge is 20px tall (shields.io style)
+        assert 'height="20"' in body
+
+    async def test_style_query_param_playful(self, async_client: AsyncClient) -> None:
+        """?style=playful returns the default playful badge."""
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "styletest3", "repo_name": "repo", "name": "Funky"},
+        )
+
+        response = await async_client.get("/api/v1/pets/styletest3/repo/badge.svg?style=playful")
+        assert response.status_code == 200
+        body = response.text
+        assert body.strip().startswith("<svg")
+        assert 'height="80"' in body
+
+    async def test_style_query_param_invalid_returns_422(self, async_client: AsyncClient) -> None:
+        """?style=unknown returns 422 Unprocessable Entity."""
+        response = await async_client.get("/api/v1/pets/anyone/repo/badge.svg?style=kawaii")
+        assert response.status_code == 422
+
+    async def test_style_query_param_overrides_stored_style(
+        self, async_client: AsyncClient
+    ) -> None:
+        """?style= overrides the pet's stored badge_style."""
+        await async_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "overridetest", "repo_name": "repo", "name": "Override"},
+        )
+
+        # Default style is playful (80px tall) — override with maintained (20px tall)
+        response = await async_client.get(
+            "/api/v1/pets/overridetest/repo/badge.svg?style=maintained"
+        )
+        assert response.status_code == 200
+        assert 'height="20"' in response.text
+
 
 class TestBadgeStyles:
     """Tests for the three badge style variants."""

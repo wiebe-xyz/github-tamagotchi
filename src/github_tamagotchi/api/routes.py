@@ -497,11 +497,27 @@ async def resurrect_pet(
 
 
 @router.get("/pets/{repo_owner}/{repo_name}/badge.svg", response_class=Response)
-async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> Response:
-    """Return an SVG badge representing the current pet state."""
+async def get_pet_badge(
+    repo_owner: str,
+    repo_name: str,
+    session: DbSession,
+    style: str | None = Query(default=None, description="Badge style override"),
+) -> Response:
+    """Return an SVG badge representing the current pet state.
+
+    The optional ``style`` query param overrides the pet's stored badge style.
+    Valid values are: playful, minimal, maintained.
+    """
     import base64
 
     from github_tamagotchi.services.badge import generate_badge_svg
+
+    if style is not None and style not in BADGE_STYLES:
+        valid = ", ".join(sorted(BADGE_STYLES))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid badge style '{style}'. Must be one of: {valid}",
+        )
 
     pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
     if not pet:
@@ -530,7 +546,7 @@ async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> 
         created_at=pet.created_at,
         commit_streak=pet.commit_streak,
         pet_image_b64=pet_image_b64,
-        badge_style=pet.badge_style,
+        badge_style=style if style is not None else pet.badge_style,
     )
     return Response(
         content=svg_content,
