@@ -146,13 +146,13 @@ def remove_background(
     width, height = img.size
     for y in range(height):
         for x in range(width):
-            r, g, b, a = pixels[x, y]  # type: ignore[index]
+            r, g, b, a = pixels[x, y]  # type: ignore[index,misc]
             if (
                 abs(r - chroma[0]) < tolerance
                 and abs(g - chroma[1]) < tolerance
                 and abs(b - chroma[2]) < tolerance
             ):
-                pixels[x, y] = (r, g, b, 0)  # type: ignore[index]
+                pixels[x, y] = (r, g, b, 0)  # type: ignore[index,misc]
     out = io.BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
