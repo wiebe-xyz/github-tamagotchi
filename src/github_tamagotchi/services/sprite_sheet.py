@@ -103,7 +103,8 @@ def build_sprite_sheet_prompt(
     Returns:
         Tuple of (positive_prompt, negative_prompt)
     """
-    from github_tamagotchi.services.image_generation import STAGE_PROMPTS, PetStage
+    from github_tamagotchi.models.pet import PetStage
+    from github_tamagotchi.services.image_generation import STAGE_PROMPTS
 
     style_def = STYLES.get(style, STYLES[DEFAULT_STYLE])
     stage_desc = STAGE_PROMPTS.get(stage, STAGE_PROMPTS[PetStage.ADULT.value])
@@ -187,7 +188,7 @@ def _rgba_to_gif_frame(img: Image.Image) -> tuple[Image.Image, int]:
 
     # Quantize the RGB data to 255 colors (leaving index 255 for transparency)
     rgb_img = Image.merge("RGB", (r, g, b))
-    p_img = rgb_img.quantize(colors=255, dither=0)
+    p_img = rgb_img.quantize(colors=255, dither=Image.Dither.NONE)
 
     # Extend palette to 256 entries with white at index 255 (the transparent slot)
     palette = p_img.getpalette() or []
