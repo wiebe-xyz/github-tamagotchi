@@ -600,6 +600,20 @@ async def get_pet_badge(
     except Exception:
         pass  # non-fatal — badge will use emoji fallback
 
+    # Fetch unlocked achievements for cosmetic badge effects (non-fatal on error)
+    from sqlalchemy import select as sa_select
+
+    from github_tamagotchi.models.achievement import PetAchievement
+
+    unlocked_achievements: set[str] = set()
+    try:
+        ach_result = await session.execute(
+            sa_select(PetAchievement.achievement_id).where(PetAchievement.pet_id == pet.id)
+        )
+        unlocked_achievements = set(ach_result.scalars().all())
+    except Exception:
+        pass  # non-fatal — badge renders without cosmetics on error
+
     svg_content = generate_badge_svg(
         pet.name,
         pet.stage,
@@ -612,6 +626,7 @@ async def get_pet_badge(
         pet_image_b64=pet_image_b64,
         badge_style=style if style is not None else pet.badge_style,
         dependent_count=pet.dependent_count,
+        unlocked_achievements=unlocked_achievements,
     )
     return Response(
         content=svg_content,

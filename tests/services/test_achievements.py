@@ -176,3 +176,92 @@ async def test_achievements_api_404_for_unknown_pet(async_client: object) -> Non
 
     resp = await client.get("/api/v1/pets/nobody/norepo/achievements")
     assert resp.status_code == 404
+
+
+# --- Star milestone tests ---
+
+
+async def test_stars_10_achievement(test_db: AsyncSession) -> None:
+    """stars_10 unlocks when star_count >= 10."""
+    pet = await pet_crud.create_pet(test_db, "owner", "stars_repo1", "Starlet")
+    newly = await check_and_unlock_achievements(pet, test_db, star_count=10)
+    assert "stars_10" in newly
+
+
+async def test_stars_100_achievement(test_db: AsyncSession) -> None:
+    """stars_100 unlocks when star_count >= 100."""
+    pet = await pet_crud.create_pet(test_db, "owner", "stars_repo2", "Silver")
+    newly = await check_and_unlock_achievements(pet, test_db, star_count=100)
+    assert "stars_100" in newly
+    assert "stars_10" in newly
+
+
+async def test_stars_500_achievement(test_db: AsyncSession) -> None:
+    """stars_500 unlocks when star_count >= 500."""
+    pet = await pet_crud.create_pet(test_db, "owner", "stars_repo3", "Gold")
+    newly = await check_and_unlock_achievements(pet, test_db, star_count=500)
+    assert "stars_500" in newly
+
+
+async def test_stars_1000_achievement(test_db: AsyncSession) -> None:
+    """stars_1000 unlocks when star_count >= 1000."""
+    pet = await pet_crud.create_pet(test_db, "owner", "stars_repo4", "Popular")
+    newly = await check_and_unlock_achievements(pet, test_db, star_count=1000)
+    assert "stars_1000" in newly
+
+
+async def test_stars_10000_achievement(test_db: AsyncSession) -> None:
+    """stars_10000 unlocks when star_count >= 10000."""
+    pet = await pet_crud.create_pet(test_db, "owner", "stars_repo5", "Celebrity")
+    newly = await check_and_unlock_achievements(pet, test_db, star_count=10000)
+    assert "stars_10000" in newly
+
+
+async def test_stars_not_unlocked_below_threshold(test_db: AsyncSession) -> None:
+    """Star achievements do not unlock below the threshold."""
+    pet = await pet_crud.create_pet(test_db, "owner", "stars_repo6", "Nobody")
+    newly = await check_and_unlock_achievements(pet, test_db, star_count=9)
+    assert "stars_10" not in newly
+    assert "stars_100" not in newly
+
+
+async def test_star_achievements_independent_of_health(test_db: AsyncSession) -> None:
+    """Star milestones must not change pet health."""
+    pet = await pet_crud.create_pet(test_db, "owner", "stars_repo7", "Healthy")
+    pet.health = 50
+    await test_db.flush()
+    await check_and_unlock_achievements(pet, test_db, star_count=10000)
+    await test_db.refresh(pet)
+    assert pet.health == 50
+
+
+# --- Fork milestone tests ---
+
+
+async def test_forks_1_achievement(test_db: AsyncSession) -> None:
+    """forks_1 unlocks when fork_count >= 1."""
+    pet = await pet_crud.create_pet(test_db, "owner", "forks_repo1", "Forked")
+    newly = await check_and_unlock_achievements(pet, test_db, fork_count=1)
+    assert "forks_1" in newly
+
+
+async def test_forks_10_achievement(test_db: AsyncSession) -> None:
+    """forks_10 unlocks when fork_count >= 10."""
+    pet = await pet_crud.create_pet(test_db, "owner", "forks_repo2", "Growing")
+    newly = await check_and_unlock_achievements(pet, test_db, fork_count=10)
+    assert "forks_10" in newly
+    assert "forks_1" in newly
+
+
+async def test_forks_100_achievement(test_db: AsyncSession) -> None:
+    """forks_100 unlocks when fork_count >= 100."""
+    pet = await pet_crud.create_pet(test_db, "owner", "forks_repo3", "Community")
+    newly = await check_and_unlock_achievements(pet, test_db, fork_count=100)
+    assert "forks_100" in newly
+
+
+async def test_forks_not_unlocked_at_zero(test_db: AsyncSession) -> None:
+    """Fork achievements do not unlock when fork_count is 0."""
+    pet = await pet_crud.create_pet(test_db, "owner", "forks_repo4", "Unforkable")
+    newly = await check_and_unlock_achievements(pet, test_db, fork_count=0)
+    assert "forks_1" not in newly

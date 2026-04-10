@@ -134,6 +134,10 @@ class Pet(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
 
+    # Popularity metrics (stars/forks) — cosmetic only, do not affect health
+    star_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    fork_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
     # Leaderboard visibility (opt-out)
     leaderboard_opt_out: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"

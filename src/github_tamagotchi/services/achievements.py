@@ -59,6 +59,56 @@ ACHIEVEMENTS: dict[str, dict[str, str]] = {
         "icon": "\U0001f525",
         "description": "Rose from the ashes (resurrected)",
     },
+    # Star milestones — cosmetic unlocks
+    "stars_10": {
+        "name": "Rising",
+        "icon": "\u2b50",
+        "description": "Reached 10 stars — Rising flair unlocked",
+        "cosmetic": True,
+    },
+    "stars_100": {
+        "name": "Silver Star",
+        "icon": "\U0001f947",
+        "description": "Reached 100 stars — silver border unlocked",
+        "cosmetic": True,
+    },
+    "stars_500": {
+        "name": "Gold Star",
+        "icon": "\U0001f947",
+        "description": "Reached 500 stars — gold border unlocked",
+        "cosmetic": True,
+    },
+    "stars_1000": {
+        "name": "Popular",
+        "icon": "\U0001f31f",
+        "description": "Reached 1,000 stars — Popular tag unlocked",
+        "cosmetic": True,
+    },
+    "stars_10000": {
+        "name": "Celebrity",
+        "icon": "\U0001f929",
+        "description": "Reached 10,000 stars — Celebrity skin unlocked",
+        "cosmetic": True,
+    },
+    # Fork milestones — cosmetic unlocks
+    "forks_1": {
+        "name": "Forked!",
+        "icon": "\U0001f374",
+        "description": "First fork — the repo is spreading",
+        "cosmetic": True,
+    },
+    "forks_10": {
+        "name": "Growing Community",
+        "icon": "\U0001f33f",
+        "description": "Reached 10 forks — Growing Community flair unlocked",
+        "cosmetic": True,
+    },
+    "forks_100": {
+        "name": "Community",
+        "icon": "\U0001f465",
+        "description": "Reached 100 forks — Community skin unlocked",
+        "cosmetic": True,
+    },
 }
 
 # Achievement IDs in a defined order for display
@@ -73,10 +123,20 @@ ACHIEVEMENT_ORDER = [
     "centurion",
     "social_butterfly",
     "phoenix",
+    "stars_10",
+    "stars_100",
+    "stars_500",
+    "stars_1000",
+    "stars_10000",
+    "forks_1",
+    "forks_10",
+    "forks_100",
 ]
 
 
-def _check_conditions(pet: Pet, comment_count: int) -> set[str]:
+def _check_conditions(
+    pet: Pet, comment_count: int, star_count: int = 0, fork_count: int = 0
+) -> set[str]:
     """Return the set of achievement IDs that the pet currently qualifies for."""
     earned: set[str] = set()
 
@@ -116,10 +176,32 @@ def _check_conditions(pet: Pet, comment_count: int) -> set[str]:
     if pet.generation >= 2:
         earned.add("phoenix")
 
+    # Star milestones (cosmetic only)
+    if star_count >= 10:
+        earned.add("stars_10")
+    if star_count >= 100:
+        earned.add("stars_100")
+    if star_count >= 500:
+        earned.add("stars_500")
+    if star_count >= 1000:
+        earned.add("stars_1000")
+    if star_count >= 10000:
+        earned.add("stars_10000")
+
+    # Fork milestones (cosmetic only)
+    if fork_count >= 1:
+        earned.add("forks_1")
+    if fork_count >= 10:
+        earned.add("forks_10")
+    if fork_count >= 100:
+        earned.add("forks_100")
+
     return earned
 
 
-async def check_and_unlock_achievements(pet: Pet, session: AsyncSession) -> list[str]:
+async def check_and_unlock_achievements(
+    pet: Pet, session: AsyncSession, *, star_count: int = 0, fork_count: int = 0
+) -> list[str]:
     """Check all conditions and unlock any newly earned achievements.
 
     Returns list of newly unlocked achievement IDs.
@@ -139,7 +221,7 @@ async def check_and_unlock_achievements(pet: Pet, session: AsyncSession) -> list
     )
     comment_count = comment_count_result.scalar() or 0
 
-    earned = _check_conditions(pet, comment_count)
+    earned = _check_conditions(pet, comment_count, star_count=star_count, fork_count=fork_count)
     newly_unlocked: list[str] = []
 
     for achievement_id in earned:
