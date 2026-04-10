@@ -61,6 +61,10 @@ def calculate_mood(health: RepoHealth, current_health: int) -> PetMood:
     if health.oldest_issue_age_days and health.oldest_issue_age_days > LONELY_THRESHOLD_DAYS:
         return PetMood.LONELY
 
+    # Solo maintainer (bus factor 1) — pet feels lonely without collaborators
+    if health.contributor_count == 1:
+        return PetMood.LONELY
+
     # Check for dancing (successful CI)
     if health.last_ci_success:
         return PetMood.DANCING
@@ -86,6 +90,7 @@ def calculate_health_delta(health: RepoHealth) -> int:
 
     # Release frequency bonus: +2 per release in last 30d, capped at +10
     delta += min(health.release_count_30d * 2, 10)
+
 
     # Contributor count bonus: +1 per unique contributor in last 90d, capped at +8
     delta += min(health.contributor_count, 8)
