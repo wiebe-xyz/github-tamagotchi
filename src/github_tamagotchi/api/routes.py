@@ -401,6 +401,8 @@ async def resurrect_pet(
 @router.get("/pets/{repo_owner}/{repo_name}/badge.svg", response_class=Response)
 async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> Response:
     """Return an SVG badge representing the current pet state."""
+    import base64
+
     from github_tamagotchi.services.badge import generate_badge_svg
 
     pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
@@ -409,6 +411,16 @@ async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> 
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Pet not found for {repo_owner}/{repo_name}",
         )
+
+    # Attempt to fetch the stage-appropriate sprite; fall back to None (emoji) on any error.
+    pet_image_b64: str | None = None
+    try:
+        storage = StorageService()
+        image_bytes = await storage.get_image(pet.repo_owner, pet.repo_name, pet.stage)
+        if image_bytes:
+            pet_image_b64 = base64.b64encode(image_bytes).decode()
+    except Exception:
+        pass  # non-fatal — badge will use emoji fallback
 
     svg_content = generate_badge_svg(
         pet.name,
@@ -419,6 +431,7 @@ async def get_pet_badge(repo_owner: str, repo_name: str, session: DbSession) -> 
         died_at=pet.died_at,
         created_at=pet.created_at,
         commit_streak=pet.commit_streak,
+        pet_image_b64=pet_image_b64,
     )
     return Response(
         content=svg_content,
