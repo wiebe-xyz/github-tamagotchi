@@ -1,6 +1,7 @@
 """ComfyUI image generation service for pet sprites."""
 
 import hashlib
+import io
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any
 
 import httpx
 import structlog
+from PIL import Image
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.models.pet import PetStage
@@ -110,7 +112,7 @@ DEFAULT_STYLE = "kawaii"
 POSITIVE_PROMPT_TEMPLATE = (
     "{style_prefix} {color} and {accent_color} coloring, "
     "{body_type} body shape, {feature} features, {stage_description}, "
-    "white background, centered composition, full body visible"
+    "solid flat bright magenta background #FF00FF, centered composition, full body visible"
 )
 
 NEGATIVE_PROMPT = (
@@ -118,6 +120,42 @@ NEGATIVE_PROMPT = (
     "multiple creatures, text, watermark, signature, cropped, "
     "scary, horror, dark, gritty, nsfw, violent, blood"
 )
+
+# Chroma-key colour used as the background in generated images
+CHROMA_KEY_COLOR: tuple[int, int, int] = (255, 0, 255)
+CHROMA_KEY_TOLERANCE: int = 40
+
+
+def remove_background(
+    image_bytes: bytes,
+    chroma: tuple[int, int, int] = CHROMA_KEY_COLOR,
+    tolerance: int = CHROMA_KEY_TOLERANCE,
+) -> bytes:
+    """Remove the chroma-key background from an image, making it transparent.
+
+    Args:
+        image_bytes: Raw PNG image data.
+        chroma: RGB colour to treat as background (default: magenta #FF00FF).
+        tolerance: Per-channel tolerance for colour matching.
+
+    Returns:
+        PNG image data with the background replaced by transparency.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    pixels = img.load()
+    width, height = img.size
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]  # type: ignore[index]
+            if (
+                abs(r - chroma[0]) < tolerance
+                and abs(g - chroma[1]) < tolerance
+                and abs(b - chroma[2]) < tolerance
+            ):
+                pixels[x, y] = (r, g, b, 0)  # type: ignore[index]
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
 
 
 @dataclass
