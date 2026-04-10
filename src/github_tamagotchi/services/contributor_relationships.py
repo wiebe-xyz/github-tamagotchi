@@ -1,9 +1,23 @@
 """Service for managing pet-contributor relationship scores and standings."""
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from github_tamagotchi.models.contributor_relationship import ContributorStanding
 from github_tamagotchi.services.github import AllContributorActivity
+
+
+@dataclass
+class ContributorUpdate:
+    """Computed update data for a single contributor."""
+
+    github_username: str
+    score: int
+    standing: str
+    last_activity: datetime | None
+    good_deeds: list[str] = field(default_factory=list)
+    sins: list[str] = field(default_factory=list)
+
 
 # Score weights (matching issue specification)
 SCORE_PER_COMMIT = 5
@@ -54,12 +68,8 @@ def calculate_standing(
 def build_contributor_updates(
     activity: AllContributorActivity,
     now: datetime | None = None,
-) -> list[dict[str, object]]:
-    """Compute score, standing, and event lists for each contributor.
-
-    Returns a list of dicts with keys: github_username, score, standing,
-    last_activity, good_deeds, sins.
-    """
+) -> list[ContributorUpdate]:
+    """Compute score, standing, and event lists for each contributor."""
     if now is None:
         now = datetime.now(UTC)
 
@@ -75,7 +85,7 @@ def build_contributor_updates(
     }
     max_score = max(scores.values(), default=0)
 
-    updates = []
+    updates: list[ContributorUpdate] = []
     for username in all_usernames:
         commits = activity.commits_by_user.get(username, 0)
         merged_prs = activity.merged_prs_by_user.get(username, 0)
@@ -94,14 +104,14 @@ def build_contributor_updates(
         good_deeds = good_deeds[:MAX_RECENT_EVENTS]
 
         updates.append(
-            {
-                "github_username": username,
-                "score": score,
-                "standing": standing,
-                "last_activity": last_activity,
-                "good_deeds": good_deeds,
-                "sins": [],
-            }
+            ContributorUpdate(
+                github_username=username,
+                score=score,
+                standing=standing,
+                last_activity=last_activity,
+                good_deeds=good_deeds,
+                sins=[],
+            )
         )
 
     return updates

@@ -201,12 +201,12 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                             await upsert_contributor_relationship(
                                 db=session,
                                 pet_id=pet.id,
-                                github_username=str(update["github_username"]),
-                                score=int(update["score"]),  # type: ignore[arg-type]
-                                standing=str(update["standing"]),
-                                last_activity=update["last_activity"],  # type: ignore[arg-type]
-                                good_deeds=update["good_deeds"],  # type: ignore[arg-type]
-                                sins=update["sins"],  # type: ignore[arg-type]
+                                github_username=update.github_username,
+                                score=update.score,
+                                standing=update.standing,
+                                last_activity=update.last_activity,
+                                good_deeds=update.good_deeds,
+                                sins=update.sins,
                             )
                     except RateLimitError:
                         raise
