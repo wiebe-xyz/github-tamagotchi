@@ -118,6 +118,7 @@ class PetResponse(BaseModel):
     personality_bravery: float | None
     personality_tidiness: float | None
     personality_appetite: float | None
+    last_contributor_count: int
     created_at: datetime
     updated_at: datetime
     last_fed_at: datetime | None

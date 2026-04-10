@@ -196,6 +196,49 @@ class TestCalculateMood:
         )
         assert calculate_mood(health, current_health=100) == PetMood.DANCING
 
+    def test_lonely_when_solo_contributor(self) -> None:
+        """Pet should be lonely when only one contributor (bus factor 1)."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            contributor_count=1,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.LONELY
+
+    def test_not_lonely_when_multi_contributor(self) -> None:
+        """Pet should not be lonely from bus factor when 2+ contributors."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            contributor_count=2,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.DANCING
+
+    def test_sick_takes_priority_over_solo(self) -> None:
+        """Sick should take priority over solo contributor lonely mood."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=True,
+            contributor_count=1,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.SICK
+
+
 
 class TestCalculateHealthDelta:
     """Tests for calculate_health_delta function."""
@@ -346,6 +389,7 @@ class TestCalculateHealthDelta:
             release_count_30d=10,
         )
         assert calculate_health_delta(health) == 10
+
 
     def test_contributor_count_adds_bonus(self) -> None:
         """Each contributor in last 90d adds +1 health, up to +8."""

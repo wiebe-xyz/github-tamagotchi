@@ -361,6 +361,7 @@ class GitHubService:
             logger.warning("Failed to get releases", error=str(e))
         return 0
 
+
     async def _get_contributor_count_90d(
         self, client: httpx.AsyncClient, owner: str, repo: str
     ) -> int:
