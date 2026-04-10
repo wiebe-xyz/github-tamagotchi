@@ -106,6 +106,11 @@ class Pet(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
 
+    # Leaderboard visibility (opt-out)
+    leaderboard_opt_out: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"

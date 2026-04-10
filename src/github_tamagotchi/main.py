@@ -445,6 +445,62 @@ async def register_complete_page(
         },
     )
 
+@app.get("/leaderboard", response_class=HTMLResponse)
+async def leaderboard_page(
+    request: Request, user: OptionalUser, session: DbSession
+) -> HTMLResponse:
+    """Public leaderboard page showing top pets by category."""
+    from github_tamagotchi.crud.pet import get_leaderboard
+
+    categories = [
+        {
+            "id": "most_experienced",
+            "title": "Most Experienced",
+            "description": "Highest total XP earned",
+            "value_field": "experience",
+            "value_label": "XP",
+        },
+        {
+            "id": "longest_streak",
+            "title": "Longest Streak",
+            "description": "Most consecutive days with commits",
+            "value_field": "longest_streak",
+            "value_label": "days",
+        },
+    ]
+
+    leaderboard_data = []
+    for cat in categories:
+        pets = await get_leaderboard(session, cat["id"], limit=10)
+        entries = [
+            {
+                "rank": i + 1,
+                "pet": p,
+                "value": getattr(p, cat["value_field"]),
+            }
+            for i, p in enumerate(pets)
+        ]
+        leaderboard_data.append(
+            {
+                "id": cat["id"],
+                "title": cat["title"],
+                "description": cat["description"],
+                "value_label": cat["value_label"],
+                "entries": entries,
+            }
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "leaderboard.html",
+        {
+            "user": user,
+            "leaderboard_data": leaderboard_data,
+        },
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @app.get("/pet/{repo_owner}/{repo_name}", response_class=HTMLResponse)
 async def pet_profile(
     request: Request,
