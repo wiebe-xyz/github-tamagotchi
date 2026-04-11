@@ -16,6 +16,12 @@ from github_tamagotchi.services.image_generation import (
     build_prompt,
     get_pet_appearance,
 )
+from github_tamagotchi.services.sprite_sheet import (
+    SpriteSheetResult,
+    build_sprite_sheet_prompt,
+    extract_frames,
+    get_canonical_appearance_description,
+)
 
 logger = structlog.get_logger()
 
@@ -141,6 +147,81 @@ class OpenRouterService:
         except (ValueError, binascii.Error):
             logger.error("Failed to decode base64 image data")
             return None
+
+    async def generate_sprite_sheet(
+        self,
+        owner: str,
+        repo: str,
+        stage: str,
+        style: str = DEFAULT_STYLE,
+        canonical_appearance: str | None = None,
+    ) -> SpriteSheetResult:
+        """Generate a sprite sheet for a pet using a single OpenRouter API call.
+
+        The sprite sheet contains all animation frames for the pet in a single
+        image grid, ensuring stylistic consistency across all frames.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            stage: Pet evolution stage
+            style: Visual style key
+            canonical_appearance: Previously stored appearance description to reuse
+
+        Returns:
+            SpriteSheetResult with sprite sheet data and extracted frames
+        """
+        if not self.api_key:
+            return SpriteSheetResult(success=False, error="OpenRouter API key not configured")
+
+        try:
+            prompt, negative = build_sprite_sheet_prompt(
+                owner, repo, stage, style=style, canonical_appearance=canonical_appearance
+            )
+            image_data = await self._call_api(prompt, negative)
+
+            if not image_data:
+                return SpriteSheetResult(
+                    success=False,
+                    error="No image data in OpenRouter sprite sheet response",
+                )
+
+            frames = extract_frames(image_data)
+            appearance_desc = canonical_appearance or get_canonical_appearance_description(
+                owner, repo
+            )
+
+            logger.info(
+                "Sprite sheet generated",
+                owner=owner,
+                repo=repo,
+                stage=stage,
+                frame_count=len(frames),
+            )
+            return SpriteSheetResult(
+                success=True,
+                sprite_sheet_data=image_data,
+                frames=frames,
+                canonical_appearance=appearance_desc,
+            )
+
+        except httpx.TimeoutException:
+            logger.error(
+                "OpenRouter sprite sheet request timed out",
+                owner=owner,
+                repo=repo,
+                stage=stage,
+            )
+            return SpriteSheetResult(success=False, error="Sprite sheet generation timed out")
+        except Exception as e:
+            logger.error(
+                "OpenRouter sprite sheet generation failed",
+                owner=owner,
+                repo=repo,
+                stage=stage,
+                error=str(e),
+            )
+            return SpriteSheetResult(success=False, error=str(e))
 
     async def check_health(self) -> bool:
         """Check if OpenRouter API is reachable."""

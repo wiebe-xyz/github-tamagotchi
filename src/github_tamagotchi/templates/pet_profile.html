@@ -70,11 +70,11 @@
                     <div class="pet-emoji-fallback" style="display:flex; font-size: 4rem;">&#129680;</div>
                     {% else %}
                     <img
-                        src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}"
+                        src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}/animated"
                         alt="{{ pet.name }}"
                         class="profile-sprite"
                         id="profile-pet"
-                        onerror="this.style.display='none'; document.getElementById('pet-emoji-fallback').style.display='flex';"
+                        onerror="this.src='/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}'; this.onerror=function(){this.style.display='none'; document.getElementById('pet-emoji-fallback').style.display='flex';};"
                     >
                     <div id="pet-emoji-fallback" class="pet-emoji-fallback" style="display:none;">&#128049;</div>
                     <div class="pet-shadow"></div>

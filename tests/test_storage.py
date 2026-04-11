@@ -281,3 +281,174 @@ class TestStorageServiceConfiguration:
             secret_key="minioadmin123",
             secure=False,
         )
+
+
+class TestAnimatedGifStorage:
+    """Tests for animated GIF and sprite sheet storage methods."""
+
+    @pytest.fixture
+    def mock_minio_client(self) -> MagicMock:
+        return MagicMock()
+
+    @pytest.fixture
+    def storage_service(self, mock_minio_client: MagicMock) -> StorageService:
+        service = StorageService(
+            endpoint="localhost:9000",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            bucket="test-bucket",
+            secure=False,
+        )
+        service._client = mock_minio_client
+        return service
+
+    def test_get_spritesheet_path(self, storage_service: StorageService) -> None:
+        """Sprite sheet path is under the pet's prefix."""
+        path = storage_service._get_spritesheet_path("owner", "repo", "adult")
+        assert path == "pets/owner/repo/adult_spritesheet.png"
+
+    def test_get_frame_path(self, storage_service: StorageService) -> None:
+        """Frame path includes the frame index."""
+        path = storage_service._get_frame_path("owner", "repo", "adult", 3)
+        assert path == "pets/owner/repo/adult_frame_3.png"
+
+    def test_get_animated_gif_path(self, storage_service: StorageService) -> None:
+        """Animated GIF path ends with _animated.gif."""
+        path = storage_service._get_animated_gif_path("owner", "repo", "baby")
+        assert path == "pets/owner/repo/baby_animated.gif"
+
+    async def test_upload_sprite_sheet(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """Upload sprite sheet stores PNG at expected path."""
+        mock_minio_client.bucket_exists.return_value = True
+        data = _make_png()
+
+        path = await storage_service.upload_sprite_sheet("owner", "repo", "adult", data)
+
+        assert path == "pets/owner/repo/adult_spritesheet.png"
+        mock_minio_client.put_object.assert_called_once()
+
+    async def test_get_sprite_sheet_found(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """get_sprite_sheet returns bytes when object exists."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"sheet_data"
+        mock_minio_client.get_object.return_value = mock_response
+
+        result = await storage_service.get_sprite_sheet("owner", "repo", "adult")
+
+        assert result == b"sheet_data"
+
+    async def test_get_sprite_sheet_not_found(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """get_sprite_sheet returns None when object does not exist."""
+        error = S3Error(
+            code="NoSuchKey",
+            message="Not found",
+            resource="test",
+            request_id="123",
+            host_id="host",
+            response="response",
+        )
+        mock_minio_client.get_object.side_effect = error
+
+        result = await storage_service.get_sprite_sheet("owner", "repo", "adult")
+
+        assert result is None
+
+    async def test_upload_frame(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """upload_frame stores PNG at frame-specific path."""
+        mock_minio_client.bucket_exists.return_value = True
+        data = _make_png()
+
+        path = await storage_service.upload_frame("owner", "repo", "adult", 2, data)
+
+        assert path == "pets/owner/repo/adult_frame_2.png"
+        mock_minio_client.put_object.assert_called_once()
+
+    async def test_get_frame_found(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """get_frame returns bytes when frame exists."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"frame_data"
+        mock_minio_client.get_object.return_value = mock_response
+
+        result = await storage_service.get_frame("owner", "repo", "adult", 1)
+
+        assert result == b"frame_data"
+
+    async def test_upload_animated_gif(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """upload_animated_gif stores GIF at expected path."""
+        mock_minio_client.bucket_exists.return_value = True
+        gif_data = b"GIF89a..."
+
+        path = await storage_service.upload_animated_gif("owner", "repo", "adult", gif_data)
+
+        assert path == "pets/owner/repo/adult_animated.gif"
+        mock_minio_client.put_object.assert_called_once()
+
+    async def test_get_animated_gif_found(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """get_animated_gif returns bytes when GIF exists."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"gif_data"
+        mock_minio_client.get_object.return_value = mock_response
+
+        result = await storage_service.get_animated_gif("owner", "repo", "adult")
+
+        assert result == b"gif_data"
+
+    async def test_get_animated_gif_not_found(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """get_animated_gif returns None when GIF does not exist."""
+        error = S3Error(
+            code="NoSuchKey",
+            message="Not found",
+            resource="test",
+            request_id="123",
+            host_id="host",
+            response="response",
+        )
+        mock_minio_client.get_object.side_effect = error
+
+        result = await storage_service.get_animated_gif("owner", "repo", "adult")
+
+        assert result is None
+
+    async def test_animated_gif_exists_true(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """animated_gif_exists returns True when GIF exists."""
+        mock_minio_client.stat_object.return_value = MagicMock()
+
+        result = await storage_service.animated_gif_exists("owner", "repo", "adult")
+
+        assert result is True
+
+    async def test_animated_gif_exists_false(
+        self, storage_service: StorageService, mock_minio_client: MagicMock
+    ) -> None:
+        """animated_gif_exists returns False when GIF does not exist."""
+        error = S3Error(
+            code="NoSuchKey",
+            message="Not found",
+            resource="test",
+            request_id="123",
+            host_id="host",
+            response="response",
+        )
+        mock_minio_client.stat_object.side_effect = error
+
+        result = await storage_service.animated_gif_exists("owner", "repo", "adult")
+
+        assert result is False
