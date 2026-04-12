@@ -234,39 +234,48 @@ def get_next_stage(current_stage: PetStage, experience: int) -> PetStage:
 def update_commit_streak(pet: "Pet", health: RepoHealth, now: datetime) -> None:
     """Update commit streak fields on the pet based on recent commit activity.
 
-    A streak counts days with at least one commit. Uses a 48-hour window to
-    be generous with polling frequency variations.
+    A streak counts calendar days with at least one commit. Increments at most
+    once per calendar day to avoid double-counting across polling cycles.
+    A 48-hour window is used to tolerate polling gaps around midnight.
     """
     if health.last_commit_at is not None:
         hours_since_commit = (now - health.last_commit_at).total_seconds() / 3600
         if hours_since_commit <= 48:
-            # There's been a recent commit — update the streak
+            # There's been a recent commit — update the streak at most once per day
             if pet.last_streak_date is None:
                 # First ever streak day
                 pet.commit_streak = 1
+                pet.last_streak_date = now
             else:
-                hours_since_last_streak = (now - pet.last_streak_date).total_seconds() / 3600
-                if hours_since_last_streak > 48:
-                    # Gap too large — restart streak
-                    pet.commit_streak = 1
-                else:
-                    # Continuing streak
+                days_since = (now.date() - pet.last_streak_date.date()).days
+                if days_since == 0:
+                    pass  # Already counted today
+                elif days_since == 1:
+                    # Consecutive day — extend streak
                     pet.commit_streak += 1
-            pet.last_streak_date = now
+                    pet.last_streak_date = now
+                else:
+                    # Gap of 2+ days — restart streak
+                    pet.commit_streak = 1
+                    pet.last_streak_date = now
         else:
-            # No recent commit — possibly break the streak
+            # No recent commit — break streak if stale
             if pet.last_streak_date is not None:
-                hours_since_last_streak = (now - pet.last_streak_date).total_seconds() / 3600
-                if hours_since_last_streak > 48:
+                days_since = (now.date() - pet.last_streak_date.date()).days
+                if days_since > 1:
                     pet.commit_streak = 0
     else:
         # No commit data at all — break streak if stale
         if pet.last_streak_date is not None:
-            hours_since_last_streak = (now - pet.last_streak_date).total_seconds() / 3600
-            if hours_since_last_streak > 48:
+            days_since = (now.date() - pet.last_streak_date.date()).days
+            if days_since > 1:
                 pet.commit_streak = 0
 
-    pet.longest_streak = max(pet.longest_streak, pet.commit_streak)
+    # Cap streak to the pet's age in days — prevents inflated values from
+    # the historical bug where streak was incremented on every poll
+    age_days = max(1, (now.date() - pet.created_at.date()).days + 1)
+    pet.commit_streak = min(pet.commit_streak, age_days)
+    pet.longest_streak = min(max(pet.longest_streak, pet.commit_streak), age_days)
 
 
 # Death thresholds

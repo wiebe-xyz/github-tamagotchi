@@ -37,13 +37,23 @@ class TestUpdateCommitStreak:
         update_commit_streak(pet, health, NOW)
         assert pet.commit_streak == 4
 
-    def test_commit_at_48h_boundary_still_increments(self) -> None:
-        """Commit exactly at 48h boundary counts as continuing streak."""
-        last_date = _hours_ago(47)
+    def test_yesterday_streak_date_increments(self) -> None:
+        """Streak updated yesterday (1 calendar day ago) increments today."""
+        # 35h ago from Apr 9 12:00 = Apr 8 01:00 — still the previous calendar day
+        last_date = _hours_ago(35)
         pet = make_pet(commit_streak=5, longest_streak=5, last_streak_date=last_date)
         health = make_repo_health(last_commit_at=_hours_ago(1), commit_hours_ago=None)
         update_commit_streak(pet, health, NOW)
         assert pet.commit_streak == 6
+
+    def test_same_day_poll_does_not_double_count(self) -> None:
+        """Multiple polls on the same day don't increment streak more than once."""
+        last_date = _hours_ago(2)  # Same calendar day
+        pet = make_pet(commit_streak=5, longest_streak=5, last_streak_date=last_date)
+        health = make_repo_health(last_commit_at=_hours_ago(1), commit_hours_ago=None)
+        update_commit_streak(pet, health, NOW)
+        # Still 5 — same day was already counted
+        assert pet.commit_streak == 5
 
     def test_gap_over_48h_resets_streak_to_one(self) -> None:
         """Gap > 48 hours with new commit resets streak to 1."""

@@ -20,6 +20,7 @@ def make_pet(
     commit_streak: int = 0,
     longest_streak: int = 0,
     last_streak_date: datetime | None = None,
+    created_at: datetime | None = None,
     is_dead: bool = False,
     died_at: datetime | None = None,
     cause_of_death: str | None = None,
@@ -27,7 +28,7 @@ def make_pet(
     generation: int = 1,
 ) -> Pet:
     """Create a Pet instance with sensible defaults."""
-    return Pet(
+    pet = Pet(
         repo_owner=repo_owner,
         repo_name=repo_name,
         name=name,
@@ -46,6 +47,12 @@ def make_pet(
         grace_period_started=grace_period_started,
         generation=generation,
     )
+    # created_at has a server_default but isn't set by __init__; set it explicitly
+    # so unit tests that don't hit the DB have a non-None value
+    pet.created_at = (
+        created_at if created_at is not None else datetime.now(UTC) - timedelta(days=90)
+    )
+    return pet
 
 
 def make_repo_health(

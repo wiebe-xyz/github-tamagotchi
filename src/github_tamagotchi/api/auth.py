@@ -121,7 +121,14 @@ async def get_optional_user(
         user_id = int(str(payload["sub"]))
     except (jwt.InvalidTokenError, KeyError, ValueError):
         return None
-    return await get_user_by_id(session, user_id)
+    user = await get_user_by_id(session, user_id)
+    if user is not None:
+        # Keep is_admin in sync with config so nav links stay consistent
+        should_be_admin = user.github_login in settings.admin_github_logins
+        if user.is_admin != should_be_admin:
+            user.is_admin = should_be_admin
+            await session.flush()
+    return user
 
 
 @auth_router.get("/github")

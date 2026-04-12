@@ -397,7 +397,7 @@
             copyBtn.addEventListener('click', () => {
                 navigator.clipboard.writeText(copyBtn.dataset.url).then(() => {
                     const original = copyBtn.textContent;
-                    copyBtn.textContent = '&#10003; Copied!';
+                    copyBtn.innerHTML = '✓ Copied!';
                     setTimeout(() => { copyBtn.innerHTML = '&#128279; Copy link'; }, 2000);
                 });
             });
