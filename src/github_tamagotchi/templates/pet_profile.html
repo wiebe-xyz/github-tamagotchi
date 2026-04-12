@@ -70,11 +70,12 @@
                     <div class="pet-emoji-fallback" style="display:flex; font-size: 4rem;">&#129680;</div>
                     {% else %}
                     <img
-                        src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}/animated"
+                        src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}"
+                        data-animated="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}/animated"
                         alt="{{ pet.name }}"
                         class="profile-sprite"
                         id="profile-pet"
-                        onerror="this.src='/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}'; this.onerror=function(){this.style.display='none'; document.getElementById('pet-emoji-fallback').style.display='flex';};"
+                        onerror="this.style.display='none'; document.getElementById('pet-emoji-fallback').style.display='flex'; this.onerror=null;"
                     >
                     <div id="pet-emoji-fallback" class="pet-emoji-fallback" style="display:none;">&#128049;</div>
                     <div class="pet-shadow"></div>
@@ -389,6 +390,13 @@
                 setTimeout(animatePet, 3000 + Math.random() * 2000);
             }
             animatePet();
+
+            // Lazy-swap to animated GIF once loaded; static image is already shown
+            if (pet.dataset.animated) {
+                const animImg = new Image();
+                animImg.onload = function () { pet.src = animImg.src; };
+                animImg.src = pet.dataset.animated;
+            }
         }
 
         // Copy link
