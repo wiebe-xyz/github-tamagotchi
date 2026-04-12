@@ -1,11 +1,10 @@
-"""Tests for admin HTML pages (/admin, /admin/pets, /admin/jobs, /admin/achievements, /admin/webhooks)."""
+"""Tests for admin HTML pages."""
 
 import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from github_tamagotchi.api.auth import _create_jwt

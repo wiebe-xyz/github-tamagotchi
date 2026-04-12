@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.crud import contributor_relationship as cr_crud

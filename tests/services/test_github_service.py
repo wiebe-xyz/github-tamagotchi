@@ -990,7 +990,7 @@ class TestGetContributorStats:
 
         recent_date = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         user_commits = [
-            {"sha": f"sha{i}", "author": {"login": "alice"}, "commit": {"committer": {"date": recent_date}}}
+            {"sha": f"sha{i}", "author": {"login": "alice"}, "commit": {"committer": {"date": recent_date}}}  # noqa: E501
             for i in range(5)
         ]
         all_commits = (
@@ -1248,10 +1248,11 @@ class TestGetAllContributorActivity:
     @pytest.mark.asyncio
     async def test_returns_commits_by_user(self) -> None:
         """Should aggregate commit counts per user."""
+        d1, d2, d3 = "2025-03-01T10:00:00Z", "2025-03-02T10:00:00Z", "2025-03-03T10:00:00Z"
         commits = [
-            {"sha": "s1", "author": {"login": "alice"}, "commit": {"committer": {"date": "2025-03-01T10:00:00Z"}}},
-            {"sha": "s2", "author": {"login": "alice"}, "commit": {"committer": {"date": "2025-03-02T10:00:00Z"}}},
-            {"sha": "s3", "author": {"login": "bob"}, "commit": {"committer": {"date": "2025-03-03T10:00:00Z"}}},
+            {"sha": "s1", "author": {"login": "alice"}, "commit": {"committer": {"date": d1}}},
+            {"sha": "s2", "author": {"login": "alice"}, "commit": {"committer": {"date": d2}}},
+            {"sha": "s3", "author": {"login": "bob"}, "commit": {"committer": {"date": d3}}},
         ]
         respx.get("https://api.github.com/repos/owner/repo/commits").mock(
             return_value=httpx.Response(200, json=commits)
@@ -1296,7 +1297,7 @@ class TestGetAllContributorActivity:
     async def test_skips_commits_without_author_login(self) -> None:
         """Should skip commits missing author or login."""
         commits = [
-            {"sha": "s1", "author": None, "commit": {"committer": {"date": "2025-03-01T10:00:00Z"}}},
+            {"sha": "s1", "author": None, "commit": {"committer": {"date": "2025-03-01T10:00:00Z"}}},  # noqa: E501
             {"sha": "s2", "commit": {"committer": {"date": "2025-03-02T10:00:00Z"}}},
         ]
         respx.get("https://api.github.com/repos/owner/repo/commits").mock(
@@ -1334,8 +1335,9 @@ class TestGetWeeklyCommits30d:
         from datetime import timedelta
 
         now = datetime.now(UTC)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
         commits = [
-            {"sha": f"sha{i}", "commit": {"committer": {"date": (now - timedelta(days=i)).strftime("%Y-%m-%dT%H:%M:%SZ")}}}
+            {"sha": f"sha{i}", "commit": {"committer": {"date": (now - timedelta(days=i)).strftime(fmt)}}}  # noqa: E501
             for i in range(1, 8)
         ]
         respx.get("https://api.github.com/repos/owner/repo/commits").mock(
@@ -1884,7 +1886,9 @@ class TestGetBlameBoardData:
         )
 
         service = GitHubService(token="test")
-        result = await service.get_blame_board_data("owner", "repo", pet_health=80, pet_mood="happy")
+        result = await service.get_blame_board_data(
+            "owner", "repo", pet_health=80, pet_mood="happy"
+        )
 
         assert isinstance(result, BlameBoardData)
         assert result.is_healthy is True
@@ -1909,7 +1913,7 @@ class TestGetBlameBoardData:
             }
         ]
         repo_data = {"id": 1, "name": "repo", "default_branch": "main"}
-        commits = [{"sha": "sha1", "author": {"login": "alice"}, "commit": {"committer": {"date": old_pr_date}}}]
+        commits = [{"sha": "sha1", "author": {"login": "alice"}, "commit": {"committer": {"date": old_pr_date}}}]  # noqa: E501
 
         respx.get("https://api.github.com/repos/owner/repo/commits").mock(
             return_value=httpx.Response(200, json=commits)

@@ -2,12 +2,11 @@
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,7 +88,6 @@ async def auth_test_db() -> AsyncIterator[AsyncSession]:
 
         await conn.execute(text("DELETE FROM users"))
 
-    from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
     from tests.conftest import test_session_factory
 
     async with test_session_factory() as session:

@@ -1,6 +1,5 @@
 """Unit tests for User CRUD operations."""
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.crud import user as user_crud

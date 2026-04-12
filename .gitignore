@@ -55,3 +55,4 @@ htmlcov/
 .uv/
 uv.lock
 coverage.xml
+coverage.json

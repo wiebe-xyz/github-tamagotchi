@@ -346,9 +346,6 @@ class TestCheckDatabase:
 
     async def test_degraded_when_slow(self, test_db: AsyncSession) -> None:
         """Returns degraded status when latency exceeds 1000ms."""
-        import time
-
-        original_monotonic = time.monotonic
         call_count = 0
 
         def mock_monotonic() -> float:
