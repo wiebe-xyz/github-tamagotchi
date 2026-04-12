@@ -95,3 +95,57 @@ class TestDashboardAuthenticated:
         _create_pet_for_user(user_id=16, repo_owner="linkowner", repo_name="linkrepo")
         response = client.get("/dashboard", cookies={"session_token": token})
         assert "/pet/linkowner/linkrepo" in response.text
+
+
+class TestRegisterPage:
+    def test_unauthenticated_redirects_to_auth(self, client: TestClient) -> None:
+        response = client.get("/register", follow_redirects=False)
+        assert response.status_code == 302
+        assert "/auth/github" in response.headers["location"]
+
+    def test_authenticated_returns_200(self, client: TestClient) -> None:
+        token = _create_user(user_id=20, github_login="reguser")
+        response = client.get("/register", cookies={"session_token": token})
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_authenticated_shows_register_form(self, client: TestClient) -> None:
+        token = _create_user(user_id=21, github_login="reguser2")
+        response = client.get("/register", cookies={"session_token": token})
+        assert "Register" in response.text
+
+
+class TestRegisterCompletePage:
+    def test_unauthenticated_redirects_to_auth(self, client: TestClient) -> None:
+        response = client.get(
+            "/register/complete?owner=myorg&repo=myrepo&pet_name=Gotchi",
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert "/auth/github" in response.headers["location"]
+
+    def test_authenticated_returns_200(self, client: TestClient) -> None:
+        token = _create_user(user_id=22, github_login="completeuser")
+        response = client.get(
+            "/register/complete?owner=myorg&repo=myrepo&pet_name=Gotchi",
+            cookies={"session_token": token},
+        )
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_shows_pet_name_on_complete_page(self, client: TestClient) -> None:
+        token = _create_user(user_id=23, github_login="completeuser2")
+        response = client.get(
+            "/register/complete?owner=myorg&repo=myrepo&pet_name=Sparky",
+            cookies={"session_token": token},
+        )
+        assert "Sparky" in response.text
+
+    def test_shows_embed_code_on_complete_page(self, client: TestClient) -> None:
+        token = _create_user(user_id=24, github_login="completeuser3")
+        response = client.get(
+            "/register/complete?owner=myorg&repo=myrepo&pet_name=Sparky",
+            cookies={"session_token": token},
+        )
+        assert "myorg/myrepo" in response.text
+        assert "badge.svg" in response.text
