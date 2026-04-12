@@ -137,20 +137,46 @@ def build_sprite_sheet_prompt(
     return prompt, negative
 
 
+def _remove_chroma_key(img: Image.Image, tolerance: int = 60) -> Image.Image:
+    """Replace magenta (#FF00FF) chroma-key pixels with transparency.
+
+    Args:
+        img: RGBA PIL Image
+        tolerance: Per-channel distance tolerance for matching magenta (default 60)
+
+    Returns:
+        RGBA image with chroma-key pixels made transparent
+    """
+    pixels = list(img.getdata())
+    thresh = tolerance * tolerance * 3
+    result: list[tuple[int, int, int, int]] = [
+        (r, g, b, 0)
+        if (r - 255) ** 2 + g**2 + (b - 255) ** 2 < thresh
+        else (r, g, b, a)
+        for r, g, b, a in pixels
+    ]
+    out = img.copy()
+    out.putdata(result)
+    return out
+
+
 def extract_frames(
     sprite_sheet_bytes: bytes,
     cols: int = SPRITE_COLS,
     rows: int = SPRITE_ROWS,
+    border_trim: int = 2,
 ) -> list[bytes]:
     """Extract individual frames from a sprite sheet.
 
     Slices the sprite sheet grid into individual frame images using equal-width
-    columns and equal-height rows.
+    columns and equal-height rows. Removes magenta chroma-key background and
+    trims separator-line borders.
 
     Args:
         sprite_sheet_bytes: Raw sprite sheet image bytes (PNG)
         cols: Number of columns in the grid
         rows: Number of rows in the grid
+        border_trim: Pixels to trim from each edge to remove cell separator lines
 
     Returns:
         List of PNG frame bytes in reading order (left-to-right, top-to-bottom)
@@ -166,6 +192,17 @@ def extract_frames(
             x = col * frame_w
             y = row * frame_h
             frame = img.crop((x, y, x + frame_w, y + frame_h))
+            # Trim separator borders
+            if border_trim > 0:
+                fw, fh = frame.size
+                frame = frame.crop((
+                    border_trim,
+                    border_trim,
+                    fw - border_trim,
+                    fh - border_trim,
+                ))
+            # Remove chroma-key background
+            frame = _remove_chroma_key(frame)
             out = io.BytesIO()
             frame.save(out, format="PNG")
             frames.append(out.getvalue())

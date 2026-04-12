@@ -8,6 +8,7 @@ from PIL import Image
 from github_tamagotchi.services.sprite_sheet import (
     SPRITE_COLS,
     SPRITE_ROWS,
+    _remove_chroma_key,
     build_sprite_sheet_prompt,
     compose_animated_gif,
     extract_frames,
@@ -117,10 +118,21 @@ class TestExtractFrames:
             img = Image.open(io.BytesIO(frame))
             assert img.format == "PNG"
 
-    def test_frame_dimensions_are_equal(self) -> None:
+    def test_frame_dimensions_account_for_border_trim(self) -> None:
+        cell_size = 48
+        border_trim = 2
+        sheet = _make_sprite_sheet(cell_size=cell_size)
+        frames = extract_frames(sheet, border_trim=border_trim)
+        expected = cell_size - border_trim * 2
+        for frame in frames:
+            img = Image.open(io.BytesIO(frame))
+            assert img.width == expected
+            assert img.height == expected
+
+    def test_no_border_trim_preserves_dimensions(self) -> None:
         cell_size = 48
         sheet = _make_sprite_sheet(cell_size=cell_size)
-        frames = extract_frames(sheet)
+        frames = extract_frames(sheet, border_trim=0)
         for frame in frames:
             img = Image.open(io.BytesIO(frame))
             assert img.width == cell_size
@@ -137,6 +149,46 @@ class TestExtractFrames:
         for frame in frames:
             img = Image.open(io.BytesIO(frame)).convert("RGBA")
             assert img.mode == "RGBA"
+
+    def test_chroma_key_pixels_become_transparent(self) -> None:
+        """Magenta (#FF00FF) pixels in the sprite sheet are made transparent."""
+        # Build a sheet that is pure magenta
+        cell_size = 32
+        cols, rows = 2, 2
+        width = cols * cell_size
+        height = rows * cell_size
+        img = Image.new("RGBA", (width, height), color=(255, 0, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        sheet = buf.getvalue()
+
+        frames = extract_frames(sheet, cols=cols, rows=rows, border_trim=0)
+        for frame in frames:
+            frame_img = Image.open(io.BytesIO(frame)).convert("RGBA")
+            pixels = list(frame_img.getdata())
+            # All pixels should be fully transparent (alpha == 0)
+            assert all(a == 0 for _, _, _, a in pixels), "Magenta pixels should be transparent"
+
+
+class TestRemoveChromaKey:
+    def test_pure_magenta_becomes_transparent(self) -> None:
+        img = Image.new("RGBA", (4, 4), color=(255, 0, 255, 255))
+        result = _remove_chroma_key(img)
+        pixels = list(result.getdata())
+        assert all(a == 0 for _, _, _, a in pixels)
+
+    def test_non_magenta_pixels_preserved(self) -> None:
+        img = Image.new("RGBA", (4, 4), color=(100, 150, 200, 255))
+        result = _remove_chroma_key(img)
+        pixels = list(result.getdata())
+        assert all(a == 255 for _, _, _, a in pixels)
+
+    def test_tolerance_catches_near_magenta(self) -> None:
+        # Near-magenta (240, 20, 240) should be caught with default tolerance
+        img = Image.new("RGBA", (2, 2), color=(240, 20, 240, 255))
+        result = _remove_chroma_key(img, tolerance=60)
+        pixels = list(result.getdata())
+        assert all(a == 0 for _, _, _, a in pixels)
 
 
 class TestComposeAnimatedGif:
