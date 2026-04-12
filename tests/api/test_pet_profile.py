@@ -1,12 +1,30 @@
-"""Tests for the pet profile page."""
+"""Tests for the pet profile and pet admin HTML pages."""
 
 import asyncio
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
+from github_tamagotchi.api.auth import _create_jwt
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
+from github_tamagotchi.models.user import User
 from tests.conftest import test_session_factory
+
+
+@contextmanager
+def _as_admin(login: str) -> Iterator[None]:
+    """Patch settings so the given login is treated as admin."""
+    with patch(
+        "github_tamagotchi.api.auth.settings.admin_github_logins",
+        new=[login],
+    ), patch(
+        "github_tamagotchi.main.settings.admin_github_logins",
+        new=[login],
+    ):
+        yield
 
 
 def _create_pet(
@@ -171,3 +189,105 @@ class TestPetProfilePage:
         response = client.get("/pet/testowner/testrepo", cookies={"session_token": token})
         assert response.status_code == 200
         assert "Get your own pet" not in response.text
+
+
+def _create_user_with_pet(
+    user_id: int,
+    github_login: str,
+    repo_owner: str,
+    repo_name: str,
+    encrypted_token: str | None = None,
+) -> str:
+    async def _setup() -> str:
+        async with test_session_factory() as session:
+            user = User(
+                id=user_id,
+                github_id=user_id * 1000,
+                github_login=github_login,
+                github_avatar_url=None,
+                encrypted_token=encrypted_token,
+            )
+            session.add(user)
+            pet = Pet(
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                name="AdminPet",
+                user_id=user_id,
+            )
+            session.add(pet)
+            await session.commit()
+        return _create_jwt(user_id=user_id)
+
+    return asyncio.run(_setup())
+
+
+class TestPetAdminHTMLPage:
+    """Tests for /pet/{owner}/{repo}/admin HTML page."""
+
+    def test_unauthenticated_redirects_to_auth(self, client: TestClient) -> None:
+        _create_pet(repo_owner="adminpageowner", repo_name="adminpagerepo", name="AdminPet")
+        response = client.get("/pet/adminpageowner/adminpagerepo/admin", follow_redirects=False)
+        assert response.status_code == 302
+        assert "/auth/github" in response.headers["location"]
+
+    def test_not_found_returns_404(self, client: TestClient) -> None:
+        token = _create_user_with_pet(
+            user_id=200,
+            github_login="adminloginpet200",
+            repo_owner="adminloginpet200",
+            repo_name="somerepo200",
+        )
+        with _as_admin("adminloginpet200"):
+            response = client.get("/pet/nobody/nonexistent/admin", cookies={"session_token": token})
+        assert response.status_code == 404
+
+    def test_non_admin_user_without_token_gets_403(self, client: TestClient) -> None:
+        token = _create_user_with_pet(
+            user_id=201,
+            github_login="regularuser201",
+            repo_owner="adminpageowner201",
+            repo_name="adminpagerepo201",
+            encrypted_token=None,
+        )
+        response = client.get(
+            "/pet/adminpageowner201/adminpagerepo201/admin",
+            cookies={"session_token": token},
+        )
+        assert response.status_code == 403
+
+    def test_site_admin_can_access_any_pet_admin(self, client: TestClient) -> None:
+        token = _create_user_with_pet(
+            user_id=202,
+            github_login="siteadminlogin202",
+            repo_owner="siteadminlogin202",
+            repo_name="adminpagerepo202",
+        )
+        with _as_admin("siteadminlogin202"):
+            response = client.get(
+                "/pet/siteadminlogin202/adminpagerepo202/admin",
+                cookies={"session_token": token},
+            )
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_repo_admin_via_token_can_access(self, client: TestClient) -> None:
+        token = _create_user_with_pet(
+            user_id=203,
+            github_login="repoadmin203",
+            repo_owner="repoadmin203",
+            repo_name="repoadminrepo203",
+            encrypted_token="fake-encrypted-token",
+        )
+        with patch(
+            "github_tamagotchi.services.token_encryption.decrypt_token",
+            return_value="decrypted-token",
+        ), patch(
+            "github_tamagotchi.main.GitHubService.get_repo_permission",
+            new_callable=AsyncMock,
+            return_value="admin",
+        ):
+            response = client.get(
+                "/pet/repoadmin203/repoadminrepo203/admin",
+                cookies={"session_token": token},
+            )
+        assert response.status_code == 200

@@ -1,9 +1,13 @@
-"""Tests for the leaderboard API endpoint."""
+"""Tests for the leaderboard API endpoint and HTML page."""
 
+import asyncio
+
+from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
 from github_tamagotchi.crud.pet import _leaderboard_cache
 from github_tamagotchi.models.pet import Pet
+from tests.conftest import test_session_factory
 
 
 class TestLeaderboardEndpoint:
@@ -166,3 +170,60 @@ class TestLeaderboardEndpoint:
         response = await async_client.get("/api/v1/leaderboard")
         data = response.json()
         assert "cached_at" in data
+
+
+def _create_pet_for_leaderboard(
+    repo_owner: str = "lbowner",
+    repo_name: str = "lbrepo",
+    name: str = "LBPet",
+    experience: int = 500,
+) -> None:
+    async def _setup() -> None:
+        async with test_session_factory() as session:
+            pet = Pet(
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                name=name,
+                experience=experience,
+            )
+            session.add(pet)
+            await session.commit()
+
+    asyncio.run(_setup())
+
+
+class TestLeaderboardHTMLPage:
+    """Tests for the /leaderboard HTML page."""
+
+    def test_returns_html(self, client: TestClient) -> None:
+        response = client.get("/leaderboard")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_contains_leaderboard_title(self, client: TestClient) -> None:
+        response = client.get("/leaderboard")
+        assert "Leaderboard" in response.text
+
+    def test_shows_most_experienced_section(self, client: TestClient) -> None:
+        response = client.get("/leaderboard")
+        assert "Most Experienced" in response.text
+
+    def test_shows_longest_streak_section(self, client: TestClient) -> None:
+        response = client.get("/leaderboard")
+        assert "Longest Streak" in response.text
+
+    def test_shows_pet_on_leaderboard(self, client: TestClient) -> None:
+        _leaderboard_cache.clear()
+        _create_pet_for_leaderboard(
+            repo_owner="lbpageowner", repo_name="lbpagerepo", name="PagePet", experience=999
+        )
+        response = client.get("/leaderboard")
+        assert "PagePet" in response.text
+
+    def test_cache_control_header(self, client: TestClient) -> None:
+        response = client.get("/leaderboard")
+        assert "Cache-Control" in response.headers
+
+    def test_shows_login_cta_when_unauthenticated(self, client: TestClient) -> None:
+        response = client.get("/leaderboard")
+        assert "Login" in response.text
