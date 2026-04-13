@@ -19,7 +19,7 @@ def _make_pet(**kwargs: Any) -> Any:
         "repo_owner": "owner",
         "repo_name": "repo",
         "name": "TestPet",
-        "stage": PetStage.EGG.value,
+        "stage": PetStage.BABY.value,
         "mood": PetMood.CONTENT.value,
         "health": 100,
         "experience": 0,
@@ -169,6 +169,52 @@ class TestCheckDeathConditions:
         should_die, cause = check_death_conditions(pet, now)
         assert should_die is True
         assert cause == "abandonment"
+
+
+class TestEggExemptions:
+    """Eggs must not be subject to death or grace-period mechanics."""
+
+    def test_update_grace_period_is_noop_for_egg(self) -> None:
+        now = datetime.now(UTC)
+        pet = _make_pet(stage=PetStage.EGG.value, health=0, grace_period_started=None)
+        update_grace_period(pet, now)
+        assert pet.grace_period_started is None
+
+    def test_update_grace_period_does_not_clear_egg(self) -> None:
+        """Even if grace_period_started is somehow set on an egg, we don't touch it."""
+        earlier = datetime.now(UTC) - timedelta(days=1)
+        pet = _make_pet(stage=PetStage.EGG.value, health=50, grace_period_started=earlier)
+        update_grace_period(pet, datetime.now(UTC))
+        # should be a no-op — value unchanged
+        assert pet.grace_period_started == earlier
+
+    def test_check_death_conditions_returns_false_for_egg(self) -> None:
+        now = datetime.now(UTC)
+        long_ago = now - timedelta(days=ABANDONMENT_THRESHOLD_DAYS + 10)
+        pet = _make_pet(
+            stage=PetStage.EGG.value,
+            health=0,
+            grace_period_started=now - timedelta(days=DEATH_GRACE_PERIOD_DAYS + 1),
+            last_checked_at=long_ago,
+            created_at=long_ago - timedelta(days=5),
+        )
+        should_die, cause = check_death_conditions(pet, now)
+        assert should_die is False
+        assert cause is None
+
+    def test_check_death_conditions_egg_not_abandoned(self) -> None:
+        now = datetime.now(UTC)
+        long_ago = now - timedelta(days=ABANDONMENT_THRESHOLD_DAYS + 30)
+        pet = _make_pet(
+            stage=PetStage.EGG.value,
+            health=100,
+            grace_period_started=None,
+            last_checked_at=long_ago,
+            created_at=long_ago,
+        )
+        should_die, cause = check_death_conditions(pet, now)
+        assert should_die is False
+        assert cause is None
 
 
 class TestDeadPetBadge:
