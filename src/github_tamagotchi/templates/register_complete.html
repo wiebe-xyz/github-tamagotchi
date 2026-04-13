@@ -7,25 +7,8 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <nav class="user-nav">
-        <div class="container">
-            <a href="/" class="logo">GitHub Tamagotchi</a>
-            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
-                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
-                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
-                {% if user and user.is_admin %}
-                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
-                {% endif %}
-            </div>
-            <div class="user-info">
-                {% if user.github_avatar_url %}
-                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
-                {% endif %}
-                <span class="user-name">{{ user.github_login }}</span>
-                <button class="logout-button" id="logout-btn">Log out</button>
-            </div>
-        </div>
-    </nav>
+    {% set active_page = "register" %}
+    {% include "_nav.html" %}
 
     <main class="complete-main">
         <div class="container">
@@ -100,10 +83,6 @@
             });
         }
 
-        document.getElementById('logout-btn').addEventListener('click', async () => {
-            await fetch('/auth/logout', { method: 'POST' });
-            window.location.href = '/';
-        });
     </script>
 </body>
 </html>

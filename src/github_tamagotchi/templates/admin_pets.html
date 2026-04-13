@@ -7,24 +7,9 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <nav class="user-nav">
-        <div class="container">
-            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
-            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
-                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
-                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
-                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
-                <a href="/admin/pets" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem; font-weight:600;">Pets</a>
-            </div>
-            <div class="user-info">
-                {% if user.github_avatar_url %}
-                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
-                {% endif %}
-                <span class="user-name">{{ user.github_login }}</span>
-                <button class="logout-button" id="logout-btn">Log out</button>
-            </div>
-        </div>
-    </nav>
+    {% set active_page = "admin_pets" %}
+    {% include "_nav.html" %}
+    {% include "_admin_subnav.html" %}
 
     <main style="padding-top: 5rem; min-height: 80vh;">
         <div class="container">

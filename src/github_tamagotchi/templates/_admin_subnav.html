@@ -1,0 +1,16 @@
+{% if user and user.is_admin and active_page and active_page.startswith('admin') %}
+<nav class="admin-subnav" style="background: rgba(0,0,0,0.25); border-bottom: 1px solid rgba(255,255,255,0.08);">
+    <div class="container" style="display:flex; gap:1.25rem; padding-top:0.5rem; padding-bottom:0.5rem;">
+        <a href="/admin"
+           style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.85rem;{% if active_page == 'admin' %} font-weight:600;{% endif %}">Admin</a>
+        <a href="/admin/pets"
+           style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.85rem;{% if active_page == 'admin_pets' %} font-weight:600;{% endif %}">Pets</a>
+        <a href="/admin/jobs"
+           style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.85rem;{% if active_page == 'admin_jobs' %} font-weight:600;{% endif %}">Jobs</a>
+        <a href="/admin/webhooks"
+           style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.85rem;{% if active_page == 'admin_webhooks' %} font-weight:600;{% endif %}">Webhooks</a>
+        <a href="/admin/achievements"
+           style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.85rem;{% if active_page == 'admin_achievements' %} font-weight:600;{% endif %}">Achievements</a>
+    </div>
+</nav>
+{% endif %}
