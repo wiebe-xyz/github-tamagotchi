@@ -14,7 +14,7 @@ from typing import Annotated
 import sentry_sdk
 import structlog
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -1166,3 +1166,79 @@ async def admin_achievements(
             "achievement_order": ACHIEVEMENT_ORDER,
         },
     )
+
+
+@app.get("/admin/sprites", response_class=HTMLResponse)
+async def admin_sprites(
+    request: Request,
+    user: AdminUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Admin page showing sprite sheet overview per creature stage."""
+    stages = []
+    for stage in PetStage:
+        # Count pets at this stage
+        count_result = await session.execute(
+            select(func.count()).select_from(Pet).where(Pet.stage == stage.value)
+        )
+        pet_count = count_result.scalar() or 0
+
+        # Get the most recent images_generated_at for pets at this stage
+        recent_result = await session.execute(
+            select(func.max(Pet.images_generated_at)).where(Pet.stage == stage.value)
+        )
+        last_generated = recent_result.scalar()
+
+        # Pick a sample pet for thumbnail display
+        sample_result = await session.execute(
+            select(Pet)
+            .where(Pet.stage == stage.value)
+            .order_by(Pet.images_generated_at.desc().nullslast())
+            .limit(1)
+        )
+        sample_pet = sample_result.scalar_one_or_none()
+
+        stages.append(
+            {
+                "stage": stage.value,
+                "pet_count": pet_count,
+                "last_generated": last_generated,
+                "sample_pet": sample_pet,
+            }
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "admin_sprites.html",
+        {"user": user, "stages": stages},
+    )
+
+
+@app.post("/admin/sprites/regenerate")
+async def admin_sprites_regenerate(
+    request: Request,
+    user: AdminUser,
+    session: DbSession,
+) -> Response:
+    """Queue image regeneration for all pets of a given stage (or all stages)."""
+    body = await request.json()
+    stage_param = body.get("stage", "all")
+
+    if stage_param == "all":
+        stages_to_regen = [s.value for s in PetStage]
+    elif stage_param in {s.value for s in PetStage}:
+        stages_to_regen = [stage_param]
+    else:
+        return JSONResponse({"error": f"Unknown stage: {stage_param}"}, status_code=400)
+
+    total_queued = 0
+    for stage_val in stages_to_regen:
+        pets_result = await session.execute(
+            select(Pet).where(Pet.stage == stage_val)
+        )
+        pets = pets_result.scalars().all()
+        for pet in pets:
+            await image_queue.create_job(session, pet.id, stage_val)
+            total_queued += 1
+
+    return JSONResponse({"queued": total_queued, "stage": stage_param})
