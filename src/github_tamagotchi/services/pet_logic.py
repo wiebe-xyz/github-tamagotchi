@@ -24,6 +24,14 @@ SECURITY_HEALTH_PENALTY = {
     "low": 2,
 }
 
+# Per-severity health penalty caps
+_SECURITY_SEVERITY_CAPS: dict[str, int] = {
+    "critical": 40,
+    "high": 20,
+    "medium": 10,
+    "low": 4,
+}
+
 # Experience thresholds for evolution
 EVOLUTION_THRESHOLDS = {
     PetStage.EGG: 0,
@@ -110,18 +118,13 @@ def calculate_health_delta(health: RepoHealth) -> int:
     # Security alert penalties (capped per severity to avoid instant death)
     # High-dependent packages carry more responsibility: security issues hurt more
     sec_mult = 2 if health.dependent_count >= 100 else 1
-    if health.security_alerts_critical > 0:
-        cap = SECURITY_HEALTH_PENALTY["critical"] * health.security_alerts_critical * sec_mult
-        delta -= min(cap, 40 * sec_mult)
-    if health.security_alerts_high > 0:
-        cap = SECURITY_HEALTH_PENALTY["high"] * health.security_alerts_high * sec_mult
-        delta -= min(cap, 20 * sec_mult)
-    if health.security_alerts_medium > 0:
-        cap = SECURITY_HEALTH_PENALTY["medium"] * health.security_alerts_medium * sec_mult
-        delta -= min(cap, 10 * sec_mult)
-    if health.security_alerts_low > 0:
-        cap = SECURITY_HEALTH_PENALTY["low"] * health.security_alerts_low * sec_mult
-        delta -= min(cap, 4 * sec_mult)
+    for severity, cap_base in _SECURITY_SEVERITY_CAPS.items():
+        count = getattr(health, f"security_alerts_{severity}")
+        if count > 0:
+            delta -= min(
+                SECURITY_HEALTH_PENALTY[severity] * count * sec_mult,
+                cap_base * sec_mult,
+            )
 
     return delta
 

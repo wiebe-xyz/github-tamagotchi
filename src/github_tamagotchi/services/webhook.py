@@ -63,6 +63,22 @@ def _extract_repo_from_payload(payload: dict[str, Any]) -> tuple[str, str] | Non
     return (owner, name)
 
 
+async def _apply_evolution(
+    pet: Any, db: AsyncSession
+) -> tuple[str, str] | None:
+    """Check for evolution and apply stage change + milestone if needed.
+
+    Returns (old_stage, new_stage) if evolution occurred, else None.
+    """
+    current_stage = PetStage(pet.stage)
+    new_stage = get_next_stage(current_stage, pet.experience)
+    if new_stage == current_stage:
+        return None
+    pet.stage = new_stage.value
+    await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
+    return (current_stage.value, new_stage.value)
+
+
 async def handle_push_event(payload: dict[str, Any], db: AsyncSession) -> str:
     """Handle push events - feed the pet and grant experience."""
     repo_info = _extract_repo_from_payload(payload)
@@ -80,17 +96,13 @@ async def handle_push_event(payload: dict[str, Any], db: AsyncSession) -> str:
     pet.last_fed_at = now
     pet.mood = PetMood.HAPPY.value
 
-    # Check for evolution
-    current_stage = PetStage(pet.stage)
-    new_stage = get_next_stage(current_stage, pet.experience)
-    if new_stage != current_stage:
-        pet.stage = new_stage.value
-        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
+    evolution = await _apply_evolution(pet, db)
+    if evolution:
         logger.info(
             "pet_evolved_via_webhook",
             pet_id=pet.id,
-            old_stage=current_stage.value,
-            new_stage=new_stage.value,
+            old_stage=evolution[0],
+            new_stage=evolution[1],
         )
 
     # Update contributor score for the pusher
@@ -157,12 +169,7 @@ async def handle_pull_request_event(payload: dict[str, Any], db: AsyncSession) -
     elif action == "reopened":
         pet.mood = PetMood.WORRIED.value
 
-    # Check for evolution
-    current_stage = PetStage(pet.stage)
-    new_stage = get_next_stage(current_stage, pet.experience)
-    if new_stage != current_stage:
-        pet.stage = new_stage.value
-        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
+    await _apply_evolution(pet, db)
 
     await db.commit()
 
@@ -195,12 +202,7 @@ async def handle_issues_event(payload: dict[str, Any], db: AsyncSession) -> str:
     elif action == "closed":
         pet.mood = PetMood.HAPPY.value
 
-    # Check for evolution
-    current_stage = PetStage(pet.stage)
-    new_stage = get_next_stage(current_stage, pet.experience)
-    if new_stage != current_stage:
-        pet.stage = new_stage.value
-        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
+    await _apply_evolution(pet, db)
 
     await db.commit()
 
@@ -252,12 +254,7 @@ async def handle_check_run_event(payload: dict[str, Any], db: AsyncSession) -> s
                 now=now,
             )
 
-    # Check for evolution
-    current_stage = PetStage(pet.stage)
-    new_stage = get_next_stage(current_stage, pet.experience)
-    if new_stage != current_stage:
-        pet.stage = new_stage.value
-        await create_milestone(db, pet, current_stage.value, new_stage.value, pet.experience)
+    await _apply_evolution(pet, db)
 
     await db.commit()
 

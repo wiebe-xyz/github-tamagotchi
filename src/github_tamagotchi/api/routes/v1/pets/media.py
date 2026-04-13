@@ -71,7 +71,6 @@ async def get_pet_badge(
     """Return an SVG badge representing the current pet state."""
     import base64
 
-    from github_tamagotchi.models.achievement import PetAchievement
     from github_tamagotchi.services.badge import generate_badge_svg
 
     if style is not None and style not in BADGE_STYLES:
@@ -94,13 +93,10 @@ async def get_pet_badge(
 
     unlocked_achievements: set[str] = set()
     try:
-        from sqlalchemy import select as sa_select
-        ach_result = await session.execute(
-            sa_select(PetAchievement.achievement_id).where(PetAchievement.pet_id == pet.id)
-        )
-        unlocked_achievements = set(ach_result.scalars().all())
+        from github_tamagotchi.services.achievements import get_unlocked_achievement_ids
+        unlocked_achievements = await get_unlocked_achievement_ids(pet.id, session)
     except Exception:
-        pass
+        logger.warning("Failed to load achievements for badge", exc_info=True)
 
     svg_content = generate_badge_svg(
         pet.name,
