@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Sprites - GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {% set active_page = "admin_sprites" %}
+    {% include "_nav.html" %}
+    {% include "_admin_subnav.html" %}
+
+    <main style="padding-top: 5rem; min-height: 80vh;">
+        <div class="container">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+                <h1 style="font-size: 1.75rem; font-weight: 700;">Sprite Sheet Overview</h1>
+                <button id="regen-all-btn" onclick="regenAll()"
+                    style="background: var(--primary); color: #fff; border: none; border-radius: 6px;
+                           padding: 0.55rem 1.2rem; font-size: 0.9rem; font-weight: 600; cursor: pointer;">
+                    Regenerate All
+                </button>
+            </div>
+
+            <div id="global-feedback" style="display:none; margin-bottom: 1.5rem; padding: 0.75rem 1rem;
+                 border-radius: 6px; font-size: 0.9rem;"></div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
+                {% for item in stages %}
+                <div class="feature" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <h2 style="font-size: 1.05rem; font-weight: 600; margin: 0;">
+                            {% if item.stage == "egg" %}&#x1F95A;
+                            {% elif item.stage == "baby" %}&#x1F423;
+                            {% elif item.stage == "child" %}&#x1F425;
+                            {% elif item.stage == "teen" %}&#x1F426;
+                            {% elif item.stage == "adult" %}&#x1F989;
+                            {% elif item.stage == "elder" %}&#x1F985;
+                            {% else %}&#x1F95A;
+                            {% endif %}
+                            {{ item.stage | capitalize }}
+                        </h2>
+                        <span style="color: var(--text-muted); font-size: 0.82rem;">{{ item.pet_count }} pet{{ 's' if item.pet_count != 1 else '' }}</span>
+                    </div>
+
+                    <!-- Sprite thumbnail -->
+                    <div style="background: var(--surface-light); border-radius: 8px; overflow: hidden;
+                                display: flex; align-items: center; justify-content: center;
+                                min-height: 120px;">
+                        {% if item.sample_pet %}
+                        <img
+                            src="/api/v1/pets/{{ item.sample_pet.repo_owner }}/{{ item.sample_pet.repo_name }}/image/{{ item.stage }}"
+                            alt="{{ item.stage }} sprite"
+                            style="max-width: 100%; max-height: 160px; object-fit: contain; display: block;"
+                            onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
+                        />
+                        <span style="display:none; color: var(--text-muted); font-size: 0.85rem;">No image</span>
+                        {% else %}
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">No pets at this stage</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Metadata -->
+                    <div style="font-size: 0.82rem; color: var(--text-muted);">
+                        {% if item.last_generated %}
+                        Last generated: {{ item.last_generated.strftime('%Y-%m-%d %H:%M') }} UTC
+                        {% else %}
+                        Never generated
+                        {% endif %}
+                    </div>
+
+                    <!-- Per-stage feedback -->
+                    <div id="feedback-{{ item.stage }}" style="display:none; padding: 0.5rem 0.75rem;
+                         border-radius: 4px; font-size: 0.85rem;"></div>
+
+                    <!-- Regenerate button -->
+                    <button
+                        id="btn-{{ item.stage }}"
+                        onclick="regenStage('{{ item.stage }}')"
+                        {% if item.pet_count == 0 %}disabled{% endif %}
+                        style="background: {% if item.pet_count > 0 %}var(--secondary){% else %}var(--surface-light){% endif %};
+                               color: {% if item.pet_count > 0 %}#fff{% else %}var(--text-muted){% endif %};
+                               border: none; border-radius: 6px; padding: 0.5rem 1rem;
+                               font-size: 0.85rem; font-weight: 600;
+                               cursor: {% if item.pet_count > 0 %}pointer{% else %}not-allowed{% endif %};">
+                        Regenerate
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+
+    <footer style="margin-top: 4rem; padding: 2rem 0; border-top: 1px solid var(--surface-light);">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo">GitHub Tamagotchi</span>
+                    <p>Making repository health visible and fun.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/wiebe-xyz/github-tamagotchi" target="_blank" rel="noopener">GitHub</a>
+                    <a href="/docs">API Docs</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        async function regenStage(stage) {
+            const btn = document.getElementById('btn-' + stage);
+            const fb = document.getElementById('feedback-' + stage);
+            btn.disabled = true;
+            btn.textContent = 'Queuing…';
+            fb.style.display = 'none';
+
+            try {
+                const resp = await fetch('/admin/sprites/regenerate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({stage}),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    fb.style.background = 'rgba(76,175,80,0.15)';
+                    fb.style.color = '#4caf50';
+                    fb.textContent = `Queued ${data.queued} job${data.queued !== 1 ? 's' : ''}`;
+                } else {
+                    fb.style.background = 'rgba(239,68,68,0.15)';
+                    fb.style.color = '#ef4444';
+                    fb.textContent = data.error || 'Error queuing jobs';
+                }
+            } catch {
+                fb.style.background = 'rgba(239,68,68,0.15)';
+                fb.style.color = '#ef4444';
+                fb.textContent = 'Request failed';
+            }
+
+            fb.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Regenerate';
+        }
+
+        async function regenAll() {
+            const btn = document.getElementById('regen-all-btn');
+            const gfb = document.getElementById('global-feedback');
+            btn.disabled = true;
+            btn.textContent = 'Queuing…';
+            gfb.style.display = 'none';
+
+            try {
+                const resp = await fetch('/admin/sprites/regenerate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({stage: 'all'}),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    gfb.style.background = 'rgba(76,175,80,0.15)';
+                    gfb.style.color = '#4caf50';
+                    gfb.textContent = `Queued ${data.queued} job${data.queued !== 1 ? 's' : ''} across all stages`;
+                } else {
+                    gfb.style.background = 'rgba(239,68,68,0.15)';
+                    gfb.style.color = '#ef4444';
+                    gfb.textContent = data.error || 'Error queuing jobs';
+                }
+            } catch {
+                gfb.style.background = 'rgba(239,68,68,0.15)';
+                gfb.style.color = '#ef4444';
+                gfb.textContent = 'Request failed';
+            }
+
+            gfb.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Regenerate All';
+        }
+    </script>
+</body>
+</html>

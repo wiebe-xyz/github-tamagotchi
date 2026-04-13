@@ -168,3 +168,88 @@ class TestAdminWebhooksPage:
         token = _create_user(user_id=355, github_login="notadmin355")
         response = client.get("/admin/webhooks", cookies={"session_token": token})
         assert response.status_code == 403
+
+
+class TestAdminSpritesPage:
+    """Tests for /admin/sprites HTML page and regenerate endpoint."""
+
+    def test_admin_sprites_returns_200(self, client: TestClient) -> None:
+        token = _create_user(user_id=360, github_login="adminlogin360")
+        with _as_admin("adminlogin360"):
+            response = client.get("/admin/sprites", cookies={"session_token": token})
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_non_admin_gets_403(self, client: TestClient) -> None:
+        token = _create_user(user_id=361, github_login="notadmin361")
+        response = client.get("/admin/sprites", cookies={"session_token": token})
+        assert response.status_code == 403
+
+    def test_shows_all_stages(self, client: TestClient) -> None:
+        token = _create_user(user_id=362, github_login="adminlogin362")
+        with _as_admin("adminlogin362"):
+            response = client.get("/admin/sprites", cookies={"session_token": token})
+        for stage in PetStage:
+            assert stage.value.capitalize() in response.text
+
+    def test_shows_sprites_nav_link(self, client: TestClient) -> None:
+        token = _create_user(user_id=363, github_login="adminlogin363")
+        with _as_admin("adminlogin363"):
+            response = client.get("/admin/sprites", cookies={"session_token": token})
+        assert "/admin/sprites" in response.text
+
+    def test_regenerate_unknown_stage_returns_400(self, client: TestClient) -> None:
+        token = _create_user(user_id=364, github_login="adminlogin364")
+        with _as_admin("adminlogin364"):
+            response = client.post(
+                "/admin/sprites/regenerate",
+                json={"stage": "notastage"},
+                cookies={"session_token": token},
+            )
+        assert response.status_code == 400
+
+    def test_regenerate_valid_stage_returns_200(self, client: TestClient) -> None:
+        token = _create_user(user_id=365, github_login="adminlogin365")
+        with _as_admin("adminlogin365"):
+            response = client.post(
+                "/admin/sprites/regenerate",
+                json={"stage": "egg"},
+                cookies={"session_token": token},
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "queued" in data
+        assert data["stage"] == "egg"
+
+    def test_regenerate_all_stages_returns_200(self, client: TestClient) -> None:
+        token = _create_user(user_id=366, github_login="adminlogin366")
+        with _as_admin("adminlogin366"):
+            response = client.post(
+                "/admin/sprites/regenerate",
+                json={"stage": "all"},
+                cookies={"session_token": token},
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stage"] == "all"
+
+    def test_regenerate_queues_jobs_for_pets(self, client: TestClient) -> None:
+        token = _create_user(user_id=367, github_login="adminlogin367")
+        _create_pet(repo_owner="spriteowner", repo_name="spriterepo", name="SpritePet")
+        with _as_admin("adminlogin367"):
+            response = client.post(
+                "/admin/sprites/regenerate",
+                json={"stage": "baby"},
+                cookies={"session_token": token},
+            )
+        assert response.status_code == 200
+        assert response.json()["queued"] >= 1
+
+    def test_regenerate_non_admin_gets_403(self, client: TestClient) -> None:
+        token = _create_user(user_id=368, github_login="notadmin368")
+        response = client.post(
+            "/admin/sprites/regenerate",
+            json={"stage": "egg"},
+            cookies={"session_token": token},
+        )
+        assert response.status_code == 403
