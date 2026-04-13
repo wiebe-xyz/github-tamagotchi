@@ -201,25 +201,7 @@
     </style>
 </head>
 <body>
-    <nav class="user-nav">
-        <div class="container">
-            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
-            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
-                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
-                <a href="/pet/{{ repo_owner }}/{{ repo_name }}" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">{{ pet.name }}</a>
-                {% if user and user.is_admin %}
-                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
-                {% endif %}
-            </div>
-            <div class="user-info">
-                {% if user.github_avatar_url %}
-                <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
-                {% endif %}
-                <span class="user-name">{{ user.github_login }}</span>
-                <button class="logout-button" id="logout-btn">Log out</button>
-            </div>
-        </div>
-    </nav>
+    {% include "_nav.html" %}
 
     <main style="padding-top: 5rem; min-height: 80vh;">
         <div class="container" style="max-width: 740px;">
@@ -569,11 +551,6 @@
         toastTimer = setTimeout(() => { el.className = 'toast'; }, 3000);
     }
 
-    // --- Logout ---
-    document.getElementById('logout-btn')?.addEventListener('click', async () => {
-        await fetch('/auth/logout', { method: 'POST' });
-        location.href = '/';
-    });
     </script>
 </body>
 </html>

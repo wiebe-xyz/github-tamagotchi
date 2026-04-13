@@ -32,32 +32,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <!-- Nav -->
-    <nav class="user-nav">
-        <div class="container">
-            <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
-            {% if user %}
-            <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
-                <a href="/dashboard" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">My Pets</a>
-                <a href="/register" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Register</a>
-                {% if user and user.is_admin %}
-                <a href="/admin" style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;">Admin</a>
-                {% endif %}
-            </div>
-            {% endif %}
-            <div class="user-info">
-                {% if user %}
-                    {% if user.github_avatar_url %}
-                    <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32">
-                    {% endif %}
-                    <span class="user-name">{{ user.github_login }}</span>
-                    <button class="logout-button" id="logout-btn">Log out</button>
-                {% else %}
-                    <a href="/auth/github" class="cta-button" style="padding: 0.4rem 1rem; font-size: 0.875rem;">Login with GitHub</a>
-                {% endif %}
-            </div>
-        </div>
-    </nav>
+    {% include "_nav.html" %}
 
     <!-- Profile -->
     <main class="profile-page">
@@ -408,15 +383,6 @@
                     copyBtn.innerHTML = '✓ Copied!';
                     setTimeout(() => { copyBtn.innerHTML = '&#128279; Copy link'; }, 2000);
                 });
-            });
-        }
-
-        // Logout
-        const logoutBtn = document.getElementById('logout-btn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', async () => {
-                await fetch('/auth/logout', { method: 'POST' });
-                window.location.reload();
             });
         }
 

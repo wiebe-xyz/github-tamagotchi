@@ -58,10 +58,11 @@ class TestLandingPage:
         response = client.get("/")
         assert "Log out" not in response.text
 
-    def test_no_user_nav_when_unauthenticated(self, client: TestClient) -> None:
-        """Landing page should not show user nav when not logged in."""
+    def test_no_user_links_when_unauthenticated(self, client: TestClient) -> None:
+        """Landing page should not show user-specific nav links when not logged in."""
         response = client.get("/")
-        assert "user-nav" not in response.text
+        assert "/dashboard" not in response.text
+        assert "/register" not in response.text
 
 
 class TestLandingPageAuthenticated:
