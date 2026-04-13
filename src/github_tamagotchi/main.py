@@ -69,6 +69,162 @@ logger = structlog.get_logger()
 _consecutive_poll_failures = 0
 
 
+async def _update_single_pet(
+    pet: Pet,
+    session: AsyncSession,
+    github_service: GitHubService,
+) -> bool:
+    """Fetch health metrics and update a single pet's state.
+
+    Returns True if the pet was successfully updated, False on error.
+    The caller is responsible for committing the session.
+    """
+    now = datetime.now(UTC)
+
+    # Dead pets: still poll (grave page stays current) but skip health updates
+    if pet.is_dead:
+        pet.last_checked_at = now
+        return True
+
+    # Fetch health metrics from GitHub
+    health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
+
+    # Calculate state changes
+    health_delta = calculate_health_delta(health)
+    experience_gained = calculate_experience(health)
+    was_critical = pet.health < 5
+    new_health = max(0, min(100, pet.health + health_delta))
+    new_experience = pet.experience + experience_gained
+    new_mood = calculate_mood(health, new_health)
+
+    # Check for evolution
+    current_stage = PetStage(pet.stage)
+    new_stage = get_next_stage(current_stage, new_experience)
+
+    # Track low-health recoveries (Ghost skin unlock condition)
+    if was_critical and new_health >= 5:
+        pet.low_health_recoveries += 1
+        logger.info(
+            "pet_low_health_recovery",
+            pet_id=pet.id,
+            pet_name=pet.name,
+            repo=f"{pet.repo_owner}/{pet.repo_name}",
+            low_health_recoveries=pet.low_health_recoveries,
+        )
+
+    # Update pet
+    pet.health = new_health
+    pet.experience = new_experience
+    pet.mood = new_mood.value
+    pet.last_checked_at = now
+
+    # Handle evolution
+    if new_stage != current_stage:
+        pet.stage = new_stage.value
+        metrics_service.evolutions_total.labels(
+            from_stage=current_stage.value,
+            to_stage=new_stage.value,
+        ).inc()
+        await create_milestone(
+            session, pet, current_stage.value, new_stage.value, new_experience
+        )
+        logger.info(
+            "pet_evolved",
+            pet_id=pet.id,
+            pet_name=pet.name,
+            repo=f"{pet.repo_owner}/{pet.repo_name}",
+            old_stage=current_stage.value,
+            new_stage=new_stage.value,
+            experience=new_experience,
+        )
+
+    # Store last-known release, contributor, dependent, and popularity snapshots
+    pet.last_release_count = health.release_count_30d
+    pet.last_contributor_count = health.contributor_count
+    pet.dependent_count = health.dependent_count
+    pet.star_count = health.star_count
+    pet.fork_count = health.fork_count
+
+    # Update last_fed_at if there was a recent commit
+    if health.last_commit_at:
+        hours_since_commit = (now - health.last_commit_at).total_seconds() / 3600
+        if hours_since_commit < 24:
+            pet.last_fed_at = now
+
+    # Update commit streak
+    update_commit_streak(pet, health, now)
+
+    # Update grace period tracker and check death conditions
+    update_grace_period(pet, now)
+    should_die, cause = check_death_conditions(pet, now)
+    if should_die:
+        pet.is_dead = True
+        pet.died_at = now
+        pet.cause_of_death = cause
+        metrics_service.deaths_total.labels(cause=cause).inc()
+        logger.info(
+            "pet_died",
+            pet_id=pet.id,
+            pet_name=pet.name,
+            repo=f"{pet.repo_owner}/{pet.repo_name}",
+            cause=cause,
+        )
+
+    # Check and unlock achievements based on updated pet state
+    newly_unlocked = await check_and_unlock_achievements(
+        pet,
+        session,
+        star_count=health.star_count,
+        fork_count=health.fork_count,
+    )
+    if newly_unlocked:
+        logger.info(
+            "achievements_unlocked",
+            pet_id=pet.id,
+            pet_name=pet.name,
+            achievements=newly_unlocked,
+        )
+
+    # Update contributor relationships from GitHub activity
+    try:
+        activity = await github_service.get_all_contributor_activity(
+            pet.repo_owner, pet.repo_name
+        )
+        contributor_updates = build_contributor_updates(activity, now)
+        for update in contributor_updates:
+            await upsert_contributor_relationship(
+                db=session,
+                pet_id=pet.id,
+                github_username=update.github_username,
+                score=update.score,
+                standing=update.standing,
+                last_activity=update.last_activity,
+                good_deeds=update.good_deeds,
+                sins=update.sins,
+            )
+    except RateLimitError:
+        raise
+    except Exception as e:
+        logger.warning(
+            "contributor_relationship_update_failed",
+            pet_id=pet.id,
+            repo=f"{pet.repo_owner}/{pet.repo_name}",
+            error=str(e),
+        )
+
+    logger.debug(
+        "pet_updated",
+        pet_id=pet.id,
+        pet_name=pet.name,
+        repo=f"{pet.repo_owner}/{pet.repo_name}",
+        health_delta=health_delta,
+        new_health=new_health,
+        experience_gained=experience_gained,
+        new_mood=new_mood.value,
+    )
+    return True
+
+
 async def poll_repositories(triggered_by: str = "scheduler") -> None:
     """Periodic task to check all registered repositories."""
     global _consecutive_poll_failures  # noqa: PLW0603
@@ -82,7 +238,6 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
     github_service = GitHubService()
     updated_count = 0
     error_count = 0
-    evolved_count = 0
     rate_limited = False
     error_messages: list[str] = []
     poll_start = time.monotonic()
@@ -110,156 +265,8 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
 
             for pet in pets:
                 try:
-                    now = datetime.now(UTC)
-
-                    # Dead pets: still poll (grave page stays current) but skip health updates
-                    if pet.is_dead:
-                        pet.last_checked_at = now
-                        updated_count += 1
-                        continue
-
-                    # Fetch health metrics from GitHub
-                    health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
-
-                    # Calculate state changes
-                    health_delta = calculate_health_delta(health)
-                    experience_gained = calculate_experience(health)
-                    was_critical = pet.health < 5
-                    new_health = max(0, min(100, pet.health + health_delta))
-                    new_experience = pet.experience + experience_gained
-                    new_mood = calculate_mood(health, new_health)
-
-                    # Check for evolution
-                    current_stage = PetStage(pet.stage)
-                    new_stage = get_next_stage(current_stage, new_experience)
-
-                    # Track low-health recoveries (Ghost skin unlock condition)
-                    if was_critical and new_health >= 5:
-                        pet.low_health_recoveries += 1
-                        logger.info(
-                            "pet_low_health_recovery",
-                            pet_id=pet.id,
-                            pet_name=pet.name,
-                            repo=f"{pet.repo_owner}/{pet.repo_name}",
-                            low_health_recoveries=pet.low_health_recoveries,
-                        )
-
-                    # Update pet
-                    pet.health = new_health
-                    pet.experience = new_experience
-                    pet.mood = new_mood.value
-                    pet.last_checked_at = now
-
-                    # Handle evolution
-                    if new_stage != current_stage:
-                        pet.stage = new_stage.value
-                        evolved_count += 1
-                        metrics_service.evolutions_total.labels(
-                            from_stage=current_stage.value,
-                            to_stage=new_stage.value,
-                        ).inc()
-                        await create_milestone(
-                            session, pet, current_stage.value, new_stage.value, new_experience
-                        )
-                        logger.info(
-                            "pet_evolved",
-                            pet_id=pet.id,
-                            pet_name=pet.name,
-                            repo=f"{pet.repo_owner}/{pet.repo_name}",
-                            old_stage=current_stage.value,
-                            new_stage=new_stage.value,
-                            experience=new_experience,
-                        )
-
-                    # Store last-known release, contributor, dependent, and popularity snapshots
-                    pet.last_release_count = health.release_count_30d
-                    pet.last_contributor_count = health.contributor_count
-                    pet.dependent_count = health.dependent_count
-                    pet.star_count = health.star_count
-                    pet.fork_count = health.fork_count
-
-                    # Update last_fed_at if there was a recent commit
-                    if health.last_commit_at:
-                        hours_since_commit = (
-                            now - health.last_commit_at
-                        ).total_seconds() / 3600
-                        if hours_since_commit < 24:
-                            pet.last_fed_at = now
-
-                    # Update commit streak
-                    update_commit_streak(pet, health, now)
-
-                    # Update grace period tracker and check death conditions
-                    update_grace_period(pet, now)
-                    should_die, cause = check_death_conditions(pet, now)
-                    if should_die:
-                        pet.is_dead = True
-                        pet.died_at = now
-                        pet.cause_of_death = cause
-                        metrics_service.deaths_total.labels(cause=cause).inc()
-                        logger.info(
-                            "pet_died",
-                            pet_id=pet.id,
-                            pet_name=pet.name,
-                            repo=f"{pet.repo_owner}/{pet.repo_name}",
-                            cause=cause,
-                        )
-
-                    # Check and unlock achievements based on updated pet state
-                    newly_unlocked = await check_and_unlock_achievements(
-                        pet,
-                        session,
-                        star_count=health.star_count,
-                        fork_count=health.fork_count,
-                    )
-                    if newly_unlocked:
-                        logger.info(
-                            "achievements_unlocked",
-                            pet_id=pet.id,
-                            pet_name=pet.name,
-                            achievements=newly_unlocked,
-                        )
-
-                    # Update contributor relationships from GitHub activity
-                    try:
-                        activity = await github_service.get_all_contributor_activity(
-                            pet.repo_owner, pet.repo_name
-                        )
-                        contributor_updates = build_contributor_updates(activity, now)
-                        for update in contributor_updates:
-                            await upsert_contributor_relationship(
-                                db=session,
-                                pet_id=pet.id,
-                                github_username=update.github_username,
-                                score=update.score,
-                                standing=update.standing,
-                                last_activity=update.last_activity,
-                                good_deeds=update.good_deeds,
-                                sins=update.sins,
-                            )
-                    except RateLimitError:
-                        raise
-                    except Exception as e:
-                        logger.warning(
-                            "contributor_relationship_update_failed",
-                            pet_id=pet.id,
-                            repo=f"{pet.repo_owner}/{pet.repo_name}",
-                            error=str(e),
-                        )
-
+                    await _update_single_pet(pet, session, github_service)
                     updated_count += 1
-
-                    logger.debug(
-                        "pet_updated",
-                        pet_id=pet.id,
-                        pet_name=pet.name,
-                        repo=f"{pet.repo_owner}/{pet.repo_name}",
-                        health_delta=health_delta,
-                        new_health=new_health,
-                        experience_gained=experience_gained,
-                        new_mood=new_mood.value,
-                    )
-
                 except RateLimitError as e:
                     rate_limited = True
                     logger.warning(
@@ -272,9 +279,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     error_messages.append(
                         f"Rate limited on {pet.repo_owner}/{pet.repo_name}"
                     )
-                    # Stop polling to avoid hitting rate limits further
                     break
-
                 except Exception as e:
                     error_count += 1
                     metrics_service.poll_errors_total.inc()
@@ -285,7 +290,6 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                         repo=f"{pet.repo_owner}/{pet.repo_name}",
                         error=str(e),
                     )
-                    # Continue with other pets
 
             # Commit all changes
             await session.commit()
@@ -354,7 +358,6 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
         "poll_completed",
         updated_count=updated_count,
         error_count=error_count,
-        evolved_count=evolved_count,
         message="Repository health check complete",
     )
 

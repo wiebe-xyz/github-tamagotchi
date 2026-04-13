@@ -239,6 +239,14 @@ async def check_and_unlock_achievements(
     return newly_unlocked
 
 
+async def get_unlocked_achievement_ids(pet_id: int, session: AsyncSession) -> set[str]:
+    """Return the set of achievement IDs unlocked for a pet."""
+    result = await session.execute(
+        select(PetAchievement.achievement_id).where(PetAchievement.pet_id == pet_id)
+    )
+    return set(result.scalars().all())
+
+
 async def get_pet_achievements(
     pet_id: int, session: AsyncSession
 ) -> dict[str, "PetAchievement | None"]:
