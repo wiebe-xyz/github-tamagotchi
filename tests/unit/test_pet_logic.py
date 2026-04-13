@@ -238,6 +238,45 @@ class TestCalculateMood:
         )
         assert calculate_mood(health, current_health=100) == PetMood.SICK
 
+    def test_sick_when_health_is_zero(self) -> None:
+        """Pet should be sick when health is 0, even if repo has stale commits."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC) - timedelta(days=HUNGRY_THRESHOLD_DAYS + 5),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+        )
+        assert calculate_mood(health, current_health=0) == PetMood.SICK
+
+    def test_zero_health_overrides_hungry(self) -> None:
+        """Health floor (0) takes priority over stale-commit hungry check."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC) - timedelta(days=HUNGRY_THRESHOLD_DAYS + 10),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+        )
+        assert calculate_mood(health, current_health=0) == PetMood.SICK
+
+    def test_nonzero_health_does_not_trigger_floor(self) -> None:
+        """Health floor does not fire at health=1."""
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+        )
+        assert calculate_mood(health, current_health=1) != PetMood.SICK
+
 
 
 class TestCalculateHealthDelta:

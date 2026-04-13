@@ -152,7 +152,7 @@ def remove_background(
     bg_r, bg_g, bg_b = pixels[0][:3]
 
     def _matches(r: int, g: int, b: int) -> bool:
-        return (
+        return bool(
             abs(r - bg_r) <= tolerance
             and abs(g - bg_g) <= tolerance
             and abs(b - bg_b) <= tolerance

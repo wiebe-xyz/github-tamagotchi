@@ -39,6 +39,10 @@ def calculate_mood(health: RepoHealth, current_health: int) -> PetMood:
     """Determine pet mood based on repository health metrics."""
     now = datetime.now(UTC)
 
+    # Health floor: dying pet overrides all other mood signals
+    if current_health == 0:
+        return PetMood.SICK
+
     # Check for sick (critical/high security alerts — highest priority)
     if health.security_alerts_critical > 0 or health.security_alerts_high > 0:
         return PetMood.SICK
@@ -288,7 +292,10 @@ def update_grace_period(pet: "Pet", now: datetime) -> None:
 
     If health is 0, record the start of the grace period (if not already set).
     If health is above 0, clear the grace period.
+    Eggs are not alive yet — death mechanics do not apply until baby stage.
     """
+    if pet.stage == PetStage.EGG.value:
+        return
     if pet.health == 0:
         if pet.grace_period_started is None:
             pet.grace_period_started = now
@@ -304,7 +311,11 @@ def check_death_conditions(pet: "Pet", now: datetime) -> tuple[bool, str | None]
       - "abandonment" — no activity for 90 days
 
     Returns (False, None) if the pet should stay alive.
+    Eggs are not alive yet — death mechanics do not apply until baby stage.
     """
+    if pet.stage == PetStage.EGG.value:
+        return False, None
+
     # Abandonment: no activity (last_checked_at or last_fed_at) for 90 days
     last_activity = pet.last_checked_at or pet.last_fed_at or pet.created_at
     # Normalise: if naive datetime, compare against naive now
