@@ -104,18 +104,8 @@ async def update_pet_admin_settings(
         if not is_valid_pet_name(body.name):
             raise HTTPException(status_code=422, detail="Invalid pet name")
         pet.name = body.name
-    if body.blame_board_enabled is not None:
-        pet.blame_board_enabled = body.blame_board_enabled
-    if body.contributor_badges_enabled is not None:
-        pet.contributor_badges_enabled = body.contributor_badges_enabled
-    if body.leaderboard_opt_out is not None:
-        pet.leaderboard_opt_out = body.leaderboard_opt_out
-    if body.hungry_after_days is not None:
-        pet.hungry_after_days = body.hungry_after_days
-    if body.pr_review_sla_hours is not None:
-        pet.pr_review_sla_hours = body.pr_review_sla_hours
-    if body.issue_response_sla_days is not None:
-        pet.issue_response_sla_days = body.issue_response_sla_days
+    for field, value in body.model_dump(exclude_unset=True, exclude={"name"}).items():
+        setattr(pet, field, value)
 
     pet = await pet_service.save(session, pet)
     return await _build_pet_admin_response(pet, session)

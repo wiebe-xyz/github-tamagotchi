@@ -6,7 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user
-from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404, require_pet_owner
+from github_tamagotchi.api.dependencies import (
+    DbSession,
+    get_pet_or_404,
+    require_pet_owner,
+    validate_choice,
+)
 from github_tamagotchi.models.pet import PetSkin
 from github_tamagotchi.models.user import User
 from github_tamagotchi.schemas.pets import (
@@ -36,12 +41,7 @@ async def update_pet_style(
     user: Annotated[User, Depends(get_current_user)],
 ) -> PetResponse:
     """Update a pet's style and enqueue image regeneration."""
-    if style_data.style not in STYLES:
-        valid = ", ".join(STYLES.keys())
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid style '{style_data.style}'. Must be one of: {valid}",
-        )
+    validate_choice(style_data.style, STYLES, "style")
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     require_pet_owner(pet, user)
     pet = await pet_service.update_style(session, pet, style_data.style)
@@ -82,12 +82,7 @@ async def update_pet_badge_style(
     user: Annotated[User, Depends(get_current_user)],
 ) -> PetResponse:
     """Update the badge visual style for a pet. Requires ownership."""
-    if badge_style_data.badge_style not in BADGE_STYLES:
-        valid = ", ".join(sorted(BADGE_STYLES))
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid badge style '{badge_style_data.badge_style}'. Must be one of: {valid}",
-        )
+    validate_choice(badge_style_data.badge_style, BADGE_STYLES, "badge style")
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     require_pet_owner(pet, user)
     pet = await pet_service.update_badge_style(session, pet, badge_style_data.badge_style)

@@ -1,5 +1,6 @@
 """Shared FastAPI dependency helpers for API routes."""
 
+from collections.abc import Mapping
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -13,6 +14,16 @@ from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.token_encryption import decrypt_token
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+def validate_choice(value: str, allowed: Mapping[str, object] | set[str], field_name: str) -> None:
+    """Raise HTTP 422 if *value* is not in *allowed*."""
+    if value not in allowed:
+        valid = ", ".join(sorted(allowed.keys() if isinstance(allowed, Mapping) else allowed))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid {field_name} '{value}'. Must be one of: {valid}",
+        )
 
 
 async def get_pet_or_404(repo_owner: str, repo_name: str, session: AsyncSession) -> Pet:

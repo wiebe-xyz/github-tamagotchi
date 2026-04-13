@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user, get_optional_user
-from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404, validate_choice
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.schemas.pets import (
@@ -46,11 +46,7 @@ async def create_pet(
     user: Annotated[User | None, Depends(get_optional_user)] = None,
 ) -> PetResponse:
     """Create a new pet for a GitHub repository."""
-    if pet_data.style not in STYLES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid style '{pet_data.style}'. Must be one of: {', '.join(STYLES.keys())}",
-        )
+    validate_choice(pet_data.style, STYLES, "style")
     if pet_data.name is None:
         pet_name = generate_name_from_repo(pet_data.repo_owner, pet_data.repo_name)
     else:
