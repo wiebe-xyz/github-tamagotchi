@@ -1,46 +1,15 @@
-"""CRUD operations for User model."""
+"""Backwards-compatibility shim: re-exports from repositories.user.
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+All callers that import from ``crud.user`` continue to work unchanged.
+New code should import from ``repositories.user`` or ``services.user`` directly.
+"""
 
-from github_tamagotchi.models.user import User
-
-
-async def get_user_by_github_id(db: AsyncSession, github_id: int) -> User | None:
-    """Get a user by their GitHub ID."""
-    result = await db.execute(select(User).where(User.github_id == github_id))
-    return result.scalar_one_or_none()
-
-
-async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
-    """Get a user by their internal ID."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
-
-
-async def create_or_update_user(
-    db: AsyncSession,
-    *,
-    github_id: int,
-    github_login: str,
-    github_avatar_url: str | None,
-    encrypted_token: str | None,
-) -> User:
-    """Create a new user or update an existing one on login."""
-    user = await get_user_by_github_id(db, github_id)
-    if user:
-        user.github_login = github_login
-        user.github_avatar_url = github_avatar_url
-        if encrypted_token is not None:
-            user.encrypted_token = encrypted_token
-    else:
-        user = User(
-            github_id=github_id,
-            github_login=github_login,
-            github_avatar_url=github_avatar_url,
-            encrypted_token=encrypted_token,
-        )
-        db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
+from github_tamagotchi.repositories.user import (
+    create_or_update_user as create_or_update_user,
+)
+from github_tamagotchi.repositories.user import (
+    get_user_by_github_id as get_user_by_github_id,
+)
+from github_tamagotchi.repositories.user import (
+    get_user_by_id as get_user_by_id,
+)

@@ -28,6 +28,7 @@ from github_tamagotchi import __version__
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.alerts import alert_router
 from github_tamagotchi.api.auth import auth_router, get_admin_user, get_optional_user
+from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.config import settings
@@ -481,6 +482,9 @@ app.mount("/mcp", mcp_app)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+register_exception_handlers(app)
 
 
 @app.middleware("http")

@@ -592,6 +592,24 @@ _STANDING_CONFIG: dict[str, dict[str, str]] = {
 }
 
 
+def classify_contributor_standing(
+    commits_30d: int,
+    is_top_contributor: bool,
+    has_failed_ci: bool,
+    days_since_last_commit: int | None,
+) -> ContributorStanding:
+    """Determine a contributor's standing from their activity stats."""
+    if has_failed_ci and commits_30d > 0:
+        return ContributorStanding.DOGHOUSE
+    if is_top_contributor:
+        return ContributorStanding.FAVORITE
+    if commits_30d > 0:
+        return ContributorStanding.GOOD
+    if days_since_last_commit is not None:
+        return ContributorStanding.ABSENT
+    return ContributorStanding.NEUTRAL
+
+
 def generate_contributor_badge_svg(
     pet_name: str,
     pet_stage: str,

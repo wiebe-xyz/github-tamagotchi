@@ -14,6 +14,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from github_tamagotchi import __version__
+from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
@@ -60,6 +61,9 @@ def create_api_test_app() -> FastAPI:
 
     # Override the database session dependency
     test_app.dependency_overrides[get_session] = get_test_session
+
+    # Register domain exception → HTTP status handlers
+    register_exception_handlers(test_app)
 
     # Add root endpoint (production uses templates, test returns JSON)
     @test_app.get("/")
