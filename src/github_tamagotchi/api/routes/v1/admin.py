@@ -1,20 +1,23 @@
 """Pet admin endpoints: settings, contributor exclusion, reset, delete."""
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select as _select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
-from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet
 from github_tamagotchi.models.user import User
+from github_tamagotchi.schemas.admin import (
+    ExcludedContributorItem,
+    PetAdminResponse,
+    PetAdminSettingsUpdate,
+)
+from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.naming import is_valid_pet_name
 
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["admin"])
@@ -48,41 +51,6 @@ async def _require_repo_admin(
         ) from exc
     if permission != "admin":
         raise HTTPException(status_code=403, detail="Repo admin permission required")
-
-
-class PetAdminSettingsUpdate(BaseModel):
-    name: str | None = Field(None, min_length=1, max_length=20)
-    blame_board_enabled: bool | None = None
-    contributor_badges_enabled: bool | None = None
-    leaderboard_opt_out: bool | None = None
-    hungry_after_days: int | None = Field(None, ge=1, le=30)
-    pr_review_sla_hours: int | None = Field(None, ge=1, le=336)
-    issue_response_sla_days: int | None = Field(None, ge=1, le=90)
-
-
-class ExcludedContributorItem(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    github_login: str
-    excluded_by: str
-    excluded_at: datetime
-
-
-class PetAdminResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    blame_board_enabled: bool
-    contributor_badges_enabled: bool
-    leaderboard_opt_out: bool
-    hungry_after_days: int
-    pr_review_sla_hours: int
-    issue_response_sla_days: int
-    excluded_contributors: list[ExcludedContributorItem]
-    is_dead: bool
-    generation: int
 
 
 async def _build_pet_admin_response(pet: Pet, session: AsyncSession) -> PetAdminResponse:
@@ -149,8 +117,7 @@ async def update_pet_admin_settings(
     if body.issue_response_sla_days is not None:
         pet.issue_response_sla_days = body.issue_response_sla_days
 
-    await session.commit()
-    await session.refresh(pet)
+    pet = await pet_service.save(session, pet)
     return await _build_pet_admin_response(pet, session)
 
 
@@ -226,7 +193,7 @@ async def reset_pet(
     """Reset pet stats and start a new generation. Requires repo admin permission."""
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-    pet = await pet_crud.reset_pet(session, pet)
+    pet = await pet_service.reset(session, pet)
     return await _build_pet_admin_response(pet, session)
 
 
@@ -240,5 +207,5 @@ async def delete_pet_admin(
     """Delete a pet entirely. Requires repo admin permission."""
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-    await pet_crud.delete_pet(session, pet)
+    await pet_service.delete(session, pet)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

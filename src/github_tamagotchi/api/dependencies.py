@@ -6,9 +6,9 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.core.database import get_session
-from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet
 from github_tamagotchi.models.user import User
+from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.token_encryption import decrypt_token
 
@@ -16,14 +16,8 @@ DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 async def get_pet_or_404(repo_owner: str, repo_name: str, session: AsyncSession) -> Pet:
-    """Fetch a pet by repo or raise HTTP 404."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
-    return pet
+    """Fetch a pet by repo or raise NotFoundError (→ HTTP 404 via exception handler)."""
+    return await pet_service.get_or_raise(session, repo_owner, repo_name)
 
 
 def require_pet_owner(pet: Pet, user: User) -> None:

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from github_tamagotchi.api.auth import _create_jwt, auth_router
+from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.models.pet import Base
@@ -20,6 +21,7 @@ def create_naming_test_app() -> FastAPI:
     app.include_router(router)
     app.include_router(auth_router)
     app.dependency_overrides[get_session] = get_test_session
+    register_exception_handlers(app)
     return app
 
 

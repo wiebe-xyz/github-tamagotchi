@@ -3,48 +3,28 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404, require_pet_owner
-from github_tamagotchi.api.routes.v1.pets.crud import PetResponse
-from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import PetSkin
 from github_tamagotchi.models.user import User
+from github_tamagotchi.schemas.pets import (
+    BadgeStyleUpdateRequest,
+    PetRenameRequest,
+    PetResponse,
+    SkinInfo,
+    SkinSelectRequest,
+    SkinSelectResponse,
+    StyleUpdateRequest,
+)
+from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.badge import BADGE_STYLES
 from github_tamagotchi.services.image_generation import STYLES
 from github_tamagotchi.services.naming import is_valid_pet_name
 from github_tamagotchi.services.pet_logic import SKIN_UNLOCK_CONDITIONS, get_unlocked_skins
 
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
-
-
-class StyleUpdateRequest(BaseModel):
-    style: str = Field(..., min_length=1, max_length=30)
-
-
-class PetRenameRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=20)
-
-
-class BadgeStyleUpdateRequest(BaseModel):
-    badge_style: str = Field(..., min_length=1, max_length=20)
-
-
-class SkinInfo(BaseModel):
-    skin: str
-    unlocked: bool
-    unlock_condition: str
-
-
-class SkinSelectRequest(BaseModel):
-    skin: str = Field(..., min_length=1, max_length=20)
-
-
-class SkinSelectResponse(BaseModel):
-    message: str
-    pet: PetResponse
 
 
 @router.put("/pets/{repo_owner}/{repo_name}/style", response_model=PetResponse)
@@ -64,9 +44,7 @@ async def update_pet_style(
         )
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     require_pet_owner(pet, user)
-    pet.style = style_data.style
-    await session.commit()
-    await session.refresh(pet)
+    pet = await pet_service.update_style(session, pet, style_data.style)
     try:
         _api_routes.get_image_provider()
         await _api_routes.image_queue.create_job(session, pet.id, pet.stage)
@@ -91,9 +69,7 @@ async def rename_pet(
         )
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     require_pet_owner(pet, user)
-    pet.name = rename_data.name
-    await session.commit()
-    await session.refresh(pet)
+    pet = await pet_service.rename(session, pet, rename_data.name)
     return PetResponse.model_validate(pet)
 
 
@@ -114,9 +90,7 @@ async def update_pet_badge_style(
         )
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     require_pet_owner(pet, user)
-    pet.badge_style = badge_style_data.badge_style
-    await session.commit()
-    await session.refresh(pet)
+    pet = await pet_service.update_badge_style(session, pet, badge_style_data.badge_style)
     return PetResponse.model_validate(pet)
 
 
@@ -154,7 +128,7 @@ async def select_skin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Skin '{body.skin}' is not yet unlocked for this pet",
         )
-    updated_pet = await pet_crud.select_skin(session, pet, chosen_skin)
+    updated_pet = await pet_service.select_skin(session, pet, chosen_skin)
     return SkinSelectResponse(
         message=f"{updated_pet.name} is now wearing the {chosen_skin.value} skin!",
         pet=PetResponse.model_validate(updated_pet),

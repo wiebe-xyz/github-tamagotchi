@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.core.database import get_session
@@ -41,6 +42,7 @@ def create_e2e_app() -> FastAPI:
     app.include_router(router)
     app.include_router(health_router)
     app.dependency_overrides[get_session] = get_e2e_session
+    register_exception_handlers(app)
     return app
 
 
