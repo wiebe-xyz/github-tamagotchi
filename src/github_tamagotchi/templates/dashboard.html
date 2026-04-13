@@ -57,9 +57,12 @@
                     </div>
                     {% endif %}
                     {% else %}
-                    <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
                         <span style="background: var(--surface-light); padding: 0.2rem 0.6rem; border-radius: 99px;">{{ pet.stage | capitalize }}</span>
                         <span style="background: var(--surface-light); padding: 0.2rem 0.6rem; border-radius: 99px;">{{ pet.mood | capitalize }}</span>
+                        {% if pet.health == 0 and pet.grace_period_started and not pet.is_dead %}
+                        <span style="background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.5); padding: 0.2rem 0.6rem; border-radius: 99px; font-weight: 600;">&#9888; Dying</span>
+                        {% endif %}
                     </div>
 
                     <div>

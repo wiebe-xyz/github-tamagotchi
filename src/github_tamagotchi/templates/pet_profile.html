@@ -38,6 +38,16 @@
     <main class="profile-page">
         <div class="container">
 
+            {% if days_until_death is not none %}
+            <div style="margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(249,115,22,0.10)); border: 1px solid rgba(239,68,68,0.5); display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 1.4rem;">&#9888;&#65039;</span>
+                <div>
+                    <strong style="color: #ef4444; font-size: 1rem;">Critical condition</strong>
+                    <span style="color: rgba(255,255,255,0.85); font-size: 0.95rem;"> — this pet will die in <strong style="color: #f97316;">{{ days_until_death }} day{% if days_until_death != 1 %}s{% endif %}</strong> unless the repo gets active again.</span>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Hero row: sprite + core stats -->
             <section class="profile-hero{% if pet.is_dead %} profile-hero--deceased{% endif %}">
                 <div class="profile-sprite-wrap">

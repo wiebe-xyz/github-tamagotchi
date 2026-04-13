@@ -126,6 +126,7 @@ class PetResponse(BaseModel):
     last_fed_at: datetime | None
     last_checked_at: datetime | None
     dependent_count: int
+    grace_period_started: datetime | None
 
 
 class PetListResponse(BaseModel):
