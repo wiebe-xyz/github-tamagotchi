@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -128,32 +129,65 @@ CHROMA_KEY_TOLERANCE: int = 40
 
 def remove_background(
     image_bytes: bytes,
-    chroma: tuple[int, int, int] = CHROMA_KEY_COLOR,
     tolerance: int = CHROMA_KEY_TOLERANCE,
 ) -> bytes:
-    """Remove the chroma-key background from an image, making it transparent.
+    """Remove the background from an image by flood-filling from all four corners.
+
+    Samples the top-left corner pixel as the background colour reference and
+    BFS-floods from all 4 corners.  This works regardless of the exact shade
+    the AI model generated (hot-pink, magenta, salmon, etc.) without touching
+    interior pixels of the same colour.
 
     Args:
         image_bytes: Raw PNG image data.
-        chroma: RGB colour to treat as background (default: magenta #FF00FF).
-        tolerance: Per-channel tolerance for colour matching.
+        tolerance: Per-channel absolute tolerance for colour matching.
 
     Returns:
         PNG image data with the background replaced by transparency.
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
-    raw = bytearray(img.tobytes())
-    for i in range(0, len(raw), 4):
-        r, g, b = raw[i], raw[i + 1], raw[i + 2]
-        if (
-            abs(r - chroma[0]) < tolerance
-            and abs(g - chroma[1]) < tolerance
-            and abs(b - chroma[2]) < tolerance
-        ):
-            raw[i + 3] = 0
-    result = Image.frombytes("RGBA", img.size, bytes(raw))
+    width, height = img.size
+    pixels = list(img.getdata())
+
+    bg_r, bg_g, bg_b = pixels[0][:3]
+
+    def _matches(r: int, g: int, b: int) -> bool:
+        return (
+            abs(r - bg_r) <= tolerance
+            and abs(g - bg_g) <= tolerance
+            and abs(b - bg_b) <= tolerance
+        )
+
+    result: list[tuple[int, int, int, int]] = list(pixels)
+    visited: list[bool] = [False] * (width * height)
+
+    queue: deque[tuple[int, int]] = deque()
+    for sx, sy in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
+        idx = sy * width + sx
+        if not visited[idx]:
+            r, g, b, _ = pixels[idx]
+            if _matches(r, g, b):
+                visited[idx] = True
+                queue.append((sx, sy))
+
+    while queue:
+        x, y = queue.popleft()
+        idx = y * width + x
+        r, g, b, a = result[idx]
+        result[idx] = (r, g, b, 0)
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < width and 0 <= ny < height:
+                nidx = ny * width + nx
+                if not visited[nidx]:
+                    nr, ng, nb, _ = pixels[nidx]
+                    if _matches(nr, ng, nb):
+                        visited[nidx] = True
+                        queue.append((nx, ny))
+
+    out_img = img.copy()
+    out_img.putdata(result)
     out = io.BytesIO()
-    result.save(out, format="PNG")
+    out_img.save(out, format="PNG")
     return out.getvalue()
 
 
