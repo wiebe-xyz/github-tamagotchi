@@ -10,7 +10,7 @@ import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible 
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.auth import get_current_user
 from github_tamagotchi.api.dependencies import DbSession
-from github_tamagotchi.api.routes.pets_crud import PetResponse
+from github_tamagotchi.api.routes.v1.pets.crud import PetResponse
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.models.user import User

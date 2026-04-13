@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user
 from github_tamagotchi.api.dependencies import DbSession
-from github_tamagotchi.api.routes.pets_crud import PetResponse
+from github_tamagotchi.api.routes.v1.pets.crud import PetResponse
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import PetSkin
 from github_tamagotchi.models.user import User

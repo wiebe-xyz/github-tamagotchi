@@ -1,8 +1,8 @@
 # Feature Specification: API Layered Architecture
 
-**Feature Branch**: `refactor/api-layered-architecture`
+**Feature Branch**: `feature/health-metrics-clean`
 **Created**: 2026-04-13
-**Status**: Draft
+**Status**: Implemented
 
 ## Overview
 
@@ -94,11 +94,51 @@ Today, "require repo owner" and "require system admin" checks are scattered acro
 
 ---
 
+## Filesystem Layout
+
+The router package mirrors the URL hierarchy:
+
+```
+src/github_tamagotchi/api/
+├── dependencies.py                  # Shared FastAPI dependency helpers (get_pet_or_404)
+└── routes/
+    ├── __init__.py                  # Aggregates all routers; re-exports patchable symbols
+    └── v1/
+        ├── __init__.py
+        ├── admin.py                 # /api/v1/admin/... (pet owner config, exclusions, reset)
+        ├── social.py                # /api/v1/... (leaderboard, showcase, contributor badge)
+        ├── system.py                # /api/v1/... (styles, badge-styles, health, queue stats)
+        ├── webhooks.py              # /api/v1/webhook (GitHub webhook receiver)
+        └── pets/
+            ├── __init__.py
+            ├── actions.py           # /api/v1/pets/... (resurrect)
+            ├── appearance.py        # /api/v1/pets/... (name, style, badge-style, skins)
+            ├── crud.py              # /api/v1/pets/... (create, read, delete, feed, my-pets)
+            ├── info.py              # /api/v1/pets/... (characteristics, comments, achievements)
+            └── media.py             # /api/v1/pets/... (badge SVG, images, animated GIFs)
+```
+
+### Patch-compatibility pattern
+
+Tests patch `github_tamagotchi.api.routes.settings`, `.GitHubService`, `.decrypt_token`, etc.
+Sub-modules preserve this by doing:
+
+```python
+import github_tamagotchi.api.routes as _api_routes
+# then at call-time: _api_routes.settings.minio_endpoint
+```
+
+`routes/__init__.py` must re-export all patchable symbols **before** importing sub-modules
+so they exist on the partially-initialised package object. Import order is protected by
+`# ruff: noqa: I001` at the top of `__init__.py`.
+
+---
+
 ## Functional Requirements
 
 - **FR-001**: All 35 existing API endpoints MUST remain accessible at their original URL paths
 - **FR-002**: All existing request and response shapes MUST remain unchanged
-- **FR-003**: `api/routes.py` MUST be split into at least 6 domain-scoped router files
+- **FR-003**: `api/routes.py` MUST be split into domain-scoped router files under `api/routes/v1/`, with pets sub-modules nested under `v1/pets/`
 - **FR-004**: Each HTTP handler MUST contain no business logic — only request parsing, a service call, and response construction
 - **FR-005**: Business logic extracted from handlers MUST live in new domain-scoped service classes (not added to existing services)
 - **FR-006**: New service classes MUST be independently injectable/mockable (constructor or parameter injection)
@@ -117,7 +157,7 @@ Today, "require repo owner" and "require system admin" checks are scattered acro
 
 ## Success Criteria
 
-- **SC-001**: `api/routes.py` is deleted; its endpoints are distributed across ≥6 router files, each ≤300 lines
+- **SC-001**: `api/routes.py` is deleted; its endpoints are distributed across 9 router files under `api/routes/v1/` (pets sub-modules in `v1/pets/`), each ≤300 lines
 - **SC-002**: No HTTP handler function body exceeds 20 lines (excluding docstrings and comments)
 - **SC-003**: All 1,100+ existing tests pass without modification
 - **SC-004**: New service classes have unit test coverage ≥80%
