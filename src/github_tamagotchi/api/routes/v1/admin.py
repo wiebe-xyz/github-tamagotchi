@@ -17,7 +17,7 @@ from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.naming import is_valid_pet_name
 
-router = APIRouter(prefix="/api/v1", tags=["admin"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["admin"])
 
 
 async def _require_repo_admin(

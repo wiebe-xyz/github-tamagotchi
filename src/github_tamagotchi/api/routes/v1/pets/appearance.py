@@ -17,7 +17,7 @@ from github_tamagotchi.services.image_generation import STYLES
 from github_tamagotchi.services.naming import is_valid_pet_name
 from github_tamagotchi.services.pet_logic import SKIN_UNLOCK_CONDITIONS, get_unlocked_skins
 
-router = APIRouter(prefix="/api/v1", tags=["pets"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
 class StyleUpdateRequest(BaseModel):

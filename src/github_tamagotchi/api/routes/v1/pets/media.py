@@ -17,17 +17,18 @@ from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.badge import BADGE_STYLES
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE
 from github_tamagotchi.services.sprite_sheet import compose_animated_gif
+from github_tamagotchi.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["pets"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
-def get_storage_service():
+def get_storage_service() -> StorageService:
     return _api_routes.StorageService()
 
 
-StorageDep = Annotated[object, Depends(get_storage_service)]
+StorageDep = Annotated[StorageService, Depends(get_storage_service)]
 
 
 class ImageGenerationResponse(BaseModel):

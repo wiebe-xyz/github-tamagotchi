@@ -13,7 +13,7 @@ from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["webhooks"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["webhooks"])
 
 
 class WebhookResponse(BaseModel):

@@ -24,13 +24,13 @@ the (possibly-patched) attribute from this module.
 # Re-export patchable symbols BEFORE importing sub-modules so they are
 # already present on the partially-initialised package object when sub-modules
 # do ``import github_tamagotchi.api.routes as _api_routes`` during their init.
-from github_tamagotchi.core.config import settings  # noqa: F401
-from github_tamagotchi.services import image_queue  # noqa: F401
-from github_tamagotchi.services.github import GitHubService  # noqa: F401
-from github_tamagotchi.services.image_queue import get_image_provider  # noqa: F401
-from github_tamagotchi.services.openrouter import OpenRouterService  # noqa: F401
-from github_tamagotchi.services.storage import StorageService  # noqa: F401
-from github_tamagotchi.services.token_encryption import decrypt_token  # noqa: F401
+from github_tamagotchi.core.config import settings as settings
+from github_tamagotchi.services import image_queue as image_queue
+from github_tamagotchi.services.github import GitHubService as GitHubService
+from github_tamagotchi.services.image_queue import get_image_provider as get_image_provider
+from github_tamagotchi.services.openrouter import OpenRouterService as OpenRouterService
+from github_tamagotchi.services.storage import StorageService as StorageService
+from github_tamagotchi.services.token_encryption import decrypt_token as decrypt_token
 
 from fastapi import APIRouter
 
@@ -49,7 +49,7 @@ from github_tamagotchi.api.routes.v1 import (
 )
 
 # Aggregate router — registered on the main app instead of the old routes.router
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 router.include_router(crud.router)
 router.include_router(appearance.router)

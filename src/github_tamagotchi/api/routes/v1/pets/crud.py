@@ -18,7 +18,7 @@ from github_tamagotchi.services.image_generation import DEFAULT_STYLE, STYLES
 from github_tamagotchi.services.naming import generate_name_from_repo, is_valid_pet_name
 from github_tamagotchi.services.token_encryption import decrypt_token
 
-router = APIRouter(prefix="/api/v1", tags=["pets"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
 class PetCreate(BaseModel):

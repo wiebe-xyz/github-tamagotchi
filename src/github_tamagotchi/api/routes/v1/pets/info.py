@@ -16,7 +16,7 @@ from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.image_generation import get_pet_appearance
 
-router = APIRouter(prefix="/api/v1", tags=["pets"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
 class PetCharacteristics(BaseModel):

@@ -10,7 +10,7 @@ from github_tamagotchi.services.badge import BADGE_STYLES
 from github_tamagotchi.services.image_generation import STYLES
 from github_tamagotchi.services.image_queue import get_image_provider
 
-router = APIRouter(prefix="/api/v1", tags=["system"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["system"])
 
 
 class StyleInfo(BaseModel):

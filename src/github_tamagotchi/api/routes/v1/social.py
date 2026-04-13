@@ -10,7 +10,7 @@ from github_tamagotchi.api.dependencies import DbSession
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.services.github import GitHubService
 
-router = APIRouter(prefix="/api/v1", tags=["social"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["social"])
 
 
 _LEADERBOARD_CATEGORIES = [

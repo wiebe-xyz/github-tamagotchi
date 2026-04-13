@@ -15,7 +15,7 @@ from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.models.user import User
 
-router = APIRouter(prefix="/api/v1", tags=["pets"])
+router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
 @router.post("/pets/{repo_owner}/{repo_name}/resurrect", response_model=PetResponse)
