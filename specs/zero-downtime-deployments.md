@@ -47,8 +47,10 @@ If `kubectl rollout status` times out or the pod enters `CrashLoopBackOff`:
 Use `task k8s:deploy` which:
 1. Applies secrets.
 2. Runs init jobs (database + MinIO provisioning).
-3. Applies the manifest (`kubectl apply -f k8s/deployment.yaml`), which is safe because `replicas: 0` in the file does not override the live replica count (the deploy process owns replicas exclusively).
+3. Applies the manifest (`kubectl apply -f k8s/deployment.yaml`). **Warning:** `kubectl apply` respects the `replicas: 0` values in the file and will scale both deployments to 0, taking down any running pods. Step 4 immediately restores service.
 4. Scales blue to 1 and waits for rollout status (assumes blue is the baseline active color after initial setup).
+
+**Do not run `kubectl apply -f k8s/deployment.yaml` directly** while a deployment is live — use `task k8s:deploy` which handles the re-scale, or scope the apply to a specific resource (e.g. `kubectl apply -f k8s/deployment.yaml --dry-run=server` to preview).
 
 ### Automated (CI on every merge to main)
 The `deploy` job in `.github/workflows/ci.yml`:
@@ -57,6 +59,27 @@ The `deploy` job in `.github/workflows/ci.yml`:
 3. Scales inactive up and waits for healthy.
 4. Patches the Service selector (atomic flip).
 5. Scales the old deployment down.
+
+## Known Pitfalls
+
+### TLS certificate configuration
+The Ingress uses Traefik's built-in ACME via the annotation:
+```yaml
+traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+```
+Traefik stores the cert in its own internal store — it does **not** write to a Kubernetes Secret. The `tls.secretName` field in the Ingress spec must be absent. If `secretName` is set, Traefik looks for a k8s Secret that doesn't exist and stops serving HTTPS, causing site-wide 503s. The correct TLS block is:
+```yaml
+tls:
+  - hosts:
+      - tamagotchi.nijmegen.wiebe.xyz
+```
+No `secretName`.
+
+### `kubectl apply` resets replicas
+The `replicas: 0` values in `k8s/deployment.yaml` are what the API server will enforce when `kubectl apply` runs. Applying the file while pods are live will immediately terminate them. Always use `task k8s:deploy` for manual deploys, which re-scales blue to 1 after applying.
+
+### Migrations run on the new slot only
+The init container runs `alembic upgrade head` before the app starts. Schema changes are applied to the database while the old slot is still serving traffic. Migrations must therefore be backwards-compatible with the currently-running code (i.e. additive-only, no column drops or renames until the old slot is gone).
 
 ## Files
 
