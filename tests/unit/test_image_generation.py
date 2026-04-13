@@ -365,15 +365,22 @@ class TestRemoveBackground:
         pixels = self._get_all_pixels(img)
         assert all(a == 0 for _, _, _, a in pixels), "All pixels should be transparent"
 
-    def test_non_chroma_pixels_are_preserved(self) -> None:
-        """Pixels that are not near magenta must keep their original colour and opacity."""
-        blue_png = _make_png(4, 4, (0, 0, 255, 255))
-        result_bytes = remove_background(blue_png)
+    def test_non_background_pixels_are_preserved(self) -> None:
+        """Pixels not reachable from corners must keep their original colour and opacity."""
+        # Magenta border with blue 2×2 interior; only border is removed
+        img = Image.new("RGBA", (4, 4), (255, 0, 255, 255))
+        for y in range(1, 3):
+            for x in range(1, 3):
+                img.putpixel((x, y), (0, 0, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
 
-        img = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
-        pixels = self._get_all_pixels(img)
-        assert all(a == 255 for _, _, _, a in pixels), "Blue pixels should remain opaque"
-        assert all(r == 0 and g == 0 and b == 255 for r, g, b, _ in pixels)
+        result_bytes = remove_background(buf.getvalue())
+        out = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
+        assert out.getpixel((0, 0))[3] == 0, "Corner (magenta) should be transparent"
+        assert out.getpixel((1, 1))[3] == 255, "Interior blue pixel should remain opaque"
+        r, g, b, _ = out.getpixel((1, 1))
+        assert r == 0 and g == 0 and b == 255
 
     def test_mixed_image_transparent_background_opaque_body(self) -> None:
         """Magenta background pixels become transparent; non-magenta body pixels stay opaque."""
@@ -412,11 +419,17 @@ class TestRemoveBackground:
         pixels = self._get_all_pixels(img)
         assert all(a == 0 for _, _, _, a in pixels)
 
-    def test_custom_chroma_and_tolerance(self) -> None:
-        """Custom chroma colour and tolerance should be respected."""
-        red_png = _make_png(2, 2, (255, 0, 0, 255))
-        result_bytes = remove_background(red_png, chroma=(255, 0, 0), tolerance=10)
+    def test_tight_tolerance_preserves_slightly_different_interior(self) -> None:
+        """Pixels just outside tolerance of the sampled background colour are preserved."""
+        # Red border (255,0,0); dark-red interior (200,0,0); tolerance=40 → abs(55)>40 → kept
+        img = Image.new("RGBA", (4, 4), (255, 0, 0, 255))
+        for y in range(1, 3):
+            for x in range(1, 3):
+                img.putpixel((x, y), (200, 0, 0, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
 
-        img = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
-        pixels = self._get_all_pixels(img)
-        assert all(a == 0 for _, _, _, a in pixels)
+        result_bytes = remove_background(buf.getvalue(), tolerance=40)
+        out = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
+        assert out.getpixel((0, 0))[3] == 0, "Border (red) should be transparent"
+        assert out.getpixel((1, 1))[3] == 255, "Interior dark-red should remain opaque"

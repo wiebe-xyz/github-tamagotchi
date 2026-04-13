@@ -8,7 +8,7 @@ from PIL import Image
 from github_tamagotchi.services.sprite_sheet import (
     SPRITE_COLS,
     SPRITE_ROWS,
-    _remove_chroma_key,
+    _remove_background_from_corners,
     build_sprite_sheet_prompt,
     compose_animated_gif,
     extract_frames,
@@ -170,25 +170,33 @@ class TestExtractFrames:
             assert all(a == 0 for _, _, _, a in pixels), "Magenta pixels should be transparent"
 
 
-class TestRemoveChromaKey:
-    def test_pure_magenta_becomes_transparent(self) -> None:
-        img = Image.new("RGBA", (4, 4), color=(255, 0, 255, 255))
-        result = _remove_chroma_key(img)
+class TestRemoveBackgroundFromCorners:
+    def test_solid_background_becomes_transparent(self) -> None:
+        # Solid hot-pink (not pure magenta): all pixels connected to corners → all transparent
+        img = Image.new("RGBA", (4, 4), color=(255, 105, 180, 255))
+        result = _remove_background_from_corners(img)
         pixels = list(result.getdata())
         assert all(a == 0 for _, _, _, a in pixels)
 
-    def test_non_magenta_pixels_preserved(self) -> None:
-        img = Image.new("RGBA", (4, 4), color=(100, 150, 200, 255))
-        result = _remove_chroma_key(img)
-        pixels = list(result.getdata())
-        assert all(a == 255 for _, _, _, a in pixels)
+    def test_interior_pixels_not_removed(self) -> None:
+        # Magenta border, blue interior: only border-connected pixels become transparent
+        img = Image.new("RGBA", (6, 6), color=(255, 0, 255, 255))
+        for y in range(1, 5):
+            for x in range(1, 5):
+                img.putpixel((x, y), (0, 0, 255, 255))
+        result = _remove_background_from_corners(img)
+        assert result.getpixel((0, 0))[3] == 0, "Corner (border) pixel should be transparent"
+        assert result.getpixel((2, 2))[3] == 255, "Interior blue pixel should remain opaque"
 
-    def test_tolerance_catches_near_magenta(self) -> None:
-        # Near-magenta (240, 20, 240) should be caught with default tolerance
-        img = Image.new("RGBA", (2, 2), color=(240, 20, 240, 255))
-        result = _remove_chroma_key(img, tolerance=60)
-        pixels = list(result.getdata())
-        assert all(a == 0 for _, _, _, a in pixels)
+    def test_tolerance_catches_near_background_color(self) -> None:
+        # Near-magenta background with gray interior
+        img = Image.new("RGBA", (6, 6), color=(250, 10, 250, 255))
+        for y in range(1, 5):
+            for x in range(1, 5):
+                img.putpixel((x, y), (200, 200, 200, 255))
+        result = _remove_background_from_corners(img)
+        assert result.getpixel((0, 0))[3] == 0, "Near-magenta border should be transparent"
+        assert result.getpixel((2, 2))[3] == 255, "Gray interior should remain opaque"
 
 
 class TestComposeAnimatedGif:
