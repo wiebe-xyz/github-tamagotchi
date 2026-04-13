@@ -113,14 +113,44 @@ jobs:
           echo "$KUBECONFIG_DATA" > ~/.kube/config
           chmod 600 ~/.kube/config
 
-          # Pin both container and initContainer images to this exact build
           IMAGE="ghcr.io/${{ github.repository }}:${{ github.sha }}"
-          sed -i "s|ghcr.io/${{ github.repository }}:latest|${IMAGE}|g" k8s/deployment.yaml
+          NS="nijmegen-testing"
 
-          kubectl apply -f k8s/deployment.yaml
-          if ! kubectl rollout status deployment/github-tamagotchi-blue -n nijmegen-testing --timeout=900s; then
-            echo "=== POD DESCRIBE ===" && kubectl describe pods -n nijmegen-testing -l app=github-tamagotchi,version=blue
-            echo "=== INIT CONTAINER LOGS ===" && kubectl logs -n nijmegen-testing -l app=github-tamagotchi,version=blue -c migrate --tail=50 2>/dev/null || true
-            echo "=== APP CONTAINER LOGS ===" && kubectl logs -n nijmegen-testing -l app=github-tamagotchi,version=blue -c github-tamagotchi --tail=50 2>/dev/null || true
+          # Determine which color is live
+          ACTIVE=$(kubectl get service github-tamagotchi -n $NS \
+            -o jsonpath='{.spec.selector.version}')
+          if [ "$ACTIVE" = "blue" ]; then INACTIVE="green"; else INACTIVE="blue"; fi
+          echo "Active: $ACTIVE | Deploying to: $INACTIVE"
+
+          # Update the idle deployment's image (container + initContainer)
+          kubectl set image deployment/github-tamagotchi-$INACTIVE \
+            github-tamagotchi=$IMAGE migrate=$IMAGE -n $NS
+
+          # Scale idle deployment up
+          kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=1 -n $NS
+
+          # Wait for the new deployment to be fully healthy
+          if ! kubectl rollout status deployment/github-tamagotchi-$INACTIVE \
+               -n $NS --timeout=900s; then
+            echo "=== DEPLOY FAILED — traffic stays on $ACTIVE ==="
+            echo "=== POD DESCRIBE ==="
+            kubectl describe pods -n $NS -l app=github-tamagotchi,version=$INACTIVE
+            echo "=== INIT CONTAINER LOGS ==="
+            kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+              -c migrate --tail=50 2>/dev/null || true
+            echo "=== APP CONTAINER LOGS ==="
+            kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+              -c github-tamagotchi --tail=50 2>/dev/null || true
+            kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=0 -n $NS
             exit 1
           fi
+
+          # Atomic traffic switch
+          kubectl patch service github-tamagotchi -n $NS \
+            --type='json' \
+            -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$INACTIVE\"}]"
+          echo "Traffic switched to $INACTIVE"
+
+          # Scale down old deployment
+          kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
+          echo "Scaled down $ACTIVE — deploy complete"
