@@ -1,11 +1,15 @@
 """Pet request/response schemas."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE
 
 
 class PetCreate(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
     repo_owner: str = Field(..., min_length=1, max_length=255)
     repo_name: str = Field(..., min_length=1, max_length=255)
     name: str | None = Field(None, min_length=1, max_length=20)
@@ -31,19 +35,19 @@ class PetResponse(BaseModel):
     longest_streak: int
     generation: int
     is_dead: bool
-    died_at: object | None
+    died_at: datetime | None
     cause_of_death: str | None
-    personality_activity: float | None
-    personality_sociability: float | None
-    personality_bravery: float | None
-    personality_tidiness: float | None
-    personality_appetite: float | None
-    created_at: object
-    updated_at: object
-    last_fed_at: object | None
-    last_checked_at: object | None
+    personality_activity: float | None = Field(None, ge=0.0, le=1.0)
+    personality_sociability: float | None = Field(None, ge=0.0, le=1.0)
+    personality_bravery: float | None = Field(None, ge=0.0, le=1.0)
+    personality_tidiness: float | None = Field(None, ge=0.0, le=1.0)
+    personality_appetite: float | None = Field(None, ge=0.0, le=1.0)
+    created_at: datetime
+    updated_at: datetime
+    last_fed_at: datetime | None
+    last_checked_at: datetime | None
     dependent_count: int
-    grace_period_started: object | None
+    grace_period_started: datetime | None
 
 
 class PetListResponse(BaseModel):
@@ -70,14 +74,20 @@ class RepoItem(BaseModel):
 
 
 class StyleUpdateRequest(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
     style: str = Field(..., min_length=1, max_length=30)
 
 
 class PetRenameRequest(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
     name: str = Field(..., min_length=1, max_length=20)
 
 
 class BadgeStyleUpdateRequest(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
     badge_style: str = Field(..., min_length=1, max_length=20)
 
 
@@ -88,6 +98,8 @@ class SkinInfo(BaseModel):
 
 
 class SkinSelectRequest(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
     skin: str = Field(..., min_length=1, max_length=20)
 
 

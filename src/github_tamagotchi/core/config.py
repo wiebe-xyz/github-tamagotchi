@@ -1,5 +1,8 @@
 """Application configuration."""
 
+from typing import Literal
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,7 +46,7 @@ class Settings(BaseSettings):
 
     # Image generation
     image_generation_enabled: bool = True
-    image_generation_provider: str = "openrouter"  # "openrouter" or "comfyui"
+    image_generation_provider: Literal["openrouter", "comfyui"] = "openrouter"
 
     # OpenRouter
     openrouter_api_key: str | None = None
@@ -62,7 +65,7 @@ class Settings(BaseSettings):
 
     # Server
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = Field(default=8000, ge=1, le=65535)
 
     # Admin
     admin_github_logins: list[str] = ["webwiebe"]
@@ -81,6 +84,25 @@ class Settings(BaseSettings):
     alert_dying_pets_pct: float = 0.10
     alert_death_spike_count: int = 5
     alert_check_interval_minutes: int = 5
+
+    @field_validator(
+        "oauth_redirect_uri",
+        "comfyui_url",
+        "base_url",
+        "alert_slack_webhook",
+        "alert_discord_webhook",
+        mode="before",
+    )
+    @classmethod
+    def validate_url_format(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from urllib.parse import urlparse
+
+        parsed = urlparse(v)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError(f"Invalid URL format: {v!r}")
+        return v
 
 
 settings = Settings()
