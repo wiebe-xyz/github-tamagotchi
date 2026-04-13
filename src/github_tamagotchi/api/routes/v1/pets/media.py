@@ -5,13 +5,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
-from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
+from github_tamagotchi.schemas.pets import ImageGenerationResponse
+from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.badge import BADGE_STYLES
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE
 from github_tamagotchi.services.sprite_sheet import compose_animated_gif
@@ -33,11 +33,6 @@ def get_storage_service() -> StorageService:
 
 
 StorageDep = Annotated[StorageService, Depends(get_storage_service)]
-
-
-class ImageGenerationResponse(BaseModel):
-    message: str
-    stages: list[str]
 
 
 def _require_image_generation() -> None:
@@ -62,7 +57,7 @@ async def _generate_all_stages(
         if result.success and result.image_data:
             await storage.upload_image(repo_owner, repo_name, pet_stage.value, result.image_data)
             generated_stages.append(pet_stage.value)
-    await pet_crud.update_images_generated_at(session, repo_owner, repo_name)
+    await pet_service.update_images_generated_at(session, repo_owner, repo_name)
     return generated_stages
 
 
@@ -171,7 +166,7 @@ async def get_pet_image(
         if not result.success or not result.image_data:
             raise HTTPException(status_code=503, detail=result.error or "Image generation failed")
         await storage.upload_image(repo_owner, repo_name, stage, result.image_data)
-        await pet_crud.update_images_generated_at(session, repo_owner, repo_name)
+        await pet_service.update_images_generated_at(session, repo_owner, repo_name)
         return Response(
             content=result.image_data,
             media_type="image/png",
@@ -234,7 +229,7 @@ async def get_pet_animated_gif(
             ),
         )
 
-    pet: Pet | None = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    pet: Pet | None = await pet_service.get_by_repo(session, repo_owner, repo_name)
     mood = pet.mood if pet else "content"
     health = pet.health if pet else 100
     style = pet.style if pet else DEFAULT_STYLE
@@ -281,7 +276,7 @@ async def get_pet_animated_gif(
 
     if pet and not pet.canonical_appearance and sheet_result.canonical_appearance:
         try:
-            await pet_crud.update_canonical_appearance(
+            await pet_service.update_canonical_appearance(
                 session, repo_owner, repo_name, sheet_result.canonical_appearance
             )
         except Exception as e:

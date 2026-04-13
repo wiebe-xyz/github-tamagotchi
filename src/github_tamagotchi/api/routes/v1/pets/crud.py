@@ -4,85 +4,26 @@ import math
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select as sa_select
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user, get_optional_user
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
-from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
+from github_tamagotchi.schemas.pets import (
+    FeedResponse,
+    PetCreate,
+    PetListResponse,
+    PetResponse,
+    RepoItem,
+)
+from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.github import GitHubService
-from github_tamagotchi.services.image_generation import DEFAULT_STYLE, STYLES
+from github_tamagotchi.services.image_generation import STYLES
 from github_tamagotchi.services.naming import generate_name_from_repo, is_valid_pet_name
 from github_tamagotchi.services.token_encryption import decrypt_token
 
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
-
-
-class PetCreate(BaseModel):
-    repo_owner: str = Field(..., min_length=1, max_length=255)
-    repo_name: str = Field(..., min_length=1, max_length=255)
-    name: str | None = Field(None, min_length=1, max_length=20)
-    style: str = Field(DEFAULT_STYLE, min_length=1, max_length=30)
-
-
-class PetResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    repo_owner: str
-    repo_name: str
-    name: str
-    stage: str
-    mood: str
-    health: int
-    experience: int
-    skin: str
-    low_health_recoveries: int
-    style: str
-    badge_style: str
-    commit_streak: int
-    longest_streak: int
-    generation: int
-    is_dead: bool
-    died_at: object | None
-    cause_of_death: str | None
-    personality_activity: float | None
-    personality_sociability: float | None
-    personality_bravery: float | None
-    personality_tidiness: float | None
-    personality_appetite: float | None
-    created_at: object
-    updated_at: object
-    last_fed_at: object | None
-    last_checked_at: object | None
-    dependent_count: int
-    grace_period_started: object | None
-
-
-class PetListResponse(BaseModel):
-    items: list[PetResponse]
-    total: int
-    page: int
-    per_page: int
-    pages: int
-
-
-class FeedResponse(BaseModel):
-    message: str
-    pet: PetResponse
-
-
-class RepoItem(BaseModel):
-    full_name: str
-    owner: str
-    name: str
-    description: str | None
-    private: bool
-    has_pet: bool
-    pet_name: str | None
 
 
 def _build_pet_list_response(
@@ -110,12 +51,6 @@ async def create_pet(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid style '{pet_data.style}'. Must be one of: {', '.join(STYLES.keys())}",
         )
-    existing = await pet_crud.get_pet_by_repo(session, pet_data.repo_owner, pet_data.repo_name)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Pet already exists for {pet_data.repo_owner}/{pet_data.repo_name}",
-        )
     if pet_data.name is None:
         pet_name = generate_name_from_repo(pet_data.repo_owner, pet_data.repo_name)
     else:
@@ -125,7 +60,7 @@ async def create_pet(
                 detail="Invalid pet name. Use 1-20 alphanumeric chars and spaces, no profanity.",
             )
         pet_name = pet_data.name
-    pet = await pet_crud.create_pet(
+    pet = await pet_service.create(
         session,
         pet_data.repo_owner,
         pet_data.repo_name,
@@ -148,7 +83,7 @@ async def list_pets(
     per_page: Annotated[int, Query(ge=1, le=100)] = 10,
 ) -> PetListResponse:
     """List all pets with pagination."""
-    pets, total = await pet_crud.get_pets(session, page=page, per_page=per_page)
+    pets, total = await pet_service.get_list(session, page=page, per_page=per_page)
     return _build_pet_list_response(pets, total, page, per_page)
 
 
@@ -163,14 +98,14 @@ async def get_pet(repo_owner: str, repo_name: str, session: DbSession) -> PetRes
 async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> None:
     """Delete a pet."""
     pet = await get_pet_or_404(repo_owner, repo_name, session)
-    await pet_crud.delete_pet(session, pet)
+    await pet_service.delete(session, pet)
 
 
 @router.post("/pets/{repo_owner}/{repo_name}/feed", response_model=FeedResponse)
 async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> FeedResponse:
     """Manually feed the pet."""
     pet = await get_pet_or_404(repo_owner, repo_name, session)
-    updated_pet = await pet_crud.feed_pet(session, pet)
+    updated_pet = await pet_service.feed(session, pet)
     return FeedResponse(
         message=f"{updated_pet.name} has been fed!",
         pet=PetResponse.model_validate(updated_pet),
@@ -185,7 +120,7 @@ async def list_my_pets(
     per_page: Annotated[int, Query(ge=1, le=100)] = 10,
 ) -> PetListResponse:
     """List pets belonging to the authenticated user."""
-    pets, total = await pet_crud.get_pets(session, page=page, per_page=per_page, user_id=user.id)
+    pets, total = await pet_service.get_list(session, page=page, per_page=per_page, user_id=user.id)
     return _build_pet_list_response(pets, total, page, per_page)
 
 
@@ -215,8 +150,8 @@ async def list_my_repos(
 
     existing_pets: dict[tuple[str, str], str] = {}
     if writable:
-        result = await session.execute(sa_select(Pet))
-        for pet in result.scalars().all():
+        all_pets = await pet_service.get_all(session)
+        for pet in all_pets:
             existing_pets[(pet.repo_owner, pet.repo_name)] = pet.name
 
     return [

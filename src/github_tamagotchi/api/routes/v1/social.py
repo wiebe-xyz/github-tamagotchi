@@ -4,10 +4,14 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict
 
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
-from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.schemas.social import (
+    LeaderboardCategory,
+    LeaderboardEntry,
+    LeaderboardResponse,
+)
+from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.badge import ContributorStanding, classify_contributor_standing
 from github_tamagotchi.services.github import GitHubService
 
@@ -35,29 +39,6 @@ _LEADERBOARD_CATEGORIES = [
 ]
 
 
-class LeaderboardEntry(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    rank: int
-    pet_name: str
-    repo_owner: str
-    repo_name: str
-    stage: str
-    value: int
-
-
-class LeaderboardCategory(BaseModel):
-    id: str
-    title: str
-    description: str
-    entries: list[LeaderboardEntry]
-
-
-class LeaderboardResponse(BaseModel):
-    categories: list[LeaderboardCategory]
-    cached_at: datetime
-
-
 @router.get("/leaderboard", response_model=LeaderboardResponse)
 async def get_leaderboard(session: DbSession) -> LeaderboardResponse:
     """Return the public leaderboard with multiple categories."""
@@ -65,7 +46,7 @@ async def get_leaderboard(session: DbSession) -> LeaderboardResponse:
     now = datetime.now(UTC)
 
     for cat in _LEADERBOARD_CATEGORIES:
-        pets = await pet_crud.get_leaderboard(session, cat["id"], limit=10)
+        pets = await pet_service.get_leaderboard(session, cat["id"], limit=10)
         entries = [
             LeaderboardEntry(
                 rank=i + 1,
@@ -100,7 +81,7 @@ async def get_showcase(
     """Return an SVG showcase of all pets for a GitHub user."""
     from github_tamagotchi.services.badge import generate_showcase_svg
 
-    pets = await pet_crud.get_pets_by_github_username(session, username, limit=max)
+    pets = await pet_service.get_by_username(session, username, limit=max)
     pets_data = [
         {
             "name": pet.name,
