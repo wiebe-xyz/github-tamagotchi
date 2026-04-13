@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PetAdminSettingsUpdate(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
     name: str | None = Field(None, min_length=1, max_length=20)
     blame_board_enabled: bool | None = None
     contributor_badges_enabled: bool | None = None
