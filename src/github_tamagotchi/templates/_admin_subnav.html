@@ -1,5 +1,5 @@
 {% if user and user.is_admin and active_page and active_page.startswith('admin') %}
-<nav class="admin-subnav" style="background: rgba(0,0,0,0.25); border-bottom: 1px solid rgba(255,255,255,0.08);">
+<nav class="admin-subnav" style="background: rgba(0,0,0,0.25); border-bottom: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(8px);">
     <div class="container" style="display:flex; gap:1.25rem; padding-top:0.5rem; padding-bottom:0.5rem;">
         <a href="/admin"
            style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.85rem;{% if active_page == 'admin' %} font-weight:600;{% endif %}">Admin</a>

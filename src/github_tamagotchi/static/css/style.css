@@ -96,6 +96,20 @@ body {
     padding-top: 5rem;
 }
 
+/* Admin sub-nav: fixed directly below the main nav */
+.admin-subnav {
+    position: fixed;
+    top: 57px;
+    left: 0;
+    right: 0;
+    z-index: 99;
+}
+
+/* Pages with admin sub-nav need extra top clearance */
+.has-admin-subnav {
+    padding-top: 97px !important;
+}
+
 /* Hero Section */
 .hero {
     min-height: 100vh;
