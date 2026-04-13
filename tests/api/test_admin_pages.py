@@ -185,12 +185,15 @@ class TestAdminSpritesPage:
         response = client.get("/admin/sprites", cookies={"session_token": token})
         assert response.status_code == 403
 
-    def test_shows_all_stages(self, client: TestClient) -> None:
+    def test_shows_pet_in_list(self, client: TestClient) -> None:
         token = _create_user(user_id=362, github_login="adminlogin362")
+        _create_pet(repo_owner="spritelistowner", repo_name="spritelistrepo", name="SpriteListPet")
         with _as_admin("adminlogin362"):
             response = client.get("/admin/sprites", cookies={"session_token": token})
+        assert "SpriteListPet" in response.text
+        assert "spritelistowner/spritelistrepo" in response.text
         for stage in PetStage:
-            assert stage.value.capitalize() in response.text
+            assert stage.value in response.text
 
     def test_shows_sprites_nav_link(self, client: TestClient) -> None:
         token = _create_user(user_id=363, github_login="adminlogin363")
@@ -208,18 +211,29 @@ class TestAdminSpritesPage:
             )
         assert response.status_code == 400
 
-    def test_regenerate_valid_stage_returns_200(self, client: TestClient) -> None:
+    def test_regenerate_per_pet_returns_200(self, client: TestClient) -> None:
         token = _create_user(user_id=365, github_login="adminlogin365")
+        _create_pet(repo_owner="perpetowner365", repo_name="perpetrepo365", name="PerPetRegen365")
         with _as_admin("adminlogin365"):
             response = client.post(
                 "/admin/sprites/regenerate",
-                json={"stage": "egg"},
+                json={"repo_owner": "perpetowner365", "repo_name": "perpetrepo365"},
                 cookies={"session_token": token},
             )
         assert response.status_code == 200
         data = response.json()
         assert "queued" in data
-        assert data["stage"] == "egg"
+        assert data["queued"] == len(list(PetStage))
+
+    def test_regenerate_per_pet_not_found_returns_404(self, client: TestClient) -> None:
+        token = _create_user(user_id=3651, github_login="adminlogin3651")
+        with _as_admin("adminlogin3651"):
+            response = client.post(
+                "/admin/sprites/regenerate",
+                json={"repo_owner": "nobody", "repo_name": "notexist"},
+                cookies={"session_token": token},
+            )
+        assert response.status_code == 404
 
     def test_regenerate_all_stages_returns_200(self, client: TestClient) -> None:
         token = _create_user(user_id=366, github_login="adminlogin366")
@@ -233,17 +247,17 @@ class TestAdminSpritesPage:
         data = response.json()
         assert data["stage"] == "all"
 
-    def test_regenerate_queues_jobs_for_pets(self, client: TestClient) -> None:
+    def test_regenerate_all_queues_jobs_for_all_pets(self, client: TestClient) -> None:
         token = _create_user(user_id=367, github_login="adminlogin367")
-        _create_pet(repo_owner="spriteowner", repo_name="spriterepo", name="SpritePet")
+        _create_pet(repo_owner="spriteowner367", repo_name="spriterepo367", name="SpritePet367")
         with _as_admin("adminlogin367"):
             response = client.post(
                 "/admin/sprites/regenerate",
-                json={"stage": "baby"},
+                json={"stage": "all"},
                 cookies={"session_token": token},
             )
         assert response.status_code == 200
-        assert response.json()["queued"] >= 1
+        assert response.json()["queued"] >= len(list(PetStage))
 
     def test_regenerate_non_admin_gets_403(self, client: TestClient) -> None:
         token = _create_user(user_id=368, github_login="notadmin368")

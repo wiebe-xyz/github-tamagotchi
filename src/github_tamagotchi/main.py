@@ -1187,43 +1187,16 @@ async def admin_sprites(
     user: AdminUser,
     session: DbSession,
 ) -> HTMLResponse:
-    """Admin page showing sprite sheet overview per creature stage."""
-    stages = []
-    for stage in PetStage:
-        # Count pets at this stage
-        count_result = await session.execute(
-            select(func.count()).select_from(Pet).where(Pet.stage == stage.value)
-        )
-        pet_count = count_result.scalar() or 0
-
-        # Get the most recent images_generated_at for pets at this stage
-        recent_result = await session.execute(
-            select(func.max(Pet.images_generated_at)).where(Pet.stage == stage.value)
-        )
-        last_generated = recent_result.scalar()
-
-        # Pick a sample pet for thumbnail display
-        sample_result = await session.execute(
-            select(Pet)
-            .where(Pet.stage == stage.value)
-            .order_by(Pet.images_generated_at.desc().nullslast())
-            .limit(1)
-        )
-        sample_pet = sample_result.scalar_one_or_none()
-
-        stages.append(
-            {
-                "stage": stage.value,
-                "pet_count": pet_count,
-                "last_generated": last_generated,
-                "sample_pet": sample_pet,
-            }
-        )
-
+    """Admin page listing all pets with their full sprite sheets."""
+    pets_result = await session.execute(
+        select(Pet).order_by(Pet.repo_owner, Pet.repo_name)
+    )
+    pets = pets_result.scalars().all()
+    stages = [s.value for s in PetStage]
     return templates.TemplateResponse(
         request,
         "admin_sprites.html",
-        {"user": user, "stages": stages},
+        {"user": user, "pets": pets, "stages": stages},
     )
 
 
@@ -1233,25 +1206,35 @@ async def admin_sprites_regenerate(
     user: AdminUser,
     session: DbSession,
 ) -> Response:
-    """Queue image regeneration for all pets of a given stage (or all stages)."""
+    """Queue image regeneration. Per-pet: {repo_owner, repo_name}. All: {stage: 'all'}."""
     body = await request.json()
-    stage_param = body.get("stage", "all")
 
-    if stage_param == "all":
-        stages_to_regen = [s.value for s in PetStage]
-    elif stage_param in {s.value for s in PetStage}:
-        stages_to_regen = [stage_param]
-    else:
+    if "repo_owner" in body and "repo_name" in body:
+        pet_result = await session.execute(
+            select(Pet).where(
+                Pet.repo_owner == body["repo_owner"],
+                Pet.repo_name == body["repo_name"],
+            )
+        )
+        pet = pet_result.scalar_one_or_none()
+        if not pet:
+            return JSONResponse({"error": "Pet not found"}, status_code=404)
+        total_queued = 0
+        for stage in PetStage:
+            await image_queue.create_job(session, pet.id, stage.value)
+            total_queued += 1
+        return JSONResponse({"queued": total_queued})
+
+    stage_param = body.get("stage", "all")
+    if stage_param != "all":
         return JSONResponse({"error": f"Unknown stage: {stage_param}"}, status_code=400)
 
     total_queued = 0
-    for stage_val in stages_to_regen:
-        pets_result = await session.execute(
-            select(Pet).where(Pet.stage == stage_val)
-        )
-        pets = pets_result.scalars().all()
-        for pet in pets:
-            await image_queue.create_job(session, pet.id, stage_val)
+    pets_result = await session.execute(select(Pet))
+    all_pets = pets_result.scalars().all()
+    for pet in all_pets:
+        for stage in PetStage:
+            await image_queue.create_job(session, pet.id, stage.value)
             total_queued += 1
 
-    return JSONResponse({"queued": total_queued, "stage": stage_param})
+    return JSONResponse({"queued": total_queued, "stage": "all"})
