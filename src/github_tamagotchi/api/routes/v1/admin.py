@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user
-from github_tamagotchi.api.dependencies import DbSession
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
 from github_tamagotchi.crud import pet as pet_crud
-from github_tamagotchi.models.pet import Pet, PetMood, PetStage
+from github_tamagotchi.models.pet import Pet
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.naming import is_valid_pet_name
 
@@ -115,9 +115,7 @@ async def get_pet_admin(
     user: Annotated[User, Depends(get_current_user)],
 ) -> PetAdminResponse:
     """Get pet admin settings. Requires repo admin permission."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(status_code=404, detail="Pet not found")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
     return await _build_pet_admin_response(pet, session)
 
@@ -131,9 +129,7 @@ async def update_pet_admin_settings(
     user: Annotated[User, Depends(get_current_user)],
 ) -> PetAdminResponse:
     """Update pet admin settings. Requires repo admin permission."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(status_code=404, detail="Pet not found")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
 
     if body.name is not None:
@@ -174,9 +170,7 @@ async def exclude_contributor(
 
     from github_tamagotchi.models.excluded_contributor import ExcludedContributor
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(status_code=404, detail="Pet not found")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
 
     entry = ExcludedContributor(
@@ -206,9 +200,7 @@ async def unexclude_contributor(
     """Remove contributor exclusion. Requires repo admin permission."""
     from github_tamagotchi.models.excluded_contributor import ExcludedContributor
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(status_code=404, detail="Pet not found")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
 
     result = await session.execute(
@@ -232,27 +224,9 @@ async def reset_pet(
     user: Annotated[User, Depends(get_current_user)],
 ) -> PetAdminResponse:
     """Reset pet stats and start a new generation. Requires repo admin permission."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(status_code=404, detail="Pet not found")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-
-    pet.stage = PetStage.EGG.value
-    pet.mood = PetMood.CONTENT.value
-    pet.health = 100
-    pet.experience = 0
-    pet.commit_streak = 0
-    pet.longest_streak = 0
-    pet.last_streak_date = None
-    pet.last_fed_at = None
-    pet.is_dead = False
-    pet.died_at = None
-    pet.cause_of_death = None
-    pet.grace_period_started = None
-    pet.generation = pet.generation + 1
-
-    await session.commit()
-    await session.refresh(pet)
+    pet = await pet_crud.reset_pet(session, pet)
     return await _build_pet_admin_response(pet, session)
 
 
@@ -264,9 +238,7 @@ async def delete_pet_admin(
     user: Annotated[User, Depends(get_current_user)],
 ) -> Response:
     """Delete a pet entirely. Requires repo admin permission."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(status_code=404, detail="Pet not found")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
     await pet_crud.delete_pet(session, pet)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

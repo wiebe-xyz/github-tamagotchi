@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from github_tamagotchi.models.pet import Pet, PetMood, PetSkin
+from github_tamagotchi.models.pet import Pet, PetMood, PetSkin, PetStage
 from github_tamagotchi.services.pet_logic import generate_personality
 
 # Simple in-memory leaderboard cache: stores (timestamp, data) per category
@@ -179,3 +179,61 @@ async def select_skin(db: AsyncSession, pet: Pet, skin: PetSkin) -> Pet:
     await db.commit()
     await db.refresh(pet)
     return pet
+
+
+async def resurrect_pet(db: AsyncSession, pet: Pet) -> Pet:
+    """Reset a dead pet to egg state and increment generation."""
+    pet.is_dead = False
+    pet.died_at = None
+    pet.cause_of_death = None
+    pet.grace_period_started = None
+    pet.stage = PetStage.EGG.value
+    pet.health = 60
+    pet.experience = 0
+    pet.mood = PetMood.CONTENT.value
+    pet.generation += 1
+    await db.commit()
+    await db.refresh(pet)
+    return pet
+
+
+async def reset_pet(db: AsyncSession, pet: Pet) -> Pet:
+    """Reset all pet stats to initial state and increment generation."""
+    pet.stage = PetStage.EGG.value
+    pet.mood = PetMood.CONTENT.value
+    pet.health = 100
+    pet.experience = 0
+    pet.commit_streak = 0
+    pet.longest_streak = 0
+    pet.last_streak_date = None
+    pet.last_fed_at = None
+    pet.is_dead = False
+    pet.died_at = None
+    pet.cause_of_death = None
+    pet.grace_period_started = None
+    pet.generation = pet.generation + 1
+    await db.commit()
+    await db.refresh(pet)
+    return pet
+
+
+async def update_images_generated_at(db: AsyncSession, repo_owner: str, repo_name: str) -> None:
+    """Stamp the images_generated_at timestamp on a pet."""
+    await db.execute(
+        update(Pet)
+        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+        .values(images_generated_at=func.now())
+    )
+    await db.commit()
+
+
+async def update_canonical_appearance(
+    db: AsyncSession, repo_owner: str, repo_name: str, canonical_appearance: str
+) -> None:
+    """Persist the canonical appearance string for a pet."""
+    await db.execute(
+        update(Pet)
+        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+        .values(canonical_appearance=canonical_appearance)
+    )
+    await db.commit()

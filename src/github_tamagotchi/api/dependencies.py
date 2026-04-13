@@ -26,6 +26,14 @@ async def get_pet_or_404(repo_owner: str, repo_name: str, session: AsyncSession)
     return pet
 
 
+def require_pet_owner(pet: Pet, user: User) -> None:
+    """Raise HTTP 403 if the user does not own the pet (site admins are exempt)."""
+    if pet.user_id != user.id and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this pet"
+        )
+
+
 async def require_repo_admin(
     repo_owner: str,
     repo_name: str,

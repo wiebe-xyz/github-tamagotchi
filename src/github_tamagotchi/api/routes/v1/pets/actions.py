@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.auth import get_current_user
-from github_tamagotchi.api.dependencies import DbSession
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404, require_pet_owner
 from github_tamagotchi.api.routes.v1.pets.crud import PetResponse
 from github_tamagotchi.crud import pet as pet_crud
-from github_tamagotchi.models.pet import PetMood, PetStage
+from github_tamagotchi.models.pet import PetStage
 from github_tamagotchi.models.user import User
 
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
@@ -26,19 +26,13 @@ async def resurrect_pet(
     user: Annotated[User, Depends(get_current_user)],
 ) -> PetResponse:
     """Resurrect a dead pet after the mandatory 7-day mourning period."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     if not pet.is_dead:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Pet is not dead and cannot be resurrected",
         )
-    if pet.user_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this pet")
+    require_pet_owner(pet, user)
     if pet.died_at is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -57,18 +51,8 @@ async def resurrect_pet(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Your pet must rest for {days_remaining} more {day_word} before resurrection",
         )
-    pet.is_dead = False
-    pet.died_at = None
-    pet.cause_of_death = None
-    pet.grace_period_started = None
-    pet.stage = PetStage.EGG.value
-    pet.health = 60
-    pet.experience = 0
-    pet.mood = PetMood.CONTENT.value
-    pet.generation += 1
+    pet = await pet_crud.resurrect_pet(session, pet)
     metrics_service.resurrections_total.inc()
-    await session.commit()
-    await session.refresh(pet)
     try:
         _api_routes.get_image_provider()
         await _api_routes.image_queue.create_job(session, pet.id, PetStage.EGG.value)

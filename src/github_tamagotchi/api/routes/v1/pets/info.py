@@ -6,13 +6,12 @@ Covers: characteristics, comments, achievements, milestones, contributors, blame
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select as sa_select
 
 from github_tamagotchi.api.auth import get_current_user, get_optional_user
-from github_tamagotchi.api.dependencies import DbSession
-from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.image_generation import get_pet_appearance
 
@@ -175,12 +174,7 @@ async def get_pet_achievements(
         get_pet_achievements as _get_pet_achievements,
     )
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     achievement_map = await _get_pet_achievements(pet.id, session)
     items = []
     for aid in ACHIEVEMENT_ORDER:
@@ -205,12 +199,7 @@ async def get_pet_milestones(
     """Get recent evolution milestones for a pet."""
     from github_tamagotchi.crud.milestone import get_milestones
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     milestones = await get_milestones(session, pet.id)
     return MilestonesResponse(milestones=[MilestoneItem.model_validate(m) for m in milestones])
 
@@ -225,12 +214,7 @@ async def get_pet_contributors(
     """Get contributor relationships for a pet."""
     from github_tamagotchi.crud.contributor_relationship import get_contributors_for_pet
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     contributors = await get_contributors_for_pet(session, pet.id)
     return ContributorRelationshipsResponse(
         contributors=[ContributorRelationshipItem.model_validate(c) for c in contributors]
@@ -244,12 +228,7 @@ async def get_blame_board(
     """Get the blame/heroes board for a pet."""
     from github_tamagotchi.services.github import GitHubService
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
 
     if not pet.blame_board_enabled or pet.is_dead:
         return BlameBoardResponse(

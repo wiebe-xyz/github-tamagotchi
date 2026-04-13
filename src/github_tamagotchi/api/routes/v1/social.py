@@ -2,16 +2,22 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict
 
-from github_tamagotchi.api.dependencies import DbSession
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
 from github_tamagotchi.crud import pet as pet_crud
+from github_tamagotchi.services.badge import ContributorStanding, classify_contributor_standing
 from github_tamagotchi.services.github import GitHubService
 
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["social"])
 
+# Shared headers for all SVG responses
+_SVG_HEADERS = {
+    "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+    "Content-Type": "image/svg+xml; charset=utf-8",
+}
 
 _LEADERBOARD_CATEGORIES = [
     {
@@ -106,14 +112,7 @@ async def get_showcase(
         for pet in pets
     ]
     svg_content = generate_showcase_svg(pets_data, username, layout=layout, theme=theme)
-    return Response(
-        content=svg_content,
-        media_type="image/svg+xml",
-        headers={
-            "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
-            "Content-Type": "image/svg+xml; charset=utf-8",
-        },
-    )
+    return Response(content=svg_content, media_type="image/svg+xml", headers=_SVG_HEADERS)
 
 
 @router.get("/contributor/{repo_owner}/{repo_name}/{username}.svg", response_class=Response)
@@ -125,15 +124,10 @@ async def get_contributor_badge(
     details: bool = Query(default=False, description="Include shame detail in badge"),
 ) -> Response:
     """Return an SVG badge showing a contributor's standing with the repo pet."""
-    from github_tamagotchi.services.badge import ContributorStanding, generate_contributor_badge_svg
+    from github_tamagotchi.services.badge import generate_contributor_badge_svg
     from github_tamagotchi.services.github import ContributorStats
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
 
     gh = GitHubService()
     try:
@@ -147,16 +141,12 @@ async def get_contributor_badge(
             days_since_last_commit=None,
         )
 
-    if stats.has_failed_ci and stats.commits_30d > 0:
-        standing = ContributorStanding.DOGHOUSE
-    elif stats.is_top_contributor:
-        standing = ContributorStanding.FAVORITE
-    elif stats.commits_30d > 0:
-        standing = ContributorStanding.GOOD
-    elif stats.days_since_last_commit is not None:
-        standing = ContributorStanding.ABSENT
-    else:
-        standing = ContributorStanding.NEUTRAL
+    standing = classify_contributor_standing(
+        commits_30d=stats.commits_30d,
+        is_top_contributor=stats.is_top_contributor,
+        has_failed_ci=stats.has_failed_ci,
+        days_since_last_commit=stats.days_since_last_commit,
+    )
 
     shame_detail: str | None = None
     if details and standing == ContributorStanding.DOGHOUSE:
@@ -172,11 +162,4 @@ async def get_contributor_badge(
         days_away=stats.days_since_last_commit if standing == ContributorStanding.ABSENT else None,
         shame_detail=shame_detail,
     )
-    return Response(
-        content=svg_content,
-        media_type="image/svg+xml",
-        headers={
-            "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
-            "Content-Type": "image/svg+xml; charset=utf-8",
-        },
-    )
+    return Response(content=svg_content, media_type="image/svg+xml", headers=_SVG_HEADERS)

@@ -6,12 +6,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import func
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
-from github_tamagotchi.api.dependencies import DbSession
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.badge import BADGE_STYLES
@@ -22,6 +20,12 @@ from github_tamagotchi.services.storage import StorageService
 logger = logging.getLogger(__name__)
 
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
+
+# Shared headers for SVG badge responses
+_SVG_HEADERS = {
+    "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+    "Content-Type": "image/svg+xml; charset=utf-8",
+}
 
 
 def get_storage_service() -> StorageService:
@@ -36,26 +40,30 @@ class ImageGenerationResponse(BaseModel):
     stages: list[str]
 
 
-async def _update_images_generated_at(
-    session: AsyncSession, repo_owner: str, repo_name: str
-) -> None:
-    await session.execute(
-        update(Pet)
-        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
-        .values(images_generated_at=func.now())
-    )
-    await session.commit()
+def _require_image_generation() -> None:
+    """Raise 503 if image generation or storage is not configured."""
+    if not _api_routes.settings.image_generation_enabled:
+        raise HTTPException(status_code=503, detail="Image generation is disabled")
+    if not _api_routes.settings.minio_endpoint:
+        raise HTTPException(status_code=503, detail="Image storage not configured")
 
 
-async def _update_canonical_appearance(
-    session: AsyncSession, repo_owner: str, repo_name: str, canonical_appearance: str
-) -> None:
-    await session.execute(
-        update(Pet)
-        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
-        .values(canonical_appearance=canonical_appearance)
-    )
-    await session.commit()
+async def _generate_all_stages(
+    repo_owner: str,
+    repo_name: str,
+    storage: StorageService,
+    session: AsyncSession,
+) -> list[str]:
+    """Generate images for all pet stages and upload them. Returns list of generated stage names."""
+    image_service = _api_routes.get_image_provider()
+    generated_stages = []
+    for pet_stage in PetStage:
+        result = await image_service.generate_pet_image(repo_owner, repo_name, pet_stage.value)
+        if result.success and result.image_data:
+            await storage.upload_image(repo_owner, repo_name, pet_stage.value, result.image_data)
+            generated_stages.append(pet_stage.value)
+    await pet_crud.update_images_generated_at(session, repo_owner, repo_name)
+    return generated_stages
 
 
 @router.get("/pets/{repo_owner}/{repo_name}/badge.svg", response_class=Response)
@@ -78,12 +86,7 @@ async def get_pet_badge(
             detail=f"Invalid badge style '{style}'. Must be one of: {valid}",
         )
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
 
     pet_image_b64: str | None = None
     try:
@@ -118,14 +121,7 @@ async def get_pet_badge(
         dependent_count=pet.dependent_count,
         unlocked_achievements=unlocked_achievements,
     )
-    return Response(
-        content=svg_content,
-        media_type="image/svg+xml",
-        headers={
-            "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
-            "Content-Type": "image/svg+xml; charset=utf-8",
-        },
-    )
+    return Response(content=svg_content, media_type="image/svg+xml", headers=_SVG_HEADERS)
 
 
 @router.get(
@@ -175,7 +171,7 @@ async def get_pet_image(
         if not result.success or not result.image_data:
             raise HTTPException(status_code=503, detail=result.error or "Image generation failed")
         await storage.upload_image(repo_owner, repo_name, stage, result.image_data)
-        await _update_images_generated_at(session, repo_owner, repo_name)
+        await pet_crud.update_images_generated_at(session, repo_owner, repo_name)
         return Response(
             content=result.image_data,
             media_type="image/png",
@@ -238,7 +234,7 @@ async def get_pet_animated_gif(
             ),
         )
 
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    pet: Pet | None = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
     mood = pet.mood if pet else "content"
     health = pet.health if pet else 100
     style = pet.style if pet else DEFAULT_STYLE
@@ -285,7 +281,7 @@ async def get_pet_animated_gif(
 
     if pet and not pet.canonical_appearance and sheet_result.canonical_appearance:
         try:
-            await _update_canonical_appearance(
+            await pet_crud.update_canonical_appearance(
                 session, repo_owner, repo_name, sheet_result.canonical_appearance
             )
         except Exception as e:
@@ -306,22 +302,9 @@ async def generate_pet_images(
     repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
 ) -> ImageGenerationResponse:
     """Trigger generation of all stage images for a pet."""
-    if not _api_routes.settings.image_generation_enabled:
-        raise HTTPException(status_code=503, detail="Image generation is disabled")
-    if not _api_routes.settings.minio_endpoint:
-        raise HTTPException(status_code=503, detail="Image storage not configured")
-
+    _require_image_generation()
     try:
-        image_service = _api_routes.get_image_provider()
-        generated_stages = []
-        for pet_stage in PetStage:
-            result = await image_service.generate_pet_image(repo_owner, repo_name, pet_stage.value)
-            if result.success and result.image_data:
-                await storage.upload_image(
-                    repo_owner, repo_name, pet_stage.value, result.image_data
-                )
-                generated_stages.append(pet_stage.value)
-        await _update_images_generated_at(session, repo_owner, repo_name)
+        generated_stages = await _generate_all_stages(repo_owner, repo_name, storage, session)
         return ImageGenerationResponse(
             message="Images generated successfully", stages=generated_stages
         )
@@ -340,23 +323,10 @@ async def regenerate_pet_images(
     repo_owner: str, repo_name: str, session: DbSession, storage: StorageDep
 ) -> ImageGenerationResponse:
     """Delete existing images and regenerate all stages."""
-    if not _api_routes.settings.image_generation_enabled:
-        raise HTTPException(status_code=503, detail="Image generation is disabled")
-    if not _api_routes.settings.minio_endpoint:
-        raise HTTPException(status_code=503, detail="Image storage not configured")
-
+    _require_image_generation()
     try:
         await storage.delete_images(repo_owner, repo_name)
-        image_service = _api_routes.get_image_provider()
-        generated_stages = []
-        for pet_stage in PetStage:
-            result = await image_service.generate_pet_image(repo_owner, repo_name, pet_stage.value)
-            if result.success and result.image_data:
-                await storage.upload_image(
-                    repo_owner, repo_name, pet_stage.value, result.image_data
-                )
-                generated_stages.append(pet_stage.value)
-        await _update_images_generated_at(session, repo_owner, repo_name)
+        generated_stages = await _generate_all_stages(repo_owner, repo_name, storage, session)
         return ImageGenerationResponse(
             message="Images regenerated successfully", stages=generated_stages
         )

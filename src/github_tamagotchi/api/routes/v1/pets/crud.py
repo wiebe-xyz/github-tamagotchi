@@ -9,7 +9,7 @@ from sqlalchemy import select as sa_select
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user, get_optional_user
-from github_tamagotchi.api.dependencies import DbSession
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.models.user import User
@@ -85,6 +85,19 @@ class RepoItem(BaseModel):
     pet_name: str | None
 
 
+def _build_pet_list_response(
+    pets: list[Pet], total: int, page: int, per_page: int
+) -> PetListResponse:
+    pages = math.ceil(total / per_page) if total > 0 else 1
+    return PetListResponse(
+        items=[PetResponse.model_validate(p) for p in pets],
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages,
+    )
+
+
 @router.post("/pets", response_model=PetResponse, status_code=status.HTTP_201_CREATED)
 async def create_pet(
     pet_data: PetCreate,
@@ -136,49 +149,27 @@ async def list_pets(
 ) -> PetListResponse:
     """List all pets with pagination."""
     pets, total = await pet_crud.get_pets(session, page=page, per_page=per_page)
-    pages = math.ceil(total / per_page) if total > 0 else 1
-    return PetListResponse(
-        items=[PetResponse.model_validate(p) for p in pets],
-        total=total,
-        page=page,
-        per_page=per_page,
-        pages=pages,
-    )
+    return _build_pet_list_response(pets, total, page, per_page)
 
 
 @router.get("/pets/{repo_owner}/{repo_name}", response_model=PetResponse)
 async def get_pet(repo_owner: str, repo_name: str, session: DbSession) -> PetResponse:
     """Get pet status for a repository."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     return PetResponse.model_validate(pet)
 
 
 @router.delete("/pets/{repo_owner}/{repo_name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pet(repo_owner: str, repo_name: str, session: DbSession) -> None:
     """Delete a pet."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     await pet_crud.delete_pet(session, pet)
 
 
 @router.post("/pets/{repo_owner}/{repo_name}/feed", response_model=FeedResponse)
 async def feed_pet(repo_owner: str, repo_name: str, session: DbSession) -> FeedResponse:
     """Manually feed the pet."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     updated_pet = await pet_crud.feed_pet(session, pet)
     return FeedResponse(
         message=f"{updated_pet.name} has been fed!",
@@ -195,14 +186,7 @@ async def list_my_pets(
 ) -> PetListResponse:
     """List pets belonging to the authenticated user."""
     pets, total = await pet_crud.get_pets(session, page=page, per_page=per_page, user_id=user.id)
-    pages = math.ceil(total / per_page) if total > 0 else 1
-    return PetListResponse(
-        items=[PetResponse.model_validate(p) for p in pets],
-        total=total,
-        page=page,
-        per_page=per_page,
-        pages=pages,
-    )
+    return _build_pet_list_response(pets, total, page, per_page)
 
 
 @router.get("/me/repos", response_model=list[RepoItem])

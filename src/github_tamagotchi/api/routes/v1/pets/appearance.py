@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user
-from github_tamagotchi.api.dependencies import DbSession
+from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404, require_pet_owner
 from github_tamagotchi.api.routes.v1.pets.crud import PetResponse
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import PetSkin
@@ -62,14 +62,8 @@ async def update_pet_style(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid style '{style_data.style}'. Must be one of: {valid}",
         )
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
-    if pet.user_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this pet")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
+    require_pet_owner(pet, user)
     pet.style = style_data.style
     await session.commit()
     await session.refresh(pet)
@@ -95,14 +89,8 @@ async def rename_pet(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invalid pet name. Use 1-20 alphanumeric characters and spaces, no profanity.",
         )
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
-    if pet.user_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this pet")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
+    require_pet_owner(pet, user)
     pet.name = rename_data.name
     await session.commit()
     await session.refresh(pet)
@@ -124,14 +112,8 @@ async def update_pet_badge_style(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid badge style '{badge_style_data.badge_style}'. Must be one of: {valid}",
         )
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
-    if pet.user_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this pet")
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
+    require_pet_owner(pet, user)
     pet.badge_style = badge_style_data.badge_style
     await session.commit()
     await session.refresh(pet)
@@ -141,12 +123,7 @@ async def update_pet_badge_style(
 @router.get("/pets/{repo_owner}/{repo_name}/skins", response_model=list[SkinInfo])
 async def list_skins(repo_owner: str, repo_name: str, session: DbSession) -> list[SkinInfo]:
     """List all skins and their unlock status for a pet."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     unlocked = get_unlocked_skins(pet)
     return [
         SkinInfo(
@@ -163,12 +140,7 @@ async def select_skin(
     repo_owner: str, repo_name: str, body: SkinSelectRequest, session: DbSession
 ) -> SkinSelectResponse:
     """Set the active skin for a pet (must be unlocked)."""
-    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
-    if not pet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pet not found for {repo_owner}/{repo_name}",
-        )
+    pet = await get_pet_or_404(repo_owner, repo_name, session)
     try:
         chosen_skin = PetSkin(body.skin)
     except ValueError as exc:
