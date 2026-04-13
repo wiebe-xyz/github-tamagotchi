@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import select as _select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
@@ -54,12 +53,9 @@ async def _require_repo_admin(
 
 
 async def _build_pet_admin_response(pet: Pet, session: AsyncSession) -> PetAdminResponse:
-    from github_tamagotchi.models.excluded_contributor import ExcludedContributor
+    from github_tamagotchi.repositories.excluded_contributor import get_excluded_for_pet
 
-    result = await session.execute(
-        _select(ExcludedContributor).where(ExcludedContributor.pet_id == pet.id)
-    )
-    excluded = list(result.scalars().all())
+    excluded = await get_excluded_for_pet(session, pet.id)
     return PetAdminResponse(
         id=pet.id,
         name=pet.name,
@@ -104,18 +100,8 @@ async def update_pet_admin_settings(
         if not is_valid_pet_name(body.name):
             raise HTTPException(status_code=422, detail="Invalid pet name")
         pet.name = body.name
-    if body.blame_board_enabled is not None:
-        pet.blame_board_enabled = body.blame_board_enabled
-    if body.contributor_badges_enabled is not None:
-        pet.contributor_badges_enabled = body.contributor_badges_enabled
-    if body.leaderboard_opt_out is not None:
-        pet.leaderboard_opt_out = body.leaderboard_opt_out
-    if body.hungry_after_days is not None:
-        pet.hungry_after_days = body.hungry_after_days
-    if body.pr_review_sla_hours is not None:
-        pet.pr_review_sla_hours = body.pr_review_sla_hours
-    if body.issue_response_sla_days is not None:
-        pet.issue_response_sla_days = body.issue_response_sla_days
+    for field, value in body.model_dump(exclude_unset=True, exclude={"name"}).items():
+        setattr(pet, field, value)
 
     pet = await pet_service.save(session, pet)
     return await _build_pet_admin_response(pet, session)
@@ -133,23 +119,11 @@ async def exclude_contributor(
     github_login: str = Query(..., min_length=1, max_length=255),
 ) -> dict[str, str]:
     """Exclude a contributor from this pet's tracking. Requires repo admin permission."""
-    from sqlalchemy.exc import IntegrityError
-
-    from github_tamagotchi.models.excluded_contributor import ExcludedContributor
+    from github_tamagotchi.repositories.excluded_contributor import add_excluded
 
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-
-    entry = ExcludedContributor(
-        pet_id=pet.id,
-        github_login=github_login,
-        excluded_by=user.github_login,
-    )
-    session.add(entry)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
+    await add_excluded(session, pet.id, github_login, user.github_login)
     return {"status": "excluded", "github_login": github_login}
 
 
@@ -165,21 +139,11 @@ async def unexclude_contributor(
     user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, str]:
     """Remove contributor exclusion. Requires repo admin permission."""
-    from github_tamagotchi.models.excluded_contributor import ExcludedContributor
+    from github_tamagotchi.repositories.excluded_contributor import remove_excluded
 
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-
-    result = await session.execute(
-        _select(ExcludedContributor).where(
-            ExcludedContributor.pet_id == pet.id,
-            ExcludedContributor.github_login == github_login,
-        )
-    )
-    entry = result.scalar_one_or_none()
-    if entry:
-        await session.delete(entry)
-        await session.commit()
+    await remove_excluded(session, pet.id, github_login)
     return {"status": "unexcluded", "github_login": github_login}
 
 
