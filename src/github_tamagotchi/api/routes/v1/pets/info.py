@@ -6,7 +6,6 @@ Covers: characteristics, comments, achievements, milestones, contributors, blame
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select as sa_select
 
 from github_tamagotchi.api.auth import get_current_user, get_optional_user
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
@@ -51,15 +50,9 @@ async def list_comments(
     _user: Annotated[User | None, Depends(get_optional_user)] = None,
 ) -> CommentsListResponse:
     """Return the newest 50 comments for a pet profile."""
-    from github_tamagotchi.models.comment import PetComment
+    from github_tamagotchi.repositories.comment import get_comments_for_pet
 
-    result = await session.execute(
-        sa_select(PetComment)
-        .where(PetComment.repo_owner == repo_owner, PetComment.repo_name == repo_name)
-        .order_by(PetComment.created_at.desc())
-        .limit(50)
-    )
-    comments = result.scalars().all()
+    comments = await get_comments_for_pet(session, repo_owner, repo_name)
     return CommentsListResponse(comments=[CommentResponse.model_validate(c) for c in comments])
 
 
@@ -76,18 +69,11 @@ async def create_comment(
     user: Annotated[User, Depends(get_current_user)],
 ) -> CommentResponse:
     """Post a comment on a pet profile. Requires authentication."""
-    from github_tamagotchi.models.comment import PetComment
+    from github_tamagotchi.repositories.comment import create_comment
 
-    comment = PetComment(
-        repo_owner=repo_owner,
-        repo_name=repo_name,
-        user_id=user.id,
-        author_name=user.github_login,
-        body=comment_data.body,
+    comment = await create_comment(
+        session, repo_owner, repo_name, user.id, user.github_login, comment_data.body
     )
-    session.add(comment)
-    await session.commit()
-    await session.refresh(comment)
     return CommentResponse.model_validate(comment)
 
 
