@@ -3,11 +3,12 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from github_tamagotchi.exceptions import ConflictError, RepositoryError
+from github_tamagotchi.exceptions import RepositoryError
 from github_tamagotchi.models.pet import Pet, PetMood, PetSkin, PetStage
+from github_tamagotchi.repositories import _commit_refresh
 from github_tamagotchi.services.pet_logic import generate_personality
 
 # Simple in-memory leaderboard cache: stores (timestamp, data) per category
@@ -37,17 +38,9 @@ async def create_pet(
         personality_tidiness=personality.tidiness,
         personality_appetite=personality.appetite,
     )
-    try:
-        db.add(pet)
-        await db.commit()
-        await db.refresh(pet)
-        return pet
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(str(exc)) from exc
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    db.add(pet)
+    await _commit_refresh(db, pet)
+    return pet
 
 
 async def get_pet_by_repo(db: AsyncSession, owner: str, repo: str) -> Pet | None:
@@ -183,15 +176,8 @@ async def get_org_pets(db: AsyncSession, org_name: str) -> list[Pet]:
 
 async def delete_pet(db: AsyncSession, pet: Pet) -> None:
     """Delete a pet."""
-    try:
-        await db.delete(pet)
-        await db.commit()
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(str(exc)) from exc
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await db.delete(pet)
+    await _commit_refresh(db)
 
 
 async def feed_pet(db: AsyncSession, pet: Pet) -> Pet:
@@ -204,31 +190,15 @@ async def feed_pet(db: AsyncSession, pet: Pet) -> Pet:
     elif pet.health >= 50:
         pet.mood = PetMood.CONTENT.value
 
-    try:
-        await db.commit()
-        await db.refresh(pet)
-        return pet
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(str(exc)) from exc
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await _commit_refresh(db, pet)
+    return pet
 
 
 async def select_skin(db: AsyncSession, pet: Pet, skin: PetSkin) -> Pet:
     """Set the active skin on a pet."""
     pet.skin = skin.value
-    try:
-        await db.commit()
-        await db.refresh(pet)
-        return pet
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(str(exc)) from exc
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await _commit_refresh(db, pet)
+    return pet
 
 
 async def resurrect_pet(db: AsyncSession, pet: Pet) -> Pet:
@@ -242,16 +212,8 @@ async def resurrect_pet(db: AsyncSession, pet: Pet) -> Pet:
     pet.experience = 0
     pet.mood = PetMood.CONTENT.value
     pet.generation += 1
-    try:
-        await db.commit()
-        await db.refresh(pet)
-        return pet
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(str(exc)) from exc
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await _commit_refresh(db, pet)
+    return pet
 
 
 async def reset_pet(db: AsyncSession, pet: Pet) -> Pet:
@@ -269,46 +231,30 @@ async def reset_pet(db: AsyncSession, pet: Pet) -> Pet:
     pet.cause_of_death = None
     pet.grace_period_started = None
     pet.generation = pet.generation + 1
-    try:
-        await db.commit()
-        await db.refresh(pet)
-        return pet
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(str(exc)) from exc
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await _commit_refresh(db, pet)
+    return pet
 
 
 async def update_images_generated_at(db: AsyncSession, repo_owner: str, repo_name: str) -> None:
     """Stamp the images_generated_at timestamp on a pet."""
-    try:
-        await db.execute(
-            update(Pet)
-            .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
-            .values(images_generated_at=func.now())
-        )
-        await db.commit()
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await db.execute(
+        update(Pet)
+        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+        .values(images_generated_at=func.now())
+    )
+    await _commit_refresh(db)
 
 
 async def update_canonical_appearance(
     db: AsyncSession, repo_owner: str, repo_name: str, canonical_appearance: str
 ) -> None:
     """Persist the canonical appearance string for a pet."""
-    try:
-        await db.execute(
-            update(Pet)
-            .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
-            .values(canonical_appearance=canonical_appearance)
-        )
-        await db.commit()
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await db.execute(
+        update(Pet)
+        .where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+        .values(canonical_appearance=canonical_appearance)
+    )
+    await _commit_refresh(db)
 
 
 async def get_all(db: AsyncSession, limit: int = 10000) -> list[Pet]:
@@ -322,13 +268,5 @@ async def get_all(db: AsyncSession, limit: int = 10000) -> list[Pet]:
 
 async def save(db: AsyncSession, pet: Pet) -> Pet:
     """Commit pending field changes on a pet and refresh from DB."""
-    try:
-        await db.commit()
-        await db.refresh(pet)
-        return pet
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(str(exc)) from exc
-    except SQLAlchemyError as exc:
-        await db.rollback()
-        raise RepositoryError(str(exc)) from exc
+    await _commit_refresh(db, pet)
+    return pet
