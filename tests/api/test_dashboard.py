@@ -1,6 +1,7 @@
 """Tests for the dashboard page."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -27,7 +28,12 @@ def _create_user(user_id: int = 1, github_login: str = "dashuser") -> str:
 
 
 def _create_pet_for_user(
-    user_id: int, repo_owner: str = "owner", repo_name: str = "repo", name: str = "Gotchi"
+    user_id: int,
+    repo_owner: str = "owner",
+    repo_name: str = "repo",
+    name: str = "Gotchi",
+    health: int = 80,
+    grace_period_started: datetime | None = None,
 ) -> None:
     async def _setup() -> None:
         async with test_session_factory() as session:
@@ -38,8 +44,9 @@ def _create_pet_for_user(
                 user_id=user_id,
                 stage=PetStage.BABY.value,
                 mood=PetMood.HAPPY.value,
-                health=80,
+                health=health,
                 experience=100,
+                grace_period_started=grace_period_started,
             )
             session.add(pet)
             await session.commit()
@@ -95,6 +102,29 @@ class TestDashboardAuthenticated:
         _create_pet_for_user(user_id=16, repo_owner="linkowner", repo_name="linkrepo")
         response = client.get("/dashboard", cookies={"session_token": token})
         assert "/pet/linkowner/linkrepo" in response.text
+
+    def test_shows_dying_badge_when_in_grace_period(self, client: TestClient) -> None:
+        """Dashboard card shows dying badge when pet is in grace period."""
+        grace_start = datetime.now(UTC) - timedelta(days=2)
+        token = _create_user(user_id=17, github_login="dyinguser")
+        _create_pet_for_user(
+            user_id=17,
+            repo_owner="dyinguser",
+            repo_name="dyingrepo",
+            health=0,
+            grace_period_started=grace_start,
+        )
+        response = client.get("/dashboard", cookies={"session_token": token})
+        assert "Dying" in response.text
+
+    def test_no_dying_badge_when_healthy(self, client: TestClient) -> None:
+        """Dashboard card does not show dying badge for healthy pets."""
+        token = _create_user(user_id=18, github_login="healthyuser")
+        _create_pet_for_user(
+            user_id=18, repo_owner="healthyuser", repo_name="healthyrepo", health=80
+        )
+        response = client.get("/dashboard", cookies={"session_token": token})
+        assert "Dying" not in response.text
 
 
 class TestRegisterPage:

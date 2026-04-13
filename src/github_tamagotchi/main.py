@@ -47,6 +47,7 @@ from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.contributor_relationships import build_contributor_updates
 from github_tamagotchi.services.github import GitHubService, RateLimitError, RepoInsights
 from github_tamagotchi.services.pet_logic import (
+    DEATH_GRACE_PERIOD_DAYS,
     EVOLUTION_THRESHOLDS,
     calculate_experience,
     calculate_health_delta,
@@ -528,7 +529,9 @@ async def dashboard_page(request: Request, user: OptionalUser, session: DbSessio
     if not user:
         return RedirectResponse(url="/auth/github", status_code=302)
     pets, _ = await pet_crud.get_pets(session, per_page=100, user_id=user.id)
-    return templates.TemplateResponse(request, "dashboard.html", {"user": user, "pets": pets})
+    return templates.TemplateResponse(
+        request, "dashboard.html", {"user": user, "pets": pets, "now_utc": datetime.now(UTC)}
+    )
 
 
 @app.get("/register", response_class=HTMLResponse)
@@ -809,6 +812,15 @@ async def pet_profile(
     else:
         age_days = (now - created).days
 
+    # Calculate days until death if pet is in grace period
+    days_until_death: int | None = None
+    if pet.health == 0 and pet.grace_period_started and not pet.is_dead:
+        gps = pet.grace_period_started
+        now_naive = now.replace(tzinfo=None)
+        gps_naive = gps.replace(tzinfo=None) if gps.tzinfo is not None else gps
+        elapsed = (now_naive - gps_naive).days
+        days_until_death = max(DEATH_GRACE_PERIOD_DAYS - elapsed, 0)
+
     # Fetch contributor relationships
     from github_tamagotchi.crud.contributor_relationship import get_contributors_for_pet
 
@@ -830,6 +842,7 @@ async def pet_profile(
             "base_url": settings.base_url,
             "now_utc": now,
             "contributor_relationships": contributor_relationships,
+            "days_until_death": days_until_death,
         },
         headers={"Cache-Control": "public, max-age=60"},
     )

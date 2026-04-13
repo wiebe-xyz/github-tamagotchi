@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -35,6 +35,8 @@ def _create_pet(
     mood: str = PetMood.HAPPY.value,
     health: int = 80,
     experience: int = 150,
+    grace_period_started: datetime | None = None,
+    is_dead: bool = False,
 ) -> None:
     async def _setup() -> None:
         async with test_session_factory() as session:
@@ -47,6 +49,8 @@ def _create_pet(
                 health=health,
                 experience=experience,
                 created_at=datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC),
+                grace_period_started=grace_period_started,
+                is_dead=is_dead,
             )
             session.add(pet)
             await session.commit()
@@ -167,6 +171,51 @@ class TestPetProfilePage:
         _create_pet()
         response = client.get("/pet/testowner/testrepo")
         assert "Cache-Control" in response.headers
+
+    def test_dying_banner_shown_when_in_grace_period(self, client: TestClient) -> None:
+        """Profile page shows dying banner when pet health is 0 and grace period is active."""
+        grace_start = datetime.now(UTC) - timedelta(days=2)
+        _create_pet(
+            repo_owner="dyingowner",
+            repo_name="dyingrepo",
+            health=0,
+            grace_period_started=grace_start,
+        )
+        response = client.get("/pet/dyingowner/dyingrepo")
+        assert response.status_code == 200
+        assert "Critical condition" in response.text
+        assert "will die in" in response.text
+
+    def test_dying_banner_not_shown_when_healthy(self, client: TestClient) -> None:
+        """Profile page does not show dying banner for healthy pets."""
+        _create_pet(repo_owner="healthyowner", repo_name="healthyrepo", health=80)
+        response = client.get("/pet/healthyowner/healthyrepo")
+        assert "Critical condition" not in response.text
+
+    def test_dying_banner_not_shown_when_dead(self, client: TestClient) -> None:
+        """Profile page does not show dying banner for dead pets."""
+        grace_start = datetime.now(UTC) - timedelta(days=10)
+        _create_pet(
+            repo_owner="deadowner",
+            repo_name="deadrepo",
+            health=0,
+            grace_period_started=grace_start,
+            is_dead=True,
+        )
+        response = client.get("/pet/deadowner/deadrepo")
+        assert "Critical condition" not in response.text
+
+    def test_dying_banner_shows_days_remaining(self, client: TestClient) -> None:
+        """Dying banner shows correct days remaining."""
+        grace_start = datetime.now(UTC) - timedelta(days=4)
+        _create_pet(
+            repo_owner="countdownowner",
+            repo_name="countdownrepo",
+            health=0,
+            grace_period_started=grace_start,
+        )
+        response = client.get("/pet/countdownowner/countdownrepo")
+        assert "3 days" in response.text
 
     def test_no_get_your_own_cta_when_authenticated(self, client: TestClient) -> None:
         """Authenticated users should not see the 'Get your own pet' CTA."""
