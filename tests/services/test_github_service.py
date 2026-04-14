@@ -153,6 +153,23 @@ class TestGetLastCommit:
             with pytest.raises(RateLimitError):
                 await service._get_last_commit(client, "owner", "repo")
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_returns_timezone_aware_for_naive_date(self) -> None:
+        """Should return a timezone-aware datetime even when the API omits timezone info."""
+        naive_response = [
+            {"sha": "abc123", "commit": {"committer": {"date": "2025-01-10T12:00:00"}}}
+        ]
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(200, json=naive_response)
+        )
+        service = GitHubService(token="test")
+        async with httpx.AsyncClient() as client:
+            result = await service._get_last_commit(client, "owner", "repo")
+
+        assert result is not None
+        assert result.tzinfo is not None
+
 
 class TestGetOpenPRs:
     """Tests for fetching open pull requests."""

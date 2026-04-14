@@ -212,6 +212,17 @@ async def resurrect_pet(db: AsyncSession, pet: Pet) -> Pet:
     pet.experience = 0
     pet.mood = PetMood.CONTENT.value
     pet.generation += 1
+
+    # Re-generate personality traits so the resurrected pet has valid values.
+    # (Personality fields may be null if the pet was created before personality
+    # generation was introduced, or simply need refreshing after rebirth.)
+    personality = generate_personality(pet.repo_owner, pet.repo_name)
+    pet.personality_activity = personality.activity
+    pet.personality_sociability = personality.sociability
+    pet.personality_bravery = personality.bravery
+    pet.personality_tidiness = personality.tidiness
+    pet.personality_appetite = personality.appetite
+
     await _commit_refresh(db, pet)
     return pet
 
