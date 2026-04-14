@@ -154,12 +154,12 @@ tasks:
       - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n nijmegen-testing --timeout=60s"
 
   k8s:deploy:
-    desc: Apply all k8s manifests and restart the deployment
+    desc: Apply all k8s manifests and scale up the blue deployment (initial setup)
     cmds:
       - task: k8s:secrets
       - task: k8s:init
       - cat k8s/deployment.yaml | ssh deployer@k3s1 "kubectl apply -f -"
-      - ssh deployer@k3s1 "kubectl rollout restart deployment/github-tamagotchi-blue -n nijmegen-testing"
+      - ssh deployer@k3s1 "kubectl scale deployment/github-tamagotchi-blue --replicas=1 -n nijmegen-testing"
       - ssh deployer@k3s1 "kubectl rollout status deployment/github-tamagotchi-blue -n nijmegen-testing --timeout=120s"
 
   k8s:status:
@@ -168,9 +168,9 @@ tasks:
       - ssh deployer@k3s1 "kubectl get pods -n nijmegen-testing -l app=github-tamagotchi -o wide"
 
   k8s:logs:
-    desc: Tail logs from the running pod
+    desc: Tail logs from the active pod (color detected dynamically)
     cmds:
-      - ssh deployer@k3s1 "kubectl logs -n nijmegen-testing -l app=github-tamagotchi,version=blue --tail=50"
+      - ssh deployer@k3s1 "ACTIVE=\$(kubectl get service github-tamagotchi -n nijmegen-testing -o jsonpath='{.spec.selector.version}'); kubectl logs -n nijmegen-testing -l app=github-tamagotchi,version=\$ACTIVE --tail=50 -f"
 
   # --- Cleanup ---
 

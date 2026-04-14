@@ -9,7 +9,8 @@ metadata:
 spec:
   progressDeadlineSeconds: 900
   revisionHistoryLimit: 2
-  replicas: 1
+  # Replicas managed by deploy process — do not set here
+  replicas: 0
   selector:
     matchLabels:
       app: github-tamagotchi
@@ -150,6 +151,7 @@ metadata:
 spec:
   progressDeadlineSeconds: 900
   revisionHistoryLimit: 2
+  # Replicas managed by deploy process — do not set here
   replicas: 0
   selector:
     matchLabels:
@@ -317,4 +319,3 @@ spec:
   tls:
     - hosts:
         - tamagotchi.nijmegen.wiebe.xyz
-      secretName: tamagotchi-tls
