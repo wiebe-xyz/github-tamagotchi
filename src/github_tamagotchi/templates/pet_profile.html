@@ -38,6 +38,32 @@
     <main class="profile-page">
         <div class="container">
 
+            <!-- Onboarding banner: shown once per browser, dismissed via localStorage -->
+            <div id="onboarding-banner" style="display:none; margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12)); border: 1px solid rgba(139,92,246,0.45); position: relative;">
+                <button
+                    onclick="dismissOnboardingBanner()"
+                    aria-label="Dismiss"
+                    style="position:absolute; top:0.6rem; right:0.75rem; background:none; border:none; cursor:pointer; color:rgba(255,255,255,0.55); font-size:1.1rem; line-height:1; padding:0.2rem 0.35rem; border-radius:4px;"
+                    onmouseover="this.style.color='rgba(255,255,255,0.9)'; this.style.background='rgba(255,255,255,0.08)';"
+                    onmouseout="this.style.color='rgba(255,255,255,0.55)'; this.style.background='none';"
+                >&#x2715;</button>
+                <strong style="color: #a78bfa; font-size: 1rem;">Meet your repo&#8217;s pet!</strong>
+                <span style="color: rgba(255,255,255,0.85); font-size: 0.95rem;"> This Tamagotchi lives off your repository&#8217;s health &#8212; commits feed it, CI passes make it dance, and neglect makes it hungry. Keep your repo active to help it thrive.</span>
+            </div>
+            <script>
+            (function () {
+                var KEY = 'tamagotchi_onboarding_dismissed';
+                if (!localStorage.getItem(KEY)) {
+                    document.getElementById('onboarding-banner').style.display = 'block';
+                }
+            })();
+            function dismissOnboardingBanner() {
+                localStorage.setItem('tamagotchi_onboarding_dismissed', '1');
+                var el = document.getElementById('onboarding-banner');
+                if (el) { el.style.display = 'none'; }
+            }
+            </script>
+
             {% if days_until_death is not none %}
             <div style="margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(249,115,22,0.10)); border: 1px solid rgba(239,68,68,0.5); display: flex; align-items: center; gap: 0.75rem;">
                 <span style="font-size: 1.4rem;">&#9888;&#65039;</span>
