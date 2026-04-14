@@ -239,9 +239,14 @@ class GitHubService:
             resp.raise_for_status()
             commits = resp.json()
             if commits:
-                return datetime.fromisoformat(
+                dt = datetime.fromisoformat(
                     commits[0]["commit"]["committer"]["date"].replace("Z", "+00:00")
                 )
+                # Ensure the datetime is always timezone-aware (defensive guard
+                # against any API response that omits a timezone offset).
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                return dt
         except RateLimitError:
             raise
         except Exception as e:

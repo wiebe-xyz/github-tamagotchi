@@ -1,9 +1,12 @@
 """Unit tests for Pet CRUD operations."""
 
+from datetime import UTC, datetime
+
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.crud import pet as pet_crud
-from github_tamagotchi.models.pet import PetMood
+from github_tamagotchi.models.pet import Pet, PetMood
 
 
 async def test_create_pet(test_db: AsyncSession) -> None:
@@ -87,3 +90,72 @@ async def test_feed_pet_max_health(test_db: AsyncSession) -> None:
     updated_pet = await pet_crud.feed_pet(test_db, pet)
 
     assert updated_pet.health == 100
+
+
+async def test_resurrect_pet_sets_personality(test_db: AsyncSession) -> None:
+    """resurrect_pet must populate all five personality fields."""
+    pet = await pet_crud.create_pet(test_db, "owner", "myrepo", "Ghost")
+
+    # Simulate a null-personality state (as if the pet predates personality generation).
+    await test_db.execute(
+        sa_update(Pet)
+        .where(Pet.repo_owner == "owner", Pet.repo_name == "myrepo")
+        .values(
+            is_dead=True,
+            died_at=datetime.now(UTC),
+            cause_of_death="neglect",
+            personality_activity=None,
+            personality_sociability=None,
+            personality_bravery=None,
+            personality_tidiness=None,
+            personality_appetite=None,
+        )
+    )
+    await test_db.commit()
+    await test_db.refresh(pet)
+
+    resurrected = await pet_crud.resurrect_pet(test_db, pet)
+
+    assert resurrected.personality_activity is not None
+    assert resurrected.personality_sociability is not None
+    assert resurrected.personality_bravery is not None
+    assert resurrected.personality_tidiness is not None
+    assert resurrected.personality_appetite is not None
+    # Values must be in valid range
+    for field in (
+        resurrected.personality_activity,
+        resurrected.personality_sociability,
+        resurrected.personality_bravery,
+        resurrected.personality_tidiness,
+        resurrected.personality_appetite,
+    ):
+        assert 0.0 <= field <= 1.0
+
+
+async def test_resurrect_pet_personality_is_deterministic(test_db: AsyncSession) -> None:
+    """Personality after resurrection is stable across multiple resurrections."""
+    pet = await pet_crud.create_pet(test_db, "owner2", "repo2", "Phoenix")
+
+    # First death + resurrection
+    await test_db.execute(
+        sa_update(Pet)
+        .where(Pet.repo_owner == "owner2", Pet.repo_name == "repo2")
+        .values(is_dead=True, died_at=datetime.now(UTC), cause_of_death="neglect")
+    )
+    await test_db.commit()
+    await test_db.refresh(pet)
+    first = await pet_crud.resurrect_pet(test_db, pet)
+    first_activity = first.personality_activity
+
+    # Second death + resurrection
+    await test_db.execute(
+        sa_update(Pet)
+        .where(Pet.repo_owner == "owner2", Pet.repo_name == "repo2")
+        .values(is_dead=True, died_at=datetime.now(UTC), cause_of_death="neglect")
+    )
+    await test_db.commit()
+    await test_db.refresh(pet)
+    second = await pet_crud.resurrect_pet(test_db, pet)
+
+    # Deterministic: same repo → same base traits
+    assert second.personality_activity == first_activity
