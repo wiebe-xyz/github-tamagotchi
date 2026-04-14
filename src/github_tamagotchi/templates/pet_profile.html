@@ -313,6 +313,54 @@
             </section>
             {% endif %}
 
+            <!-- Badge Embed Snippet -->
+            <section class="profile-section" style="margin-top: 2rem;">
+                <details>
+                    <summary style="cursor: pointer; font-size: 1.1rem; font-weight: 600; color: rgba(255,255,255,0.9); list-style: none; display: flex; align-items: center; gap: 0.5rem; user-select: none;">
+                        <span style="font-size: 1.1rem;">&#128279;</span> Add to your README
+                    </summary>
+                    <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 1.25rem;">
+                        <p style="margin: 0; font-size: 0.9rem; color: rgba(255,255,255,0.6);">Show off your pet in your repository README by copying one of these snippets.</p>
+
+                        <!-- Markdown snippet -->
+                        <div>
+                            <div style="font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">Markdown</div>
+                            <div style="position: relative;">
+                                <pre id="badge-snippet-md" style="margin: 0; padding: 0.75rem 3rem 0.75rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.82rem; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-all; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">[![My Pet]({{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg)]({{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }})</pre>
+                                <button
+                                    class="badge-copy-btn"
+                                    data-target="badge-snippet-md"
+                                    title="Copy to clipboard"
+                                    style="position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: rgba(255,255,255,0.7); padding: 0.25rem 0.55rem; font-size: 0.78rem; cursor: pointer; line-height: 1.4;"
+                                >&#128203; Copy</button>
+                            </div>
+                        </div>
+
+                        <!-- HTML snippet -->
+                        <div>
+                            <div style="font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">HTML</div>
+                            <div style="position: relative;">
+                                <pre id="badge-snippet-html" style="margin: 0; padding: 0.75rem 3rem 0.75rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.82rem; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-all; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">&lt;a href="{{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }}"&gt;&lt;img src="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg" alt="My Pet"/&gt;&lt;/a&gt;</pre>
+                                <button
+                                    class="badge-copy-btn"
+                                    data-target="badge-snippet-html"
+                                    title="Copy to clipboard"
+                                    style="position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: rgba(255,255,255,0.7); padding: 0.25rem 0.55rem; font-size: 0.78rem; cursor: pointer; line-height: 1.4;"
+                                >&#128203; Copy</button>
+                            </div>
+                        </div>
+
+                        <!-- Badge preview -->
+                        <div>
+                            <div style="font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">Preview</div>
+                            <a href="{{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }}">
+                                <img src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg" alt="{{ pet.name }} badge" style="max-width: 100%;">
+                            </a>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
             <!-- Comments Section -->
             <section class="profile-section" id="comments-section" style="margin-top: 2rem;">
                 <h2>Discussion</h2>
@@ -395,6 +443,19 @@
                 });
             });
         }
+
+        // Badge embed copy buttons
+        document.querySelectorAll('.badge-copy-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const pre = document.getElementById(btn.dataset.target);
+                if (!pre) return;
+                navigator.clipboard.writeText(pre.textContent.trim()).then(() => {
+                    const orig = btn.innerHTML;
+                    btn.innerHTML = '&#10003; Copied!';
+                    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+                });
+            });
+        });
 
         // Comments
         const COMMENTS_API = '/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/comments';
