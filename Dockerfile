@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install uv for fast dependency management
+# Install git (needed for git+ dependencies) and uv
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN pip install uv
 
 # Copy all source files needed for build
