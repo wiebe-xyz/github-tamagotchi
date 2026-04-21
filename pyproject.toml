@@ -22,6 +22,7 @@ dependencies = [
     "cryptography>=42.0.0",
     "Pillow>=10.0.0",
     "sentry-sdk[fastapi]>=2.0.0",
+    "bugbarn-python @ git+https://github.com/webwiebe/bugbarn.git#subdirectory=sdks/python",
     "prometheus-client>=0.24.1",
 ]
 
@@ -43,6 +44,9 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
@@ -62,6 +66,10 @@ warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
 module = ["apscheduler.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["bugbarn"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

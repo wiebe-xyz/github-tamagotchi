@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str | None = None
 
+    # BugBarn
+    bugbarn_endpoint: str | None = None
+    bugbarn_api_key: str | None = None
+
     # Alerting
     alerting_enabled: bool = True
     alert_slack_webhook: str | None = None
@@ -91,6 +95,7 @@ class Settings(BaseSettings):
         "base_url",
         "alert_slack_webhook",
         "alert_discord_webhook",
+        "bugbarn_endpoint",
         mode="before",
     )
     @classmethod
