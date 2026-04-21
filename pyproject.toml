@@ -22,7 +22,7 @@ dependencies = [
     "cryptography>=42.0.0",
     "Pillow>=10.0.0",
     "sentry-sdk[fastapi]>=2.0.0",
-    "bugbarn>=0.1.0",
+    "bugbarn-python @ git+https://github.com/webwiebe/bugbarn.git#subdirectory=sdks/python",
     "prometheus-client>=0.24.1",
 ]
 
