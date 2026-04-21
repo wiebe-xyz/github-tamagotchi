@@ -114,6 +114,13 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: sentry-dsn
+            - name: BUGBARN_ENDPOINT
+              value: "https://bugbarn.test.wiebe.xyz"
+            - name: BUGBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: bugbarn-api-key
           resources:
             requests:
               memory: "128Mi"
@@ -256,6 +263,13 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: sentry-dsn
+            - name: BUGBARN_ENDPOINT
+              value: "https://bugbarn.test.wiebe.xyz"
+            - name: BUGBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: bugbarn-api-key
           resources:
             requests:
               memory: "128Mi"

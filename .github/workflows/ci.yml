@@ -108,6 +108,7 @@ jobs:
       - name: Deploy to k3s
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+          BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY_TESTING }}
         run: |
           mkdir -p ~/.kube
           echo "$KUBECONFIG_DATA" > ~/.kube/config
@@ -115,6 +116,11 @@ jobs:
 
           IMAGE="ghcr.io/${{ github.repository }}:${{ github.sha }}"
           NS="nijmegen-testing"
+
+          # Inject BugBarn API key into the k8s secret
+          kubectl patch secret github-tamagotchi-secrets -n $NS \
+            --type='merge' \
+            -p="{\"stringData\":{\"bugbarn-api-key\":\"$BUGBARN_API_KEY\"}}"
 
           # Determine which color is live
           ACTIVE=$(kubectl get service github-tamagotchi -n $NS \

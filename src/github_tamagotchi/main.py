@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
+import bugbarn
 import sentry_sdk
 import structlog
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -427,6 +428,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         logger.info("Sentry initialized")
 
+    if settings.bugbarn_endpoint and settings.bugbarn_api_key:
+        bugbarn.init(
+            endpoint=settings.bugbarn_endpoint,
+            api_key=settings.bugbarn_api_key,
+            release=__version__,
+            environment=os.getenv("ENVIRONMENT", "production"),
+        )
+        logger.info("BugBarn initialized")
+
     set_start_time()
 
     # Start scheduler for periodic polling
@@ -488,6 +498,16 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 
 register_exception_handlers(app)
+
+
+@app.middleware("http")
+async def bugbarn_middleware(request: Request, call_next: object) -> Response:
+    """Forward unhandled exceptions to BugBarn; Sentry's middleware handles it upstream."""
+    try:
+        return await call_next(request)  # type: ignore[operator]
+    except Exception as exc:
+        bugbarn.capture_exception(exc)
+        raise
 
 
 @app.middleware("http")
