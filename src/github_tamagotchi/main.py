@@ -504,7 +504,7 @@ register_exception_handlers(app)
 async def bugbarn_middleware(request: Request, call_next: object) -> Response:
     """Forward unhandled exceptions to BugBarn; Sentry's middleware handles it upstream."""
     try:
-        return await call_next(request)  # type: ignore[operator]
+        return await call_next(request)  # type: ignore[operator,no-any-return]
     except Exception as exc:
         bugbarn.capture_exception(exc)
         raise
