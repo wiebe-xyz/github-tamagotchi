@@ -173,11 +173,11 @@ async def notify_unhappy_pets(session: AsyncSession) -> int:
             "tag": f"pet-{pet.id}",
         }
 
-        result = await _send_to_subscription(sub, payload)
-        if result is True:
+        send_result = await _send_to_subscription(sub, payload)
+        if send_result is True:
             sub.last_notified_at = datetime.now(UTC)
             sent += 1
-        elif result is None:
+        elif send_result is None:
             to_delete.append(sub)
 
     for sub in to_delete:
