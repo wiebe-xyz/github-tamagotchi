@@ -121,6 +121,16 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: bugbarn-api-key
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-private-key
+            - name: VAPID_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-public-key
           resources:
             requests:
               memory: "128Mi"
@@ -270,6 +280,16 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: bugbarn-api-key
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-private-key
+            - name: VAPID_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-public-key
           resources:
             requests:
               memory: "128Mi"
