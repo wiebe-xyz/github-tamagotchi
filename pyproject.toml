@@ -24,6 +24,7 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.0.0",
     "bugbarn-python @ git+https://github.com/webwiebe/bugbarn.git#subdirectory=sdks/python",
     "prometheus-client>=0.24.1",
+    "pywebpush>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +71,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["bugbarn"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pywebpush", "py_vapid"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

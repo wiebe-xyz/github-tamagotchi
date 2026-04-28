@@ -1,0 +1,25 @@
+{
+  "name": "GitHub Tamagotchi",
+  "short_name": "Tamagotchi",
+  "description": "Virtual pets for your GitHub repositories.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "categories": ["entertainment", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa/icon/192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon/512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

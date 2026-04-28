@@ -32,6 +32,7 @@ from github_tamagotchi.api.auth import auth_router, get_admin_user, get_optional
 from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
+from github_tamagotchi.api.routes.v1.push import router as push_router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
 from github_tamagotchi.core.scheduler import scheduler, set_start_time
@@ -59,6 +60,7 @@ from github_tamagotchi.services.pet_logic import (
     update_commit_streak,
     update_grace_period,
 )
+from github_tamagotchi.services.push_notifications import notify_unhappy_pets
 
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
@@ -305,6 +307,10 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                     rate_limited=rate_limited,
                 )
 
+            # --- Web push notifications for unhappy pets ---
+            if settings.vapid_private_key:
+                await notify_unhappy_pets(session)
+
             # --- Business metrics gauges ---
             now_ts = datetime.now(UTC)
             seven_days_ago = now_ts.timestamp() - 7 * 86400
@@ -439,6 +445,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     set_start_time()
 
+    # Log VAPID key status for push notifications
+    if settings.vapid_private_key:
+        logger.info("Push notifications enabled (VAPID configured)")
+    else:
+        logger.warning(
+            "Push notifications disabled — VAPID_PRIVATE_KEY not set. "
+            "Run: python -m github_tamagotchi.scripts.gen_vapid_keys"
+        )
+
     # Start scheduler for periodic polling
     scheduler.add_job(
         poll_repositories,
@@ -489,6 +504,7 @@ app.include_router(router)
 app.include_router(alert_router)
 app.include_router(auth_router)
 app.include_router(health_router)
+app.include_router(push_router)
 
 # Mount the MCP server at /mcp
 app.mount("/mcp", mcp_app)
@@ -498,6 +514,139 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 
 register_exception_handlers(app)
+
+
+# --- PWA endpoints ---
+
+_pwa_icon_cache: dict[int, bytes] = {}
+
+
+@app.get("/pwa/icon/{size}.png", include_in_schema=False)
+async def pwa_icon(size: int) -> Response:
+    """Serve a generated PWA app icon at the requested size."""
+    valid_sizes = {72, 96, 128, 144, 152, 180, 192, 384, 512}
+    if size not in valid_sizes:
+        raise HTTPException(status_code=404)
+
+    if size not in _pwa_icon_cache:
+        import io
+
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Indigo background circle (safe zone for maskable icons)
+        pad = int(size * 0.04)
+        draw.ellipse([pad, pad, size - pad, size - pad], fill=(99, 102, 241))
+
+        # White egg-shaped body
+        cx, cy = size / 2, size * 0.52
+        bw, bh = size * 0.52, size * 0.62
+        draw.ellipse([cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2], fill=(255, 255, 255))
+
+        # Eyes
+        es = size * 0.065
+        ey = cy - bh * 0.08
+        for ex in [cx - bw * 0.19, cx + bw * 0.19]:
+            draw.ellipse([ex - es / 2, ey - es / 2, ex + es / 2, ey + es / 2], fill=(99, 102, 241))
+
+        # Smile
+        sw = bw * 0.33
+        sy = cy + bh * 0.13
+        lw = max(2, int(size * 0.025))
+        draw.arc(
+            [cx - sw / 2, sy - sw * 0.22, cx + sw / 2, sy + sw * 0.22],
+            start=15, end=165, fill=(99, 102, 241), width=lw,
+        )
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        _pwa_icon_cache[size] = buf.getvalue()
+
+    return Response(
+        content=_pwa_icon_cache[size],
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker() -> Response:
+    """Serve the service worker from the static directory at root scope."""
+    sw_path = BASE_DIR / "static" / "sw.js"
+    return Response(
+        content=sw_path.read_bytes(),
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+@app.get("/pet/{repo_owner}/{repo_name}/manifest.json", include_in_schema=False)
+async def pet_manifest(
+    repo_owner: str,
+    repo_name: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Per-pet PWA manifest so users can install a specific pet to their home screen."""
+    import json as _json
+
+    result = await session.execute(
+        select(Pet).where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
+    )
+    pet = result.scalar_one_or_none()
+
+    if pet:
+        name = f"{pet.name} · Tamagotchi"
+        short_name = pet.name[:12]
+        description = f"Your {pet.stage} pet for {repo_owner}/{repo_name}."
+        stage = pet.stage if not pet.is_dead else "egg"
+        sprite_url = f"/api/v1/pets/{repo_owner}/{repo_name}/image/{stage}"
+    else:
+        name = f"{repo_owner}/{repo_name} · Tamagotchi"
+        short_name = repo_name[:12]
+        description = f"Tamagotchi pet for {repo_owner}/{repo_name}."
+        sprite_url = "/pwa/icon/512.png"
+
+    manifest = {
+        "name": name,
+        "short_name": short_name,
+        "description": description,
+        "start_url": f"/pet/{repo_owner}/{repo_name}",
+        "display": "standalone",
+        "background_color": "#0f0f1a",
+        "theme_color": "#6366f1",
+        "orientation": "portrait-primary",
+        "icons": [
+            {
+                "src": sprite_url,
+                "sizes": "1024x1024",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "/pwa/icon/192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+            {
+                "src": "/pwa/icon/512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+        ],
+    }
+
+    return Response(
+        content=_json.dumps(manifest),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @app.middleware("http")

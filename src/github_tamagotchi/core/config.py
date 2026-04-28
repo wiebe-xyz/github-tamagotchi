@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     alert_death_spike_count: int = 5
     alert_check_interval_minutes: int = 5
 
+    # Web Push / VAPID
+    # Generate keys with: python -m github_tamagotchi.scripts.gen_vapid_keys
+    vapid_private_key: str | None = None  # base64url-encoded DER EC private key
+    vapid_public_key: str | None = None   # base64url-encoded uncompressed EC public key
+    vapid_contact_email: str = "admin@example.com"
+
     @field_validator(
         "oauth_redirect_uri",
         "comfyui_url",

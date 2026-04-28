@@ -15,6 +15,7 @@ from github_tamagotchi.models import (  # noqa: F401 — ensure all models regis
     JobRun,
     Pet,
     PetComment,
+    PushSubscription,
     User,
     WebhookEvent,
 )

@@ -1,0 +1,14 @@
+<!-- PWA: manifest, theme, and service worker registration -->
+<link rel="manifest" href="{{ pwa_manifest_url | default('/manifest.json') }}">
+<meta name="theme-color" content="#6366f1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ pwa_app_title | default('Tamagotchi') }}">
+<link rel="apple-touch-icon" href="{{ pwa_apple_icon | default('/pwa/icon/192.png') }}">
+<script>
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .catch(function (err) { console.warn('SW registration failed:', err); });
+}
+</script>

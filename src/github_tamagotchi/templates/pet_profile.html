@@ -30,6 +30,12 @@
     <meta name="twitter:image" content="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg">
 
     <link rel="stylesheet" href="/static/css/style.css">
+    {% set pwa_manifest_url = '/pet/' + repo_owner + '/' + repo_name + '/manifest.json' %}
+    {% set pwa_app_title = pet.name %}
+    {% if not pet.is_dead %}
+    {% set pwa_apple_icon = '/api/v1/pets/' + repo_owner + '/' + repo_name + '/image/' + pet.stage %}
+    {% endif %}
+    {% include "_pwa_head.html" %}
 </head>
 <body>
     {% include "_nav.html" %}
@@ -239,6 +245,9 @@
                         <a href="/pet/{{ repo_owner }}/{{ repo_name }}/insights" class="share-btn">&#128200; Insights</a>
                         {% if user and (user.is_admin or user.github_login | lower == repo_owner | lower) %}
                         <a href="/pet/{{ repo_owner }}/{{ repo_name }}/admin" class="share-btn">&#9881; Settings</a>
+                        {% endif %}
+                        {% if not pet.is_dead %}
+                        <button class="share-btn" id="notify-btn" data-state="loading" style="display:none;" onclick="togglePetNotifications()">&#128276; Get notified</button>
                         {% endif %}
                     </div>
                 </div>
@@ -799,6 +808,137 @@
             }
         })();
         {% endif %}
+
+        // --- PWA: pet notification subscription ---
+        (function () {
+            var PET_OWNER = {{ repo_owner | tojson }};
+            var PET_NAME = {{ repo_name | tojson }};
+            var btn = document.getElementById('notify-btn');
+            if (!btn) return;
+
+            if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+                return; // not supported, keep button hidden
+            }
+
+            btn.style.display = '';
+
+            function urlBase64ToUint8Array(b64) {
+                var padding = '='.repeat((4 - b64.length % 4) % 4);
+                var base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+                var raw = atob(base64);
+                var arr = new Uint8Array(raw.length);
+                for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+                return arr;
+            }
+
+            function setNotifyState(state) {
+                btn.dataset.state = state;
+                if (state === 'enabled') {
+                    btn.textContent = '🔔 Notifications on';
+                    btn.title = 'Click to disable pet notifications';
+                    btn.style.opacity = '1';
+                    btn.disabled = false;
+                } else if (state === 'blocked') {
+                    btn.textContent = '🔕 Notifications blocked';
+                    btn.title = 'Enable notifications in your browser settings';
+                    btn.style.opacity = '0.5';
+                    btn.disabled = true;
+                } else if (state === 'loading') {
+                    btn.textContent = '…';
+                    btn.disabled = true;
+                } else {
+                    btn.textContent = '🔔 Get notified';
+                    btn.title = 'Get a push notification when ' + PET_NAME + ' is unhappy';
+                    btn.style.opacity = '1';
+                    btn.disabled = false;
+                }
+            }
+
+            async function initNotifyBtn() {
+                if (Notification.permission === 'denied') {
+                    setNotifyState('blocked');
+                    btn.style.display = '';
+                    return;
+                }
+                try {
+                    var reg = await navigator.serviceWorker.ready;
+                    var sub = await reg.pushManager.getSubscription();
+                    if (sub) {
+                        var resp = await fetch(
+                            '/api/v1/push/subscription/' + encodeURIComponent(PET_OWNER) + '/' + encodeURIComponent(PET_NAME) +
+                            '?endpoint=' + encodeURIComponent(sub.endpoint)
+                        );
+                        if (resp.ok) {
+                            var data = await resp.json();
+                            setNotifyState(data.subscribed ? 'enabled' : 'disabled');
+                            return;
+                        }
+                    }
+                    setNotifyState('disabled');
+                } catch (e) {
+                    setNotifyState('disabled');
+                }
+            }
+
+            window.togglePetNotifications = async function () {
+                var state = btn.dataset.state;
+                if (state === 'enabled') {
+                    setNotifyState('loading');
+                    try {
+                        var reg = await navigator.serviceWorker.ready;
+                        var sub = await reg.pushManager.getSubscription();
+                        if (sub) {
+                            await fetch('/api/v1/push/subscribe', {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ endpoint: sub.endpoint, pet_owner: PET_OWNER, pet_name: PET_NAME })
+                            });
+                            await sub.unsubscribe();
+                        }
+                        setNotifyState('disabled');
+                    } catch (e) {
+                        setNotifyState('enabled');
+                    }
+                } else if (state === 'disabled') {
+                    setNotifyState('loading');
+                    try {
+                        var permission = await Notification.requestPermission();
+                        if (permission !== 'granted') {
+                            setNotifyState(permission === 'denied' ? 'blocked' : 'disabled');
+                            return;
+                        }
+                        var keyResp = await fetch('/api/v1/push/vapid-public-key');
+                        var keyData = await keyResp.json();
+                        if (!keyData.publicKey) {
+                            setNotifyState('disabled');
+                            return;
+                        }
+                        var reg = await navigator.serviceWorker.ready;
+                        var sub = await reg.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+                        });
+                        var subJson = sub.toJSON();
+                        await fetch('/api/v1/push/subscribe', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                endpoint: subJson.endpoint,
+                                p256dh: subJson.keys.p256dh,
+                                auth: subJson.keys.auth,
+                                pet_owner: PET_OWNER,
+                                pet_name: PET_NAME
+                            })
+                        });
+                        setNotifyState('enabled');
+                    } catch (e) {
+                        setNotifyState('disabled');
+                    }
+                }
+            };
+
+            initNotifyBtn();
+        })();
     </script>
 </body>
 </html>
