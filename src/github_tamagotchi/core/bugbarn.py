@@ -95,7 +95,7 @@ def capture_error(
     attributes: dict[str, Any] = {"environment": _environment}
     if extra:
         attributes.update(extra)
-    return _sdk.capture_exception(exc, attributes=attributes)
+    return bool(_sdk.capture_exception(exc, attributes=attributes))
 
 
 def capture_message(
