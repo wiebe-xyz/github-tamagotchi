@@ -35,6 +35,7 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.api.routes.v1.push import router as push_router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
+from github_tamagotchi.core.logging import configure_logging
 from github_tamagotchi.core.scheduler import scheduler, set_start_time
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.crud.contributor_relationship import upsert_contributor_relationship
@@ -61,6 +62,9 @@ from github_tamagotchi.services.pet_logic import (
     update_grace_period,
 )
 from github_tamagotchi.services.push_notifications import notify_unhappy_pets
+
+# Configure structured logging before anything else logs
+configure_logging()
 
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
@@ -438,8 +442,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         bugbarn.init(
             endpoint=settings.bugbarn_endpoint,
             api_key=settings.bugbarn_api_key,
-            release=__version__,
-            environment=os.getenv("ENVIRONMENT", "production"),
+            install_excepthook=True,
         )
         logger.info("BugBarn initialized")
 
