@@ -19,6 +19,12 @@ import ssl
 import threading
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
+from typing import Any
+
+import structlog
+from bugbarn.client import Envelope
+from bugbarn.client import Transport as _BugBarnTransport
 
 # BugBarn sits behind Cloudflare which handles SSL; direct server connections
 # use Traefik's self-signed default cert, so we skip verification for this
@@ -26,12 +32,6 @@ import urllib.request
 _SSL_CTX = ssl.create_default_context()
 _SSL_CTX.check_hostname = False
 _SSL_CTX.verify_mode = ssl.CERT_NONE
-from datetime import UTC, datetime
-from typing import Any
-
-import structlog
-from bugbarn.client import Envelope
-from bugbarn.client import Transport as _BugBarnTransport
 
 
 class _ProjectedTransport(_BugBarnTransport):  # type: ignore[misc]
