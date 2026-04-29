@@ -78,6 +78,10 @@ module = ["pywebpush", "py_vapid"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["bugbarn.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["github_tamagotchi.core.config"]
 disable_error_code = ["no-redef"]
 

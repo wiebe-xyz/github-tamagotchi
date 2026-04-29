@@ -26,7 +26,7 @@ from bugbarn.client import Envelope
 from bugbarn.client import Transport as _BugBarnTransport
 
 
-class _ProjectedTransport(_BugBarnTransport):
+class _ProjectedTransport(_BugBarnTransport):  # type: ignore[misc]
     """BugBarn event transport that injects X-BugBarn-Project on every request."""
 
     def __init__(self, api_key: str, endpoint: str, project: str) -> None:
