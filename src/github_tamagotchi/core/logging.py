@@ -15,9 +15,17 @@ import json
 import logging
 import os
 import queue
+import ssl
 import threading
 import urllib.error
 import urllib.request
+
+# BugBarn sits behind Cloudflare which handles SSL; direct server connections
+# use Traefik's self-signed default cert, so we skip verification for this
+# internal telemetry channel. The API key provides authentication.
+_SSL_CTX = ssl.create_default_context()
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode = ssl.CERT_NONE
 from datetime import UTC, datetime
 from typing import Any
 
@@ -46,7 +54,7 @@ class _ProjectedTransport(_BugBarnTransport):  # type: ignore[misc]
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=2) as response:
+            with urllib.request.urlopen(request, timeout=2, context=_SSL_CTX) as response:
                 response.read()
         except urllib.error.URLError:
             return
@@ -108,7 +116,7 @@ class _LogTransport:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with urllib.request.urlopen(request, timeout=5, context=_SSL_CTX) as response:
                 response.read()
         except urllib.error.URLError:
             pass

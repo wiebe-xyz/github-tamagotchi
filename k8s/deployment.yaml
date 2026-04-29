@@ -23,6 +23,12 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-secret
+      # bugbarn.wiebe.xyz is behind Cloudflare which blocks the cluster's ASN;
+      # route directly to layer7 (193.24.209.222) to bypass the Cloudflare proxy.
+      hostAliases:
+        - ip: "193.24.209.222"
+          hostnames:
+            - bugbarn.wiebe.xyz
       initContainers:
         - name: migrate
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
@@ -182,6 +188,12 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-secret
+      # bugbarn.wiebe.xyz is behind Cloudflare which blocks the cluster's ASN;
+      # route directly to layer7 (193.24.209.222) to bypass the Cloudflare proxy.
+      hostAliases:
+        - ip: "193.24.209.222"
+          hostnames:
+            - bugbarn.wiebe.xyz
       initContainers:
         - name: migrate
           image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
