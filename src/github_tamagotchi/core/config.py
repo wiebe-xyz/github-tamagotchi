@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     # BugBarn
     bugbarn_endpoint: str | None = None
     bugbarn_api_key: str | None = None
+    bugbarn_project: str = "github-tamagotchi"
 
     # Alerting
     alerting_enabled: bool = True

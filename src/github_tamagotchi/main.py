@@ -35,7 +35,7 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.api.routes.v1.push import router as push_router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
-from github_tamagotchi.core.logging import configure_logging
+from github_tamagotchi.core.logging import configure_logging, setup_bugbarn_sink
 from github_tamagotchi.core.scheduler import scheduler, set_start_time
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.crud.contributor_relationship import upsert_contributor_relationship
@@ -439,12 +439,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Sentry initialized")
 
     if settings.bugbarn_endpoint and settings.bugbarn_api_key:
+        transport = setup_bugbarn_sink(
+            endpoint=settings.bugbarn_endpoint,
+            api_key=settings.bugbarn_api_key,
+            project=settings.bugbarn_project,
+        )
         bugbarn.init(
             endpoint=settings.bugbarn_endpoint,
             api_key=settings.bugbarn_api_key,
             install_excepthook=True,
+            transport=transport,
         )
-        logger.info("BugBarn initialized")
+        logger.info("BugBarn initialized", project=settings.bugbarn_project)
 
     set_start_time()
 
