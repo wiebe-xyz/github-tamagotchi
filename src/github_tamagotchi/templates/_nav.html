@@ -1,18 +1,14 @@
 <nav class="user-nav">
     <div class="container">
         <a href="/" class="logo" style="text-decoration:none;">GitHub Tamagotchi</a>
-        <div class="nav-links" style="display:flex; gap:1rem; align-items:center;">
+        <div class="nav-links">
             {% if user %}
-            <a href="/dashboard"
-               style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;{% if active_page == 'dashboard' %} font-weight:600;{% endif %}">My Pets</a>
-            <a href="/register"
-               style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;{% if active_page == 'register' %} font-weight:600;{% endif %}">Register</a>
+            <a href="/dashboard" {% if (active_page | default('')) == 'dashboard' %}class="nav-active"{% endif %}>My Pets</a>
+            <a href="/register" {% if (active_page | default('')) == 'register' %}class="nav-active"{% endif %}>Register</a>
             {% endif %}
-            <a href="/leaderboard"
-               style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;{% if active_page == 'leaderboard' %} font-weight:600;{% endif %}">Leaderboard</a>
+            <a href="/leaderboard" {% if (active_page | default('')) == 'leaderboard' %}class="nav-active"{% endif %}>Leaderboard</a>
             {% if user and user.is_admin %}
-            <a href="/admin"
-               style="color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;{% if active_page == 'admin' %} font-weight:600;{% endif %}">Admin</a>
+            <a href="/admin" {% if (active_page | default('')) == 'admin' %}class="nav-active"{% endif %}>Admin</a>
             {% endif %}
         </div>
         <div class="user-info">
@@ -26,10 +22,87 @@
                 <a href="/auth/github" class="cta-button" style="padding:0.4rem 1rem; font-size:0.85rem;">Login with GitHub</a>
             {% endif %}
         </div>
+        <!-- Mobile: avatar-only right side -->
+        {% if user and user.github_avatar_url %}
+        <div class="nav-mobile-right">
+            <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="32" height="32" style="cursor:pointer;" onclick="openMoreSheet()">
+        </div>
+        {% elif not user %}
+        <div class="nav-mobile-right">
+            <a href="/auth/github" class="cta-button" style="padding:0.35rem 0.85rem; font-size:0.8rem;">Login</a>
+        </div>
+        {% endif %}
     </div>
 </nav>
+
+<!-- Bottom tab bar (mobile only) -->
+<nav class="bottom-nav" aria-label="Main navigation">
+    {% if user %}
+    <a href="/dashboard" class="bottom-tab {% if (active_page | default('')) == 'dashboard' %}bottom-tab--active{% endif %}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10L12 3l9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10z"/><path d="M9 21V12h6v9"/></svg>
+        <span>Pets</span>
+    </a>
+    <a href="/leaderboard" class="bottom-tab {% if (active_page | default('')) == 'leaderboard' %}bottom-tab--active{% endif %}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H3V4h3m12 5h3V4h-3M6 4h12v8a6 6 0 0 1-12 0V4z"/><path d="M12 18v3m-3 0h6"/></svg>
+        <span>Top</span>
+    </a>
+    <a href="/register" class="bottom-tab {% if (active_page | default('')) == 'register' %}bottom-tab--active{% endif %}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+        <span>Add</span>
+    </a>
+    <button class="bottom-tab {% if (active_page | default('')) == 'more' %}bottom-tab--active{% endif %}" onclick="openMoreSheet()" aria-haspopup="true" aria-expanded="false" id="more-tab-btn">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="19" cy="12" r="1.75"/></svg>
+        <span>More</span>
+    </button>
+    {% else %}
+    <a href="/" class="bottom-tab {% if (active_page | default('')) == 'landing' %}bottom-tab--active{% endif %}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10L12 3l9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10z"/><path d="M9 21V12h6v9"/></svg>
+        <span>Home</span>
+    </a>
+    <a href="/leaderboard" class="bottom-tab {% if (active_page | default('')) == 'leaderboard' %}bottom-tab--active{% endif %}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H3V4h3m12 5h3V4h-3M6 4h12v8a6 6 0 0 1-12 0V4z"/><path d="M12 18v3m-3 0h6"/></svg>
+        <span>Top</span>
+    </a>
+    <a href="/auth/github" class="bottom-tab">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+        <span>Login</span>
+    </a>
+    {% endif %}
+</nav>
+
+<!-- More sheet backdrop -->
+<div class="more-sheet-backdrop" id="more-sheet-backdrop" onclick="closeMoreSheet()"></div>
+
+<!-- More sheet -->
+<div class="more-sheet" id="more-sheet" role="dialog" aria-label="More options" aria-modal="true">
+    <div class="more-sheet-handle"></div>
+    {% if user %}
+    <div class="more-sheet-profile">
+        {% if user.github_avatar_url %}
+        <img src="{{ user.github_avatar_url }}" alt="{{ user.github_login }}" class="user-avatar" width="44" height="44">
+        {% endif %}
+        <div>
+            <div style="font-weight:600; font-size:1rem;">{{ user.github_login }}</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">GitHub account</div>
+        </div>
+    </div>
+    <div class="more-sheet-divider"></div>
+    {% if user.is_admin %}
+    <a href="/admin" class="more-sheet-item" onclick="closeMoreSheet()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M12 14c-5 0-8 2-8 3v1h16v-1c0-1-3-3-8-3z"/></svg>
+        Admin
+    </a>
+    {% endif %}
+    <button class="more-sheet-item more-sheet-item--danger" id="more-logout-btn" onclick="closeMoreSheet()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Log out
+    </button>
+    {% endif %}
+</div>
+
 <script>
 (function () {
+    // Desktop logout
     var btn = document.getElementById('logout-btn');
     if (btn) {
         btn.addEventListener('click', async function () {
@@ -37,5 +110,33 @@
             window.location.href = '/';
         });
     }
+
+    // Mobile more-sheet logout
+    var mobileLogout = document.getElementById('more-logout-btn');
+    if (mobileLogout) {
+        mobileLogout.addEventListener('click', async function () {
+            await fetch('/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        });
+    }
 })();
+
+function openMoreSheet() {
+    document.getElementById('more-sheet').classList.add('more-sheet--open');
+    document.getElementById('more-sheet-backdrop').classList.add('more-sheet-backdrop--visible');
+    var btn = document.getElementById('more-tab-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+}
+
+function closeMoreSheet() {
+    document.getElementById('more-sheet').classList.remove('more-sheet--open');
+    document.getElementById('more-sheet-backdrop').classList.remove('more-sheet-backdrop--visible');
+    var btn = document.getElementById('more-tab-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+// Close sheet on Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeMoreSheet();
+});
 </script>

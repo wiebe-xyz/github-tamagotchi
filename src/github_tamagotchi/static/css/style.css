@@ -58,6 +58,27 @@ body {
     color: var(--text);
 }
 
+.nav-links {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.nav-links a {
+    color: rgba(255,255,255,0.85);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.nav-links a.nav-active {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.nav-mobile-right {
+    display: none;
+}
+
 .user-info {
     display: flex;
     align-items: center;
@@ -94,6 +115,155 @@ body {
 
 .user-nav + .hero {
     padding-top: 5rem;
+}
+
+/* Bottom tab bar (mobile only) */
+.bottom-nav {
+    display: none;
+}
+
+/* More sheet */
+.more-sheet-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 199;
+    background: rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.more-sheet-backdrop--visible {
+    display: block;
+    opacity: 1;
+}
+
+.more-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: var(--surface);
+    border-radius: 18px 18px 0 0;
+    border-top: 1px solid var(--surface-light);
+    padding: 0 0 calc(0.75rem + env(safe-area-inset-bottom));
+    transform: translateY(100%);
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+}
+
+.more-sheet--open {
+    transform: translateY(0);
+}
+
+.more-sheet-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-light);
+    margin: 0.65rem auto 0.5rem;
+}
+
+.more-sheet-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem 0.85rem;
+}
+
+.more-sheet-divider {
+    height: 1px;
+    background: var(--surface-light);
+    margin: 0;
+}
+
+.more-sheet-item {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    width: 100%;
+    padding: 0.9rem 1.25rem;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 1rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+}
+
+.more-sheet-item:hover,
+.more-sheet-item:active {
+    background: var(--surface-light);
+}
+
+.more-sheet-item--danger {
+    color: #f87171;
+}
+
+@media (max-width: 768px) {
+    /* Simplify top nav on mobile */
+    .nav-links,
+    .user-info {
+        display: none;
+    }
+
+    .nav-mobile-right {
+        display: flex;
+        align-items: center;
+    }
+
+    /* Bottom tab bar */
+    .bottom-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: var(--surface);
+        border-top: 1px solid var(--surface-light);
+        padding-bottom: env(safe-area-inset-bottom);
+        justify-content: space-around;
+    }
+
+    .bottom-tab {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.2rem;
+        flex: 1;
+        padding: 0.55rem 0.25rem;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 0.68rem;
+        letter-spacing: 0.01em;
+        background: none;
+        border: none;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: color 0.15s;
+    }
+
+    .bottom-tab svg {
+        flex-shrink: 0;
+    }
+
+    .bottom-tab--active {
+        color: var(--primary);
+    }
+
+    .bottom-tab:active {
+        opacity: 0.7;
+    }
+
+    /* Push page content above the bottom nav */
+    body {
+        padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+    }
 }
 
 /* Admin sub-nav: fixed directly below the main nav */
