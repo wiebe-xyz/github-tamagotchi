@@ -162,3 +162,11 @@ jobs:
           # Scale down old deployment
           kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
           echo "Scaled down $ACTIVE — deploy complete"
+
+          # Send release marker to BugBarn
+          curl -sf -X POST https://bugbarn.wiebe.xyz/api/v1/releases \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: $BUGBARN_API_KEY" \
+            -H "X-BugBarn-Project: github-tamagotchi" \
+            -d "{\"name\":\"${{ github.sha }}\",\"environment\":\"production\",\"version\":\"${{ github.sha }}\",\"commitSha\":\"${{ github.sha }}\",\"url\":\"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",\"notes\":\"Deployed via CI\"}" \
+            && echo "BugBarn release marker sent" || echo "BugBarn release marker failed (non-fatal)"

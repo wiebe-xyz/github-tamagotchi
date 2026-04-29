@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-import bugbarn
 import sentry_sdk
 import structlog
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -25,6 +24,7 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import github_tamagotchi.core.bugbarn as bb
 from github_tamagotchi import __version__
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.alerts import alert_router
@@ -35,7 +35,7 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.api.routes.v1.push import router as push_router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
-from github_tamagotchi.core.logging import configure_logging, setup_bugbarn_sink
+from github_tamagotchi.core.logging import configure_logging, setup_log_transport
 from github_tamagotchi.core.scheduler import scheduler, set_start_time
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.crud.contributor_relationship import upsert_contributor_relationship
@@ -439,18 +439,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Sentry initialized")
 
     if settings.bugbarn_endpoint and settings.bugbarn_api_key:
-        transport = setup_bugbarn_sink(
+        environment = os.getenv("ENVIRONMENT", "production")
+        bb.init(
+            api_key=settings.bugbarn_api_key,
             endpoint=settings.bugbarn_endpoint,
+            project_slug=settings.bugbarn_project,
+            environment=environment,
+            install_excepthook=True,
+        )
+        setup_log_transport(
+            logs_url=f"{settings.bugbarn_endpoint.rstrip('/')}/api/v1/logs",
             api_key=settings.bugbarn_api_key,
             project=settings.bugbarn_project,
         )
-        bugbarn.init(
-            endpoint=settings.bugbarn_endpoint,
-            api_key=settings.bugbarn_api_key,
-            install_excepthook=True,
-            transport=transport,
-        )
-        logger.info("BugBarn initialized", project=settings.bugbarn_project)
+        logger.info("BugBarn initialized", project=settings.bugbarn_project, env=environment)
 
     set_start_time()
 
@@ -664,7 +666,7 @@ async def bugbarn_middleware(request: Request, call_next: object) -> Response:
     try:
         return await call_next(request)  # type: ignore[operator,no-any-return]
     except Exception as exc:
-        bugbarn.capture_exception(exc)
+        bb.capture_error(exc)
         raise
 
 
