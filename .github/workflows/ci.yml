@@ -108,7 +108,7 @@ jobs:
       - name: Deploy to k3s
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
-          BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY_TESTING }}
+          BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY_PROD }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
         run: |
