@@ -85,11 +85,12 @@ jobs:
 
           kubectl apply -f k8s/staging/ingress.yaml
 
-          # Ensure ghcr-secret exists (copy from nijmegen-testing if needed)
-          kubectl get secret ghcr-secret -n $NS 2>/dev/null || \
-            kubectl get secret ghcr-secret -n nijmegen-testing -o json \
-              | jq '.metadata.namespace = "nijmegen-staging" | del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp)' \
-              | kubectl apply -f -
+          # Recreate ghcr-secret with current workflow token (ephemeral tokens expire)
+          kubectl create secret docker-registry ghcr-secret -n $NS \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -
 
           # Ensure secrets exist and inject all values from CI secrets
           kubectl get secret github-tamagotchi-secrets -n $NS 2>/dev/null || \
