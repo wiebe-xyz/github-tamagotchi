@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: github-tamagotchi
+  namespace: nijmegen-staging
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+spec:
+  rules:
+    - host: tamagotchi-staging.nijmegen.wiebe.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: github-tamagotchi
+                port:
+                  number: 8000
+  tls:
+    - hosts:
+        - tamagotchi-staging.nijmegen.wiebe.xyz

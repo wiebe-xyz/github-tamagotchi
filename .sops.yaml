@@ -1,6 +1,8 @@
 creation_rules:
+  - path_regex: ^\.env\.(production|staging)(\.encrypted)?$
+    age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
   - path_regex: ^\.env(\.encrypted)?$
-    age: age18zj2snpz4mvhzrfyhtdg2mjgzk3qaqcxc0yspadzruz2sw5qqdvq0mh3ym
+    age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295
   - path_regex: ^k8s/secrets\.ya?ml$
     encrypted_regex: "^stringData$"
-    age: age18zj2snpz4mvhzrfyhtdg2mjgzk3qaqcxc0yspadzruz2sw5qqdvq0mh3ym
+    age: age1r7mrwf30q8g6glmngn2cnlzm9vrj6a9arz0t4mwxp6upc0m6tqwskvh295

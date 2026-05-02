@@ -84,7 +84,7 @@ async def send_alert_notification(
                 sent = True
                 logger.info("alert_sent_slack", alert_type=alert_type)
             except Exception as e:
-                logger.error("alert_slack_failed", error=str(e))
+                logger.error("alert_slack_failed", error=str(e), exc_info=True)
 
         if settings.alert_discord_webhook:
             try:
@@ -94,7 +94,7 @@ async def send_alert_notification(
                 sent = True
                 logger.info("alert_sent_discord", alert_type=alert_type)
             except Exception as e:
-                logger.error("alert_discord_failed", error=str(e))
+                logger.error("alert_discord_failed", error=str(e), exc_info=True)
 
     return sent
 
@@ -117,7 +117,7 @@ async def send_resolved_notification(
                 resp.raise_for_status()
                 sent = True
             except Exception as e:
-                logger.error("resolved_slack_failed", error=str(e))
+                logger.error("resolved_slack_failed", error=str(e), exc_info=True)
 
         if settings.alert_discord_webhook:
             try:
@@ -134,6 +134,6 @@ async def send_resolved_notification(
                 resp.raise_for_status()
                 sent = True
             except Exception as e:
-                logger.error("resolved_discord_failed", error=str(e))
+                logger.error("resolved_discord_failed", error=str(e), exc_info=True)
 
     return sent

@@ -2,6 +2,7 @@
 
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
@@ -29,6 +30,7 @@ from github_tamagotchi.services.image_generation import STYLES
 from github_tamagotchi.services.naming import is_valid_pet_name
 from github_tamagotchi.services.pet_logic import SKIN_UNLOCK_CONDITIONS, get_unlocked_skins
 
+logger = structlog.get_logger()
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
@@ -49,7 +51,7 @@ async def update_pet_style(
         _api_routes.get_image_provider()
         await _api_routes.image_queue.create_job(session, pet.id, pet.stage)
     except ValueError:
-        pass
+        logger.debug("image_enqueue_skipped", pet_id=pet.id, reason="no image provider")
     return PetResponse.model_validate(pet)
 
 

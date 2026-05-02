@@ -35,7 +35,11 @@ from github_tamagotchi.api.routes import router
 from github_tamagotchi.api.routes.v1.push import router as push_router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
-from github_tamagotchi.core.logging import configure_logging, setup_log_transport
+from github_tamagotchi.core.logging import (
+    configure_logging,
+    setup_log_transport,
+    shutdown_log_transport,
+)
 from github_tamagotchi.core.scheduler import scheduler, set_start_time
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.crud.contributor_relationship import upsert_contributor_relationship
@@ -217,6 +221,7 @@ async def _update_single_pet(
             pet_id=pet.id,
             repo=f"{pet.repo_owner}/{pet.repo_name}",
             error=str(e),
+            exc_info=True,
         )
 
     logger.debug(
@@ -296,6 +301,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
                         pet_id=pet.id,
                         repo=f"{pet.repo_owner}/{pet.repo_name}",
                         error=str(e),
+                        exc_info=True,
                     )
 
             # Commit all changes
@@ -345,7 +351,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
     except Exception as e:
         final_status = "failed"
         error_messages.append(f"Unhandled error: {e}")
-        logger.error("poll_failed", error=str(e))
+        logger.error("poll_failed", error=str(e), exc_info=True)
 
     # Record poll duration and processed count
     poll_duration = time.monotonic() - poll_start
@@ -496,6 +502,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Image generation queue worker stopped")
 
     scheduler.shutdown()
+    logger.info("Flushing error tracking and log transports")
+    bb.shutdown()
+    shutdown_log_transport()
     await close_database()
     logger.info("GitHub Tamagotchi shutdown complete")
 
@@ -806,6 +815,7 @@ async def contributor_dashboard(
                 "contributor_dashboard_error",
                 username=username,
                 repo=f"{pet.repo_owner}/{pet.repo_name}",
+                exc_info=True,
             )
 
     favorite_count = sum(1 for t in team_pets if t["standing"] == "favorite")
@@ -916,8 +926,16 @@ async def org_overview(
             GitHubService().get_top_contributor(p.repo_owner, p.repo_name) for p in pets
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in results:
-            top_contributors.append(r if isinstance(r, str) else None)
+        for i, r in enumerate(results):
+            if isinstance(r, BaseException):
+                logger.warning(
+                    "top_contributor_fetch_failed",
+                    repo=f"{pets[i].repo_owner}/{pets[i].repo_name}",
+                    error=str(r),
+                )
+                top_contributors.append(None)
+            else:
+                top_contributors.append(r if isinstance(r, str) else None)
 
     # Build per-pet display entries
     pet_entries = [
@@ -1053,9 +1071,9 @@ async def pet_insights(
     try:
         insights = await github_service.get_repo_insights(repo_owner, repo_name)
     except RateLimitError:
-        pass
+        logger.warning("insights_rate_limited", repo=f"{repo_owner}/{repo_name}")
     except Exception:
-        pass
+        logger.warning("insights_fetch_failed", repo=f"{repo_owner}/{repo_name}", exc_info=True)
 
     # Build pet correlation messages based on insights
     pet_correlations: list[str] = []
@@ -1135,7 +1153,12 @@ async def pet_admin_page(
             permission = await gh.get_repo_permission(repo_owner, repo_name, user.github_login)
             is_repo_admin = permission == "admin"
         except Exception:
-            pass
+            logger.warning(
+                "repo_permission_check_failed",
+                repo=f"{repo_owner}/{repo_name}",
+                user=user.github_login,
+                exc_info=True,
+            )
 
     if not is_repo_admin:
         raise HTTPException(status_code=403, detail="Repo admin permission required")

@@ -89,7 +89,12 @@ async def get_pet_badge(
         if image_bytes:
             pet_image_b64 = base64.b64encode(image_bytes).decode()
     except Exception:
-        pass
+        logger.warning(
+            "badge_image_load_failed",
+            repo=f"{pet.repo_owner}/{pet.repo_name}",
+            stage=pet.stage,
+            exc_info=True,
+        )
 
     unlocked_achievements: set[str] = set()
     try:

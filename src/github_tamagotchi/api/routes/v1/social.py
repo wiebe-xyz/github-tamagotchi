@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import structlog
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
@@ -15,6 +16,7 @@ from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.badge import ContributorStanding, classify_contributor_standing
 from github_tamagotchi.services.github import GitHubService
 
+logger = structlog.get_logger()
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["social"])
 
 # Shared headers for all SVG responses
@@ -114,6 +116,12 @@ async def get_contributor_badge(
     try:
         stats: ContributorStats = await gh.get_contributor_stats(repo_owner, repo_name, username)
     except Exception:
+        logger.warning(
+            "contributor_stats_fetch_failed",
+            repo=f"{repo_owner}/{repo_name}",
+            username=username,
+            exc_info=True,
+        )
         stats = ContributorStats(
             commits_30d=0,
             last_commit_at=None,

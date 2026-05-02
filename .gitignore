@@ -44,9 +44,11 @@ htmlcov/
 # Linting
 .ruff_cache/
 
-# Environment
+# Environment (plaintext — encrypted versions are tracked)
 .env
 .env.local
+.env.production
+.env.staging
 
 # Task
 .task/

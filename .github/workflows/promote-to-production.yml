@@ -1,0 +1,200 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'promote' to confirm production deployment"
+        required: true
+
+jobs:
+  read-staging-state:
+    runs-on: self-hosted
+    if: github.event.inputs.confirm == 'promote'
+    outputs:
+      sha: ${{ steps.state.outputs.sha }}
+      tag: ${{ steps.state.outputs.tag }}
+    steps:
+      - name: Read staging deploy state
+        id: state
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_DATA" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+          SHA=$(kubectl get configmap deploy-state -n nijmegen-staging \
+            -o jsonpath='{.data.sha}')
+          TAG=$(kubectl get configmap deploy-state -n nijmegen-staging \
+            -o jsonpath='{.data.tag}')
+
+          if [ -z "$SHA" ] || [ -z "$TAG" ]; then
+            echo "ERROR: No staging deployment state found. Deploy to staging first."
+            exit 1
+          fi
+
+          echo "Promoting staging: tag=$TAG sha=$SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  promote-image:
+    runs-on: ubuntu-latest
+    needs: [read-staging-state]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.read-staging-state.outputs.sha }}
+          fetch-depth: 20
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create production tag
+        id: version
+        run: |
+          VERSION="prod-$(date +%Y%m%d%H%M)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Production version: $VERSION"
+
+      - name: Retag image for production
+        env:
+          STAGING_TAG: ${{ needs.read-staging-state.outputs.tag }}
+          PROD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          echo "Promoting $IMAGE:$STAGING_TAG → $IMAGE:$PROD_VERSION"
+          docker buildx imagetools create \
+            --tag "$IMAGE:$PROD_VERSION" \
+            "$IMAGE:$STAGING_TAG"
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  deploy-production:
+    runs-on: self-hosted
+    needs: [read-staging-state, promote-image]
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.read-staging-state.outputs.sha }}
+
+      - name: Deploy to tamagotchi-production on layer7
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_PROD }}
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          GITHUB_TOKEN_SECRET: ${{ secrets.PROD_GITHUB_TOKEN || secrets.APP_GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.PROD_OPENROUTER_API_KEY || secrets.OPENROUTER_API_KEY }}
+          MINIO_ACCESS_KEY: ${{ secrets.PROD_MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.PROD_MINIO_SECRET_KEY }}
+          GITHUB_OAUTH_CLIENT_ID: ${{ secrets.PROD_GITHUB_OAUTH_CLIENT_ID }}
+          GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.PROD_GITHUB_OAUTH_CLIENT_SECRET }}
+          JWT_SECRET_KEY: ${{ secrets.PROD_JWT_SECRET_KEY }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.PROD_TOKEN_ENCRYPTION_KEY }}
+          SENTRY_DSN: ${{ secrets.PROD_SENTRY_DSN }}
+          BUGBARN_API_KEY: ${{ secrets.PROD_BUGBARN_API_KEY || secrets.BUGBARN_API_KEY_PROD }}
+          BUGBARN_CI_KEY: ${{ secrets.BUGBARN_CI_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.PROD_VAPID_PRIVATE_KEY || secrets.VAPID_PRIVATE_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.PROD_VAPID_PUBLIC_KEY || secrets.VAPID_PUBLIC_KEY }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_DATA" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+          IMAGE="ghcr.io/${{ github.repository }}:${{ needs.promote-image.outputs.version }}"
+          SHA="${{ needs.read-staging-state.outputs.sha }}"
+          TAG="${{ needs.read-staging-state.outputs.tag }}"
+          NS="tamagotchi-production"
+
+          echo "Deploying $IMAGE to $NS (from staging $TAG)"
+
+          # Apply production manifests
+          kubectl apply -f k8s/production/namespace.yaml
+          kubectl apply -f k8s/production/middleware.yaml
+          kubectl apply -f k8s/production/deployment.yaml
+          kubectl apply -f k8s/production/ingress.yaml
+
+          # Inject all secrets from CI
+          PATCH_JSON=$(python3 -c "
+          import json, os
+          data = {}
+          mappings = {
+              'database-url': 'DATABASE_URL',
+              'github-token': 'GITHUB_TOKEN_SECRET',
+              'openrouter-api-key': 'OPENROUTER_API_KEY',
+              'minio-access-key': 'MINIO_ACCESS_KEY',
+              'minio-secret-key': 'MINIO_SECRET_KEY',
+              'github-oauth-client-id': 'GITHUB_OAUTH_CLIENT_ID',
+              'github-oauth-client-secret': 'GITHUB_OAUTH_CLIENT_SECRET',
+              'jwt-secret-key': 'JWT_SECRET_KEY',
+              'token-encryption-key': 'TOKEN_ENCRYPTION_KEY',
+              'sentry-dsn': 'SENTRY_DSN',
+              'bugbarn-api-key': 'BUGBARN_API_KEY',
+              'vapid-private-key': 'VAPID_PRIVATE_KEY',
+              'vapid-public-key': 'VAPID_PUBLIC_KEY',
+          }
+          for k, env in mappings.items():
+              v = os.environ.get(env, '')
+              if v:
+                  data[k] = v
+          print(json.dumps({'stringData': data}))
+          ")
+          kubectl patch secret github-tamagotchi-secrets -n $NS \
+            --type='merge' -p="$PATCH_JSON"
+
+          # Blue-green deploy
+          ACTIVE=$(kubectl get service github-tamagotchi -n $NS \
+            -o jsonpath='{.spec.selector.version}' 2>/dev/null || echo "blue")
+          if [ "$ACTIVE" = "blue" ]; then INACTIVE="green"; else INACTIVE="blue"; fi
+          echo "Active: $ACTIVE | Deploying to: $INACTIVE"
+
+          kubectl set image deployment/github-tamagotchi-$INACTIVE \
+            github-tamagotchi=$IMAGE migrate=$IMAGE -n $NS
+
+          kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=1 -n $NS
+
+          if ! kubectl rollout status deployment/github-tamagotchi-$INACTIVE \
+               -n $NS --timeout=900s; then
+            echo "=== DEPLOY FAILED — traffic stays on $ACTIVE ==="
+            kubectl describe pods -n $NS -l app=github-tamagotchi,version=$INACTIVE
+            echo "=== INIT CONTAINER LOGS ==="
+            kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+              -c migrate --tail=50 2>/dev/null || true
+            echo "=== APP CONTAINER LOGS ==="
+            kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+              -c github-tamagotchi --tail=50 2>/dev/null || true
+            kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=0 -n $NS
+            exit 1
+          fi
+
+          # Atomic traffic switch
+          kubectl patch service github-tamagotchi -n $NS \
+            --type='json' \
+            -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$INACTIVE\"}]"
+          echo "Traffic switched to $INACTIVE"
+
+          kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
+          echo "Scaled down $ACTIVE — production deploy complete"
+
+          # Record deployed state
+          kubectl create configmap deploy-state \
+            --from-literal=sha=$SHA \
+            --from-literal=tag=$TAG \
+            --from-literal=prod-version=${{ needs.promote-image.outputs.version }} \
+            -n $NS --dry-run=client -o yaml | kubectl apply -f -
+
+          # BugBarn release marker
+          PROD_VERSION="${{ needs.promote-image.outputs.version }}"
+          curl -sf -X POST https://bugbarn.wiebe.xyz/api/v1/releases \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: $BUGBARN_CI_KEY" \
+            -H "X-BugBarn-Project: github-tamagotchi" \
+            -d "{\"name\":\"$PROD_VERSION\",\"environment\":\"production\",\"version\":\"$PROD_VERSION\",\"commitSha\":\"$SHA\",\"url\":\"https://github.com/${{ github.repository }}/commit/$SHA\",\"notes\":\"Promoted from staging ($TAG)\"}" \
+            && echo "BugBarn release marker sent" || echo "BugBarn release marker failed (non-fatal)"

@@ -440,4 +440,5 @@ class ImageGenerationService:
                 response = await client.get(f"{self.comfyui_url}/system_stats")
                 return response.status_code == 200
         except Exception:
+            logger.warning("comfyui_health_check_failed", url=self.comfyui_url, exc_info=True)
             return False

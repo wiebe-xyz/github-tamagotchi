@@ -5,6 +5,7 @@ vars:
   ENV_FILE: .env
   PYTHON: uv run
   IMAGE_NAME: github-tamagotchi
+  GH_REPO: wiebe-xyz/github-tamagotchi
 
 tasks:
   # --- Secrets management ---
@@ -31,6 +32,77 @@ tasks:
     desc: Open .env.encrypted in $EDITOR for inline editing
     cmds:
       - EDITOR={{.EDITOR | default "vim"}} sops edit --input-type dotenv --output-type dotenv {{.SOPS_FILE}}
+
+  secrets:edit:production:
+    desc: Edit production secrets in $EDITOR
+    cmds:
+      - EDITOR={{.EDITOR | default "vim"}} sops edit --input-type dotenv --output-type dotenv .env.production.encrypted
+
+  secrets:edit:staging:
+    desc: Edit staging secrets in $EDITOR
+    cmds:
+      - EDITOR={{.EDITOR | default "vim"}} sops edit --input-type dotenv --output-type dotenv .env.staging.encrypted
+
+  secrets:decrypt:production:
+    desc: Decrypt .env.production.encrypted
+    cmds:
+      - sops decrypt --input-type dotenv --output-type dotenv --output .env.production .env.production.encrypted
+
+  secrets:decrypt:staging:
+    desc: Decrypt .env.staging.encrypted
+    cmds:
+      - sops decrypt --input-type dotenv --output-type dotenv --output .env.staging .env.staging.encrypted
+
+  secrets:encrypt:production:
+    desc: Encrypt .env.production
+    cmds:
+      - sops encrypt --input-type dotenv --output-type dotenv --output .env.production.encrypted .env.production
+
+  secrets:encrypt:staging:
+    desc: Encrypt .env.staging
+    cmds:
+      - sops encrypt --input-type dotenv --output-type dotenv --output .env.staging.encrypted .env.staging
+
+  secrets:push:
+    desc: Push all environment secrets to GitHub Actions
+    cmds:
+      - task: secrets:push:shared
+      - task: secrets:push:staging
+      - task: secrets:push:production
+
+  secrets:push:shared:
+    desc: Push shared secrets (KUBECONFIG, KUBECONFIG_PROD) to GitHub
+    cmds:
+      - |
+        echo "Pushing shared secrets to GitHub..."
+        gh secret set KUBECONFIG_PROD --repo {{.GH_REPO}} < <(sops decrypt --input-type dotenv --output-type dotenv .env.production.encrypted 2>/dev/null | grep -q . && echo "skipped" || true)
+        echo "Done. Set KUBECONFIG and KUBECONFIG_PROD manually if not already configured."
+
+  secrets:push:staging:
+    desc: Push staging secrets from .env.staging.encrypted to GitHub
+    cmds:
+      - |
+        sops decrypt --input-type dotenv --output-type dotenv .env.staging.encrypted | while IFS='=' read -r key value; do
+          [ -z "$key" ] && continue
+          [[ "$key" =~ ^# ]] && continue
+          GH_KEY="STAGING_$(echo "$key" | tr '[:lower:]' '[:upper:]')"
+          echo "  Setting $GH_KEY"
+          echo -n "$value" | gh secret set "$GH_KEY" --repo {{.GH_REPO}}
+        done
+        echo "Staging secrets pushed."
+
+  secrets:push:production:
+    desc: Push production secrets from .env.production.encrypted to GitHub
+    cmds:
+      - |
+        sops decrypt --input-type dotenv --output-type dotenv .env.production.encrypted | while IFS='=' read -r key value; do
+          [ -z "$key" ] && continue
+          [[ "$key" =~ ^# ]] && continue
+          GH_KEY="PROD_$(echo "$key" | tr '[:lower:]' '[:upper:]')"
+          echo "  Setting $GH_KEY"
+          echo -n "$value" | gh secret set "$GH_KEY" --repo {{.GH_REPO}}
+        done
+        echo "Production secrets pushed."
 
   # --- Development ---
 
@@ -138,15 +210,15 @@ tasks:
     cmds:
       - "{{.PYTHON}} alembic history --verbose"
 
-  # --- Kubernetes ---
+  # --- Kubernetes (testing — Nijmegen cluster) ---
 
   k8s:secrets:
-    desc: Decrypt and apply k8s secrets to the cluster
+    desc: Decrypt and apply k8s secrets to testing
     cmds:
       - sops decrypt k8s/secrets.yaml | ssh deployer@k3s1 "kubectl apply -f -"
 
   k8s:init:
-    desc: Run init jobs (database + MinIO bucket provisioning)
+    desc: Run init jobs for testing (database + MinIO)
     cmds:
       - ssh deployer@k3s1 "kubectl delete job github-tamagotchi-init-db github-tamagotchi-init-minio -n nijmegen-testing --ignore-not-found"
       - cat k8s/init-db.yaml | ssh deployer@k3s1 "kubectl apply -f -"
@@ -154,7 +226,7 @@ tasks:
       - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n nijmegen-testing --timeout=60s"
 
   k8s:deploy:
-    desc: Apply all k8s manifests and scale up the blue deployment (initial setup)
+    desc: Apply all k8s manifests and scale up blue (testing, initial setup)
     cmds:
       - task: k8s:secrets
       - task: k8s:init
@@ -163,14 +235,70 @@ tasks:
       - ssh deployer@k3s1 "kubectl rollout status deployment/github-tamagotchi-blue -n nijmegen-testing --timeout=120s"
 
   k8s:status:
-    desc: Show pod status for github-tamagotchi
+    desc: Show pod status for github-tamagotchi (testing)
     cmds:
       - ssh deployer@k3s1 "kubectl get pods -n nijmegen-testing -l app=github-tamagotchi -o wide"
 
   k8s:logs:
-    desc: Tail logs from the active pod (color detected dynamically)
+    desc: Tail logs from the active testing pod
     cmds:
       - ssh deployer@k3s1 "ACTIVE=\$(kubectl get service github-tamagotchi -n nijmegen-testing -o jsonpath='{.spec.selector.version}'); kubectl logs -n nijmegen-testing -l app=github-tamagotchi,version=\$ACTIVE --tail=50 -f"
+
+  # --- Kubernetes (production — layer7) ---
+
+  k8s:prod:init:
+    desc: Run init jobs for production on layer7
+    cmds:
+      - ssh deployer@layer7.wiebe.xyz "kubectl delete job github-tamagotchi-init-db github-tamagotchi-init-minio -n tamagotchi-production --ignore-not-found"
+      - cat k8s/production/init-db.yaml | ssh deployer@layer7.wiebe.xyz "kubectl apply -f -"
+      - ssh deployer@layer7.wiebe.xyz "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n tamagotchi-production --timeout=60s"
+      - ssh deployer@layer7.wiebe.xyz "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n tamagotchi-production --timeout=60s"
+
+  k8s:prod:deploy:
+    desc: Apply production manifests to layer7 (initial setup)
+    cmds:
+      - cat k8s/production/namespace.yaml | ssh deployer@layer7.wiebe.xyz "kubectl apply -f -"
+      - cat k8s/production/middleware.yaml | ssh deployer@layer7.wiebe.xyz "kubectl apply -f -"
+      - cat k8s/production/deployment.yaml | ssh deployer@layer7.wiebe.xyz "kubectl apply -f -"
+      - cat k8s/production/ingress.yaml | ssh deployer@layer7.wiebe.xyz "kubectl apply -f -"
+
+  k8s:prod:status:
+    desc: Show pod status for production on layer7
+    cmds:
+      - ssh deployer@layer7.wiebe.xyz "kubectl get pods -n tamagotchi-production -l app=github-tamagotchi -o wide"
+
+  k8s:prod:logs:
+    desc: Tail logs from the active production pod on layer7
+    cmds:
+      - ssh deployer@layer7.wiebe.xyz "ACTIVE=\$(kubectl get service github-tamagotchi -n tamagotchi-production -o jsonpath='{.spec.selector.version}'); kubectl logs -n tamagotchi-production -l app=github-tamagotchi,version=\$ACTIVE --tail=50 -f"
+
+  k8s:prod:secrets:
+    desc: Push production secrets from SOPS to k8s on layer7
+    cmds:
+      - |
+        PATCH=$(sops decrypt --input-type dotenv --output-type dotenv .env.production.encrypted | python3 -c "
+        import sys, json
+        KEY_MAP = {
+            'DATABASE_URL': 'database-url', 'GITHUB_TOKEN': 'github-token',
+            'OPENROUTER_API_KEY': 'openrouter-api-key',
+            'MINIO_ACCESS_KEY': 'minio-access-key', 'MINIO_SECRET_KEY': 'minio-secret-key',
+            'GITHUB_OAUTH_CLIENT_ID': 'github-oauth-client-id',
+            'GITHUB_OAUTH_CLIENT_SECRET': 'github-oauth-client-secret',
+            'JWT_SECRET_KEY': 'jwt-secret-key', 'TOKEN_ENCRYPTION_KEY': 'token-encryption-key',
+            'SENTRY_DSN': 'sentry-dsn', 'BUGBARN_API_KEY': 'bugbarn-api-key',
+            'VAPID_PRIVATE_KEY': 'vapid-private-key', 'VAPID_PUBLIC_KEY': 'vapid-public-key',
+        }
+        data = {}
+        for line in sys.stdin:
+            line = line.strip()
+            if '=' in line:
+                k, v = line.split('=', 1)
+                if k in KEY_MAP and v and v != 'placeholder':
+                    data[KEY_MAP[k]] = v
+        print(json.dumps({'stringData': data}))
+        ")
+        echo "$PATCH" | ssh deployer@layer7.wiebe.xyz \
+          "kubectl patch secret github-tamagotchi-secrets -n tamagotchi-production --type=merge -p=\"\$(cat)\""
 
   # --- Cleanup ---
 

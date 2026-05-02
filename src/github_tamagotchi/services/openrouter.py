@@ -236,4 +236,5 @@ class OpenRouterService:
                 )
                 return response.status_code == 200
         except Exception:
+            logger.warning("openrouter_health_check_failed", exc_info=True)
             return False
