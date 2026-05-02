@@ -3,7 +3,6 @@
 from typing import Annotated
 
 import structlog
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
