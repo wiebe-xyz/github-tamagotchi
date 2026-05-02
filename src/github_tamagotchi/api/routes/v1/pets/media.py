@@ -1,7 +1,8 @@
 """Pet media endpoints: badge SVG, static image, animated GIF, generate/regenerate."""
 
-import logging
 from typing import Annotated
+
+import structlog
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
@@ -17,7 +18,7 @@ from github_tamagotchi.services.image_generation import DEFAULT_STYLE
 from github_tamagotchi.services.sprite_sheet import compose_animated_gif
 from github_tamagotchi.services.storage import StorageService
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
