@@ -121,6 +121,17 @@ jobs:
           kubectl apply -f k8s/production/deployment.yaml
           kubectl apply -f k8s/production/ingress.yaml
 
+          # Ensure ghcr-secret exists for image pulls
+          kubectl get secret ghcr-secret -n $NS 2>/dev/null || \
+            kubectl create secret docker-registry ghcr-secret -n $NS \
+              --docker-server=ghcr.io \
+              --docker-username=${{ github.actor }} \
+              --docker-password=${{ secrets.GITHUB_TOKEN }}
+
+          # Ensure app secrets exist
+          kubectl get secret github-tamagotchi-secrets -n $NS 2>/dev/null || \
+            kubectl create secret generic github-tamagotchi-secrets -n $NS
+
           # Inject all secrets from CI
           PATCH_JSON=$(python3 -c "
           import json, os
