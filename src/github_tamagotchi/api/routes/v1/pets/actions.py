@@ -2,6 +2,7 @@
 
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
@@ -13,6 +14,7 @@ from github_tamagotchi.models.user import User
 from github_tamagotchi.schemas.pets import PetResponse
 from github_tamagotchi.services import pet as pet_service
 
+logger = structlog.get_logger()
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
@@ -35,5 +37,5 @@ async def resurrect_pet(
         _api_routes.get_image_provider()
         await _api_routes.image_queue.create_job(session, pet.id, PetStage.EGG.value)
     except ValueError:
-        pass
+        logger.debug("image_enqueue_skipped", pet_id=pet.id, reason="no image provider")
     return PetResponse.model_validate(pet)

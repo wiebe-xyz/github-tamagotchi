@@ -113,7 +113,7 @@ async def _send_to_subscription(sub: PushSubscription, data: dict[str, Any]) -> 
         logger.warning("push_send_failed", sub_id=sub.id, status=status, error=str(exc))
         return False
     except Exception as exc:
-        logger.error("push_send_error", sub_id=sub.id, error=str(exc))
+        logger.error("push_send_error", sub_id=sub.id, error=str(exc), exc_info=True)
         return False
 
 

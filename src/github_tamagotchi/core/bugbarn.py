@@ -98,6 +98,11 @@ def capture_error(
     return bool(_sdk.capture_exception(exc, attributes=attributes))
 
 
+def shutdown() -> None:
+    """Flush queued events and stop the SDK background worker."""
+    _sdk.shutdown(timeout=3.0)
+
+
 def capture_message(
     message: str,
     level: str = "info",
@@ -124,4 +129,6 @@ def capture_message(
         with urllib.request.urlopen(req, timeout=2, context=_SSL_CTX) as r:
             r.read()
     except urllib.error.URLError:
-        pass
+        import sys
+
+        print(f"bugbarn: failed to send log to {_logs_url}", file=sys.stderr)
