@@ -1,0 +1,169 @@
+name: Deploy Staging
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  promote-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 20
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Retag image with version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          SHA="${{ github.sha }}"
+          IMAGE="ghcr.io/${{ github.repository }}"
+
+          echo "Promoting $IMAGE:$SHA → $IMAGE:$TAG"
+
+          # Walk back up to 20 commits to find the built image
+          for ancestor in $(git log --format='%H' -n 20 "${SHA}"); do
+            if docker buildx imagetools create \
+              --tag "$IMAGE:$TAG" \
+              "$IMAGE:${ancestor}" 2>/dev/null; then
+              echo "Tagged $IMAGE:${ancestor} as $IMAGE:$TAG"
+              exit 0
+            fi
+          done
+
+          echo "ERROR: No image found for any recent commit"
+          exit 1
+
+  deploy-staging:
+    runs-on: self-hosted
+    needs: [promote-image]
+    environment: staging
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Deploy to nijmegen-staging
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          GITHUB_TOKEN_SECRET: ${{ secrets.STAGING_GITHUB_TOKEN || secrets.APP_GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.STAGING_OPENROUTER_API_KEY || secrets.OPENROUTER_API_KEY }}
+          MINIO_ACCESS_KEY: ${{ secrets.STAGING_MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.STAGING_MINIO_SECRET_KEY }}
+          GITHUB_OAUTH_CLIENT_ID: ${{ secrets.STAGING_GITHUB_OAUTH_CLIENT_ID }}
+          GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.STAGING_GITHUB_OAUTH_CLIENT_SECRET }}
+          JWT_SECRET_KEY: ${{ secrets.STAGING_JWT_SECRET_KEY }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.STAGING_TOKEN_ENCRYPTION_KEY }}
+          SENTRY_DSN: ${{ secrets.STAGING_SENTRY_DSN }}
+          BUGBARN_API_KEY: ${{ secrets.STAGING_BUGBARN_API_KEY || secrets.BUGBARN_API_KEY_STAGING }}
+          BUGBARN_CI_KEY: ${{ secrets.BUGBARN_CI_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.STAGING_VAPID_PRIVATE_KEY || secrets.VAPID_PRIVATE_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.STAGING_VAPID_PUBLIC_KEY || secrets.VAPID_PUBLIC_KEY }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_DATA" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+          TAG="${GITHUB_REF#refs/tags/}"
+          IMAGE="ghcr.io/${{ github.repository }}:$TAG"
+          NS="nijmegen-staging"
+
+          # Ensure namespace and resources exist
+          kubectl apply -f k8s/staging/namespace.yaml
+
+          # Ensure deployments + service exist
+          sed 's/namespace: nijmegen-testing/namespace: nijmegen-staging/g; s|tamagotchi.nijmegen.wiebe.xyz|tamagotchi-staging.nijmegen.wiebe.xyz|g' \
+            k8s/deployment.yaml | kubectl apply -f -
+
+          kubectl apply -f k8s/staging/ingress.yaml
+
+          # Ensure ghcr-secret exists (copy from nijmegen-testing if needed)
+          kubectl get secret ghcr-secret -n $NS 2>/dev/null || \
+            kubectl get secret ghcr-secret -n nijmegen-testing -o json \
+              | jq '.metadata.namespace = "nijmegen-staging" | del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp)' \
+              | kubectl apply -f -
+
+          # Ensure secrets exist and inject all values from CI secrets
+          kubectl get secret github-tamagotchi-secrets -n $NS 2>/dev/null || \
+            kubectl create secret generic github-tamagotchi-secrets -n $NS
+
+          PATCH_JSON=$(python3 -c "
+          import json, os
+          data = {}
+          mappings = {
+              'database-url': 'DATABASE_URL',
+              'github-token': 'GITHUB_TOKEN_SECRET',
+              'openrouter-api-key': 'OPENROUTER_API_KEY',
+              'minio-access-key': 'MINIO_ACCESS_KEY',
+              'minio-secret-key': 'MINIO_SECRET_KEY',
+              'github-oauth-client-id': 'GITHUB_OAUTH_CLIENT_ID',
+              'github-oauth-client-secret': 'GITHUB_OAUTH_CLIENT_SECRET',
+              'jwt-secret-key': 'JWT_SECRET_KEY',
+              'token-encryption-key': 'TOKEN_ENCRYPTION_KEY',
+              'sentry-dsn': 'SENTRY_DSN',
+              'bugbarn-api-key': 'BUGBARN_API_KEY',
+              'vapid-private-key': 'VAPID_PRIVATE_KEY',
+              'vapid-public-key': 'VAPID_PUBLIC_KEY',
+          }
+          for k, env in mappings.items():
+              v = os.environ.get(env, '')
+              if v:
+                  data[k] = v
+          print(json.dumps({'stringData': data}))
+          ")
+          kubectl patch secret github-tamagotchi-secrets -n $NS \
+            --type='merge' -p="$PATCH_JSON"
+
+          # Blue-green deploy
+          ACTIVE=$(kubectl get service github-tamagotchi -n $NS \
+            -o jsonpath='{.spec.selector.version}' 2>/dev/null || echo "blue")
+          if [ "$ACTIVE" = "blue" ]; then INACTIVE="green"; else INACTIVE="blue"; fi
+          echo "Active: $ACTIVE | Deploying to: $INACTIVE"
+
+          kubectl set image deployment/github-tamagotchi-$INACTIVE \
+            github-tamagotchi=$IMAGE migrate=$IMAGE -n $NS
+
+          kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=1 -n $NS
+
+          if ! kubectl rollout status deployment/github-tamagotchi-$INACTIVE \
+               -n $NS --timeout=900s; then
+            echo "=== DEPLOY FAILED — traffic stays on $ACTIVE ==="
+            kubectl describe pods -n $NS -l app=github-tamagotchi,version=$INACTIVE
+            kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+              -c migrate --tail=50 2>/dev/null || true
+            kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+              -c github-tamagotchi --tail=50 2>/dev/null || true
+            kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=0 -n $NS
+            exit 1
+          fi
+
+          # Switch traffic
+          kubectl patch service github-tamagotchi -n $NS \
+            --type='json' \
+            -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$INACTIVE\"}]"
+          echo "Traffic switched to $INACTIVE"
+
+          kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
+          echo "Scaled down $ACTIVE — staging deploy complete"
+
+          # Record deployed state for production promotion
+          kubectl create configmap deploy-state \
+            --from-literal=sha=${{ github.sha }} \
+            --from-literal=tag=$TAG \
+            -n $NS --dry-run=client -o yaml | kubectl apply -f -
+
+          # BugBarn release marker
+          curl -sf -X POST https://bugbarn.wiebe.xyz/api/v1/releases \
+            -H "Content-Type: application/json" \
+            -H "X-BugBarn-Api-Key: $BUGBARN_CI_KEY" \
+            -H "X-BugBarn-Project: github-tamagotchi" \
+            -d "{\"name\":\"$TAG\",\"environment\":\"staging\",\"version\":\"$TAG\",\"commitSha\":\"${{ github.sha }}\",\"url\":\"https://github.com/${{ github.repository }}/releases/tag/$TAG\",\"notes\":\"Deployed via tag push to staging\"}" \
+            && echo "BugBarn release marker sent" || echo "BugBarn release marker failed (non-fatal)"

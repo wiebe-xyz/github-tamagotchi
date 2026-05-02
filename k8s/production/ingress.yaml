@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: github-tamagotchi
+  namespace: tamagotchi-production
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: tamagotchi.webwiebe.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: github-tamagotchi
+                port:
+                  number: 8000
+  tls:
+    - hosts:
+        - tamagotchi.webwiebe.nl

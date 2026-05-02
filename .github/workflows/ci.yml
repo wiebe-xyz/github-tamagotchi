@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -74,6 +75,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: [lint, test, e2e]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v6
 
@@ -81,7 +83,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -92,20 +93,20 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: true
           tags: ghcr.io/${{ github.repository }}:latest,ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
+  deploy-testing:
     runs-on: self-hosted
     needs: [build]
     if: github.ref == 'refs/heads/main'
-    environment: production
+    environment: testing
     steps:
       - uses: actions/checkout@v6
 
-      - name: Deploy to k3s
+      - name: Deploy to nijmegen-testing
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
           BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY_PROD }}
@@ -120,54 +121,52 @@ jobs:
           IMAGE="ghcr.io/${{ github.repository }}:${{ github.sha }}"
           NS="nijmegen-testing"
 
-          # Inject secrets into k8s secret
+          # Patch secrets
           kubectl patch secret github-tamagotchi-secrets -n $NS \
             --type='merge' \
             -p="{\"stringData\":{\"bugbarn-api-key\":\"$BUGBARN_API_KEY\",\"vapid-private-key\":\"$VAPID_PRIVATE_KEY\",\"vapid-public-key\":\"$VAPID_PUBLIC_KEY\"}}"
 
-          # Determine which color is live
+          # Blue-green deploy
           ACTIVE=$(kubectl get service github-tamagotchi -n $NS \
             -o jsonpath='{.spec.selector.version}')
           if [ "$ACTIVE" = "blue" ]; then INACTIVE="green"; else INACTIVE="blue"; fi
           echo "Active: $ACTIVE | Deploying to: $INACTIVE"
 
-          # Update the idle deployment's image (container + initContainer)
           kubectl set image deployment/github-tamagotchi-$INACTIVE \
             github-tamagotchi=$IMAGE migrate=$IMAGE -n $NS
 
-          # Scale idle deployment up
           kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=1 -n $NS
 
-          # Wait for the new deployment to be fully healthy
           if ! kubectl rollout status deployment/github-tamagotchi-$INACTIVE \
                -n $NS --timeout=900s; then
             echo "=== DEPLOY FAILED — traffic stays on $ACTIVE ==="
-            echo "=== POD DESCRIBE ==="
             kubectl describe pods -n $NS -l app=github-tamagotchi,version=$INACTIVE
-            echo "=== INIT CONTAINER LOGS ==="
             kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
               -c migrate --tail=50 2>/dev/null || true
-            echo "=== APP CONTAINER LOGS ==="
             kubectl logs -n $NS -l app=github-tamagotchi,version=$INACTIVE \
               -c github-tamagotchi --tail=50 2>/dev/null || true
             kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=0 -n $NS
             exit 1
           fi
 
-          # Atomic traffic switch
+          # Switch traffic
           kubectl patch service github-tamagotchi -n $NS \
             --type='json' \
             -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$INACTIVE\"}]"
           echo "Traffic switched to $INACTIVE"
 
-          # Scale down old deployment
           kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
           echo "Scaled down $ACTIVE — deploy complete"
 
-          # Send release marker to BugBarn (requires full-scope key)
+          # Record deployed SHA for staging promotion
+          kubectl create configmap deploy-state \
+            --from-literal=sha=${{ github.sha }} \
+            -n $NS --dry-run=client -o yaml | kubectl apply -f -
+
+          # BugBarn release marker
           curl -sf -X POST https://bugbarn.wiebe.xyz/api/v1/releases \
             -H "Content-Type: application/json" \
             -H "X-BugBarn-Api-Key: $BUGBARN_CI_KEY" \
             -H "X-BugBarn-Project: github-tamagotchi" \
-            -d "{\"name\":\"${{ github.sha }}\",\"environment\":\"production\",\"version\":\"${{ github.sha }}\",\"commitSha\":\"${{ github.sha }}\",\"url\":\"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",\"notes\":\"Deployed via CI\"}" \
+            -d "{\"name\":\"${{ github.sha }}\",\"environment\":\"testing\",\"version\":\"${{ github.sha }}\",\"commitSha\":\"${{ github.sha }}\",\"url\":\"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\",\"notes\":\"Deployed via CI to testing\"}" \
             && echo "BugBarn release marker sent" || echo "BugBarn release marker failed (non-fatal)"

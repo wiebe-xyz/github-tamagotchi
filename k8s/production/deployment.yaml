@@ -1,0 +1,337 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-tamagotchi-blue
+  namespace: tamagotchi-production
+  labels:
+    app: github-tamagotchi
+    version: blue
+spec:
+  progressDeadlineSeconds: 900
+  revisionHistoryLimit: 2
+  replicas: 0
+  selector:
+    matchLabels:
+      app: github-tamagotchi
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: github-tamagotchi
+        version: blue
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      hostAliases:
+        - ip: "193.24.209.222"
+          hostnames:
+            - bugbarn.wiebe.xyz
+      initContainers:
+        - name: migrate
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          imagePullPolicy: Always
+          command:
+            - sh
+            - -c
+            - |
+              until alembic upgrade head; do
+                echo "Migration failed, retrying in 5s..."
+                sleep 5
+              done
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: github-tamagotchi
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          ports:
+            - containerPort: 8000
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-token
+            - name: IMAGE_GENERATION_PROVIDER
+              value: "openrouter"
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: openrouter-api-key
+            - name: OPENROUTER_MODEL
+              value: "google/gemini-2.5-flash-image"
+            - name: MINIO_ENDPOINT
+              value: "minio.nijmegen-prod.svc.cluster.local:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: minio-access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: minio-secret-key
+            - name: MINIO_BUCKET
+              value: "tamagotchi-production"
+            - name: MINIO_SECURE
+              value: "false"
+            - name: GITHUB_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-id
+            - name: GITHUB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-secret
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: jwt-secret-key
+            - name: TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: token-encryption-key
+            - name: OAUTH_REDIRECT_URI
+              value: "https://tamagotchi.webwiebe.nl/auth/callback"
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: sentry-dsn
+            - name: BUGBARN_ENDPOINT
+              value: "https://bugbarn.wiebe.xyz"
+            - name: BUGBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: bugbarn-api-key
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-private-key
+            - name: VAPID_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-public-key
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-tamagotchi-green
+  namespace: tamagotchi-production
+  labels:
+    app: github-tamagotchi
+    version: green
+spec:
+  progressDeadlineSeconds: 900
+  revisionHistoryLimit: 2
+  replicas: 0
+  selector:
+    matchLabels:
+      app: github-tamagotchi
+      version: green
+  template:
+    metadata:
+      labels:
+        app: github-tamagotchi
+        version: green
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      hostAliases:
+        - ip: "193.24.209.222"
+          hostnames:
+            - bugbarn.wiebe.xyz
+      initContainers:
+        - name: migrate
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          imagePullPolicy: Always
+          command:
+            - sh
+            - -c
+            - |
+              until alembic upgrade head; do
+                echo "Migration failed, retrying in 5s..."
+                sleep 5
+              done
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: github-tamagotchi
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          ports:
+            - containerPort: 8000
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: database-url
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-token
+            - name: IMAGE_GENERATION_PROVIDER
+              value: "openrouter"
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: openrouter-api-key
+            - name: OPENROUTER_MODEL
+              value: "google/gemini-2.5-flash-image"
+            - name: MINIO_ENDPOINT
+              value: "minio.nijmegen-prod.svc.cluster.local:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: minio-access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: minio-secret-key
+            - name: MINIO_BUCKET
+              value: "tamagotchi-production"
+            - name: MINIO_SECURE
+              value: "false"
+            - name: GITHUB_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-id
+            - name: GITHUB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-oauth-client-secret
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: jwt-secret-key
+            - name: TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: token-encryption-key
+            - name: OAUTH_REDIRECT_URI
+              value: "https://tamagotchi.webwiebe.nl/auth/callback"
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: sentry-dsn
+            - name: BUGBARN_ENDPOINT
+              value: "https://bugbarn.wiebe.xyz"
+            - name: BUGBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: bugbarn-api-key
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-private-key
+            - name: VAPID_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: vapid-public-key
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-tamagotchi
+  namespace: tamagotchi-production
+spec:
+  selector:
+    app: github-tamagotchi
+    version: blue
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
