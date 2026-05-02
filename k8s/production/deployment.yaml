@@ -20,6 +20,8 @@ spec:
         app: github-tamagotchi
         version: blue
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: layer7-prod
       imagePullSecrets:
         - name: ghcr-secret
       hostAliases:
@@ -182,6 +184,8 @@ spec:
         app: github-tamagotchi
         version: green
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: layer7-prod
       imagePullSecrets:
         - name: ghcr-secret
       hostAliases:
