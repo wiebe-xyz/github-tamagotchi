@@ -21,7 +21,7 @@ spec:
         version: blue
     spec:
       nodeSelector:
-        kubernetes.io/hostname: layer7-prod
+        kubernetes.io/hostname: k3s1
       imagePullSecrets:
         - name: ghcr-secret
       hostAliases:
@@ -185,7 +185,7 @@ spec:
         version: green
     spec:
       nodeSelector:
-        kubernetes.io/hostname: layer7-prod
+        kubernetes.io/hostname: k3s1
       imagePullSecrets:
         - name: ghcr-secret
       hostAliases:
