@@ -68,9 +68,10 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.STAGING_VAPID_PRIVATE_KEY || secrets.VAPID_PRIVATE_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.STAGING_VAPID_PUBLIC_KEY || secrets.VAPID_PUBLIC_KEY }}
         run: |
-          mkdir -p ~/.kube
-          echo "$KUBECONFIG_DATA" > ~/.kube/config
-          chmod 600 ~/.kube/config
+          KUBECFG="$(mktemp)"
+          echo "$KUBECONFIG_DATA" > "$KUBECFG"
+          chmod 600 "$KUBECFG"
+          export KUBECONFIG="$KUBECFG"
 
           TAG="${GITHUB_REF#refs/tags/}"
           IMAGE="ghcr.io/${{ github.repository }}:$TAG"

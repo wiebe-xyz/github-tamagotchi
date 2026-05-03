@@ -20,9 +20,10 @@ jobs:
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
         run: |
-          mkdir -p ~/.kube
-          echo "$KUBECONFIG_DATA" > ~/.kube/config
-          chmod 600 ~/.kube/config
+          KUBECFG="$(mktemp)"
+          echo "$KUBECONFIG_DATA" > "$KUBECFG"
+          chmod 600 "$KUBECFG"
+          export KUBECONFIG="$KUBECFG"
 
           SHA=$(kubectl get configmap deploy-state -n nijmegen-staging \
             -o jsonpath='{.data.sha}')
@@ -104,9 +105,10 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.PROD_VAPID_PRIVATE_KEY || secrets.VAPID_PRIVATE_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.PROD_VAPID_PUBLIC_KEY || secrets.VAPID_PUBLIC_KEY }}
         run: |
-          mkdir -p ~/.kube
-          echo "$KUBECONFIG_DATA" > ~/.kube/config
-          chmod 600 ~/.kube/config
+          KUBECFG="$(mktemp)"
+          echo "$KUBECONFIG_DATA" > "$KUBECFG"
+          chmod 600 "$KUBECFG"
+          export KUBECONFIG="$KUBECFG"
 
           IMAGE="ghcr.io/${{ github.repository }}:${{ needs.promote-image.outputs.version }}"
           SHA="${{ needs.read-staging-state.outputs.sha }}"
