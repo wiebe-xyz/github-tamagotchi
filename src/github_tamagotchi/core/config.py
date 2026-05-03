@@ -96,6 +96,26 @@ class Settings(BaseSettings):
     vapid_public_key: str | None = None   # base64url-encoded uncompressed EC public key
     vapid_contact_email: str = "admin@example.com"
 
+    @field_validator("token_encryption_key", mode="before")
+    @classmethod
+    def validate_token_encryption_key(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        import base64
+
+        v = v.strip()
+        try:
+            decoded = base64.urlsafe_b64decode(v)
+        except Exception as exc:
+            raise ValueError(
+                "token_encryption_key must be a url-safe base64 string"
+            ) from exc
+        if len(decoded) != 32:
+            raise ValueError(
+                f"token_encryption_key must decode to 32 bytes, got {len(decoded)}"
+            )
+        return v
+
     @field_validator(
         "oauth_redirect_uri",
         "comfyui_url",

@@ -30,6 +30,15 @@ class TestTokenEncryption:
             with pytest.raises(ValueError, match="token_encryption_key"):
                 encrypt_token("some-token")
 
+    def test_key_with_whitespace_works(self) -> None:
+        with patch("github_tamagotchi.services.token_encryption.settings") as mock_settings:
+            mock_settings.token_encryption_key = f"  {self.key}\n"
+            original = "ghp_whitespace_test"
+            encrypted = encrypt_token(original)
+        with patch("github_tamagotchi.services.token_encryption.settings") as mock_settings:
+            mock_settings.token_encryption_key = self.key
+            assert decrypt_token(encrypted) == original
+
     def test_decrypt_with_wrong_key_raises(self) -> None:
         with patch("github_tamagotchi.services.token_encryption.settings") as mock_settings:
             mock_settings.token_encryption_key = self.key

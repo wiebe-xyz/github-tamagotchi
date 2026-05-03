@@ -10,7 +10,7 @@ def _get_fernet() -> Fernet:
     key = settings.token_encryption_key
     if not key:
         raise ValueError("token_encryption_key is not configured")
-    return Fernet(key.encode())
+    return Fernet(key.strip().encode())
 
 
 def encrypt_token(token: str) -> str:
