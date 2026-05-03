@@ -115,6 +115,11 @@ jobs:
 
           echo "Deploying $IMAGE to $NS (from staging $TAG)"
 
+          # Verify target cluster
+          echo "=== Target cluster ==="
+          kubectl get nodes -o wide
+          kubectl cluster-info 2>/dev/null || true
+
           # Apply production manifests
           kubectl apply -f k8s/production/namespace.yaml
           kubectl apply -f k8s/production/middleware.yaml
