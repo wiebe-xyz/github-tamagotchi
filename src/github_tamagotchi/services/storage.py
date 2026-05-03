@@ -161,6 +161,9 @@ class StorageService:
                 return None
             logger.error("Failed to get image", error=str(e), path=object_path)
             raise
+        except Exception as e:
+            logger.error("Storage connection error", error=str(e), path=object_path)
+            raise
 
     async def image_exists(self, owner: str, repo: str, stage: str) -> bool:
         """Check if a pet image exists in storage."""
@@ -275,6 +278,9 @@ class StorageService:
             if e.code == "NoSuchKey":
                 return None
             logger.error("Failed to get object", error=str(e), path=object_path)
+            raise
+        except Exception as e:
+            logger.error("Storage connection error", error=str(e), path=object_path)
             raise
 
     async def _object_exists(self, object_path: str) -> bool:

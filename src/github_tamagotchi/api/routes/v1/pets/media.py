@@ -147,8 +147,7 @@ async def get_pet_image(
 
     try:
         image_data = await storage.get_image(repo_owner, repo_name, stage)
-    except Exception as e:
-        logger.error("Failed to get image from storage: %s", e)
+    except Exception:
         raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     if image_data:
@@ -209,8 +208,7 @@ async def get_pet_animated_gif(
 
     try:
         gif_data = await storage.get_animated_gif(repo_owner, repo_name, stage)
-    except Exception as e:
-        logger.error("Failed to get animated GIF from storage: %s", e)
+    except Exception:
         raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     if gif_data:

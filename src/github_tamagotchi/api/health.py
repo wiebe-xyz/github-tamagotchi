@@ -139,6 +139,25 @@ async def _check_github_api() -> CheckResult:
         return CheckResult(status="error", error=str(exc))
 
 
+async def _check_storage() -> CheckResult:
+    """Check MinIO/S3 storage connectivity."""
+    if not settings.minio_endpoint:
+        return CheckResult(status="ok", error="not configured (optional)")
+    try:
+        from github_tamagotchi.services.storage import StorageService
+
+        storage = StorageService()
+        start = time.monotonic()
+        await storage.ensure_bucket_exists()
+        latency_ms = (time.monotonic() - start) * 1000
+        if latency_ms > 2000:
+            return CheckResult(status="degraded", latency_ms=round(latency_ms, 2))
+        return CheckResult(status="ok", latency_ms=round(latency_ms, 2))
+    except Exception as exc:
+        logger.warning("Storage health check failed", error=str(exc))
+        return CheckResult(status="error", error=str(exc))
+
+
 def _check_scheduler() -> CheckResult:
     """Check if the poll_repositories job is scheduled and running."""
     try:
@@ -180,11 +199,13 @@ async def readiness(session: DbSession) -> ReadinessResponse:
     db_check = await _check_database(session)
     github_check = await _check_github_api()
     scheduler_check = _check_scheduler()
+    storage_check = await _check_storage()
 
     checks = {
         "database": db_check,
         "github_api": github_check,
         "scheduler": scheduler_check,
+        "storage": storage_check,
     }
 
     all_ok = all(c.status == "ok" for c in checks.values())
@@ -215,11 +236,13 @@ async def detailed(
     db_check = await _check_database(session)
     github_check = await _check_github_api()
     scheduler_check = _check_scheduler()
+    storage_check = await _check_storage()
 
     checks = {
         "database": db_check,
         "github_api": github_check,
         "scheduler": scheduler_check,
+        "storage": storage_check,
     }
 
     all_ok = all(c.status == "ok" for c in checks.values())
