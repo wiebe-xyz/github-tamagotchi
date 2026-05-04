@@ -23,13 +23,19 @@ _VALID_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 def _remove_background_bytes(image_data: bytes) -> bytes:
     """Strip chroma-key background from a PNG using corner flood-fill."""
-    from github_tamagotchi.services.sprite_sheet import _remove_background_from_corners
+    try:
+        from github_tamagotchi.services.sprite_sheet import (
+            _remove_background_from_corners,
+        )
 
-    img = Image.open(io.BytesIO(image_data)).convert("RGBA")
-    img = _remove_background_from_corners(img)
-    out = io.BytesIO()
-    img.save(out, format="PNG")
-    return out.getvalue()
+        img = Image.open(io.BytesIO(image_data)).convert("RGBA")
+        img = _remove_background_from_corners(img)
+        out = io.BytesIO()
+        img.save(out, format="PNG")
+        return out.getvalue()
+    except Exception:
+        logger.warning("Background removal failed, returning raw image", exc_info=True)
+        return image_data
 
 
 def remove_white_background(image_bytes: bytes, threshold: int = 240) -> bytes:

@@ -193,6 +193,32 @@ jobs:
             -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$INACTIVE\"}]"
           echo "Traffic switched to $INACTIVE"
 
+          # Verify new deployment is serving traffic before scaling down old
+          echo "Verifying new deployment is healthy..."
+          HEALTHY=false
+          for i in $(seq 1 12); do
+            sleep 5
+            if kubectl exec -n $NS \
+              $(kubectl get pod -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+                -o jsonpath='{.items[0].metadata.name}') \
+              -- wget -qO- http://localhost:8000/api/v1/health/ready 2>/dev/null | grep -q '"status":"healthy"'; then
+              HEALTHY=true
+              echo "New deployment confirmed healthy"
+              break
+            fi
+            echo "Health check attempt $i/12..."
+          done
+
+          if [ "$HEALTHY" != "true" ]; then
+            echo "=== POST-SWITCH HEALTH CHECK FAILED — rolling back ==="
+            kubectl patch service github-tamagotchi -n $NS \
+              --type='json' \
+              -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$ACTIVE\"}]"
+            echo "Traffic rolled back to $ACTIVE"
+            kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=0 -n $NS
+            exit 1
+          fi
+
           kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
           echo "Scaled down $ACTIVE — production deploy complete"
 
