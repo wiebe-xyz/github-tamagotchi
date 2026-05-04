@@ -101,19 +101,15 @@ class Settings(BaseSettings):
     def validate_token_encryption_key(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        import base64
+        from cryptography.fernet import Fernet
 
         v = v.strip()
         try:
-            decoded = base64.urlsafe_b64decode(v)
+            Fernet(v.encode())
         except Exception as exc:
             raise ValueError(
-                "token_encryption_key must be a url-safe base64 string"
+                "token_encryption_key must be a valid Fernet key"
             ) from exc
-        if len(decoded) != 32:
-            raise ValueError(
-                f"token_encryption_key must decode to 32 bytes, got {len(decoded)}"
-            )
         return v
 
     @field_validator(
