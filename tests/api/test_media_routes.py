@@ -8,7 +8,6 @@ a generic FastAPI 404 {"detail": "Not Found"} that indicates a missing route.
 import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from httpx import AsyncClient
 from PIL import Image
 
