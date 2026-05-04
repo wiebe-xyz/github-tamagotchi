@@ -9,8 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 20
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -28,19 +26,21 @@ jobs:
           SHA="${{ github.sha }}"
           IMAGE="ghcr.io/${{ github.repository }}"
 
-          echo "Promoting $IMAGE:$SHA → $IMAGE:$TAG"
+          echo "Tagging $IMAGE:$SHA as $IMAGE:$TAG"
 
-          # Walk back up to 20 commits to find the built image
-          for ancestor in $(git log --format='%H' -n 20 "${SHA}"); do
+          # Wait up to 5 minutes for CI to push the image for this SHA
+          for i in $(seq 1 30); do
             if docker buildx imagetools create \
               --tag "$IMAGE:$TAG" \
-              "$IMAGE:${ancestor}" 2>/dev/null; then
-              echo "Tagged $IMAGE:${ancestor} as $IMAGE:$TAG"
+              "$IMAGE:${SHA}" 2>/dev/null; then
+              echo "Done: $IMAGE:$TAG → $SHA"
               exit 0
             fi
+            echo "Waiting for CI to build $SHA... (attempt $i/30)"
+            sleep 10
           done
 
-          echo "ERROR: No image found for any recent commit"
+          echo "ERROR: Image $IMAGE:$SHA not available after 5 minutes"
           exit 1
 
   deploy-staging:
