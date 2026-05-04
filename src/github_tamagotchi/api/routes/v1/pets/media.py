@@ -307,7 +307,10 @@ async def get_pet_frame(
     """Get an individual frame from a pet's sprite sheet."""
     valid_stages = [s.value for s in PetStage]
     if stage not in valid_stages:
-        raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
+        )
     if frame_index < 0 or frame_index > 5:
         raise HTTPException(status_code=400, detail="frame_index must be 0-5")
     if not _api_routes.settings.minio_endpoint:
