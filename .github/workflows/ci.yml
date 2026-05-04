@@ -163,7 +163,7 @@ jobs:
             if kubectl exec -n $NS \
               $(kubectl get pod -n $NS -l app=github-tamagotchi,version=$INACTIVE \
                 -o jsonpath='{.items[0].metadata.name}') \
-              -- wget -qO- http://localhost:8000/api/v1/health/ready 2>/dev/null | grep -q '"status":"healthy"'; then
+              -- python3 -c "import urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/v1/health/ready'); exit(0 if b'healthy' in r.read() else 1)" 2>/dev/null; then
               HEALTHY=true
               echo "New deployment confirmed healthy"
               break
