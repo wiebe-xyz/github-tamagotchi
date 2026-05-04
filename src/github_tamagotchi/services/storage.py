@@ -21,6 +21,17 @@ logger = structlog.get_logger()
 _VALID_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
+def _remove_background_bytes(image_data: bytes) -> bytes:
+    """Strip chroma-key background from a PNG using corner flood-fill."""
+    from github_tamagotchi.services.sprite_sheet import _remove_background_from_corners
+
+    img = Image.open(io.BytesIO(image_data)).convert("RGBA")
+    img = _remove_background_from_corners(img)
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
 def remove_white_background(image_bytes: bytes, threshold: int = 240) -> bytes:
     """Convert near-white pixels to transparent in a PNG."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
@@ -162,6 +173,11 @@ class StorageService:
             data = response.read()
             response.close()
             response.release_conn()
+            # Strip chroma-key background from raw images that haven't
+            # been through frame extraction yet
+            data = await asyncio.to_thread(
+                _remove_background_bytes, data
+            )
             return data
         except S3Error as e:
             if e.code == "NoSuchKey":
