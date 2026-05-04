@@ -291,6 +291,45 @@ async def get_pet_animated_gif(
 
 
 @router.get(
+    "/pets/{repo_owner}/{repo_name}/image/{stage}/sheet",
+    responses={
+        200: {"content": {"image/png": {}}, "description": "Full sprite sheet"},
+        404: {"description": "Sprite sheet not found"},
+    },
+)
+async def get_pet_sprite_sheet(
+    repo_owner: str,
+    repo_name: str,
+    stage: str,
+    storage: StorageDep,
+) -> Response:
+    """Get the full sprite sheet for a stage (3x2 grid, all frames)."""
+    valid_stages = [s.value for s in PetStage]
+    if stage not in valid_stages:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
+        )
+    if not _api_routes.settings.minio_endpoint:
+        raise HTTPException(status_code=503, detail="Image storage not configured")
+
+    try:
+        sheet_data = await storage.get_sprite_sheet(repo_owner, repo_name, stage)
+    except Exception:
+        logger.error("Failed to get sprite sheet from storage", exc_info=True)
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
+
+    if not sheet_data:
+        raise HTTPException(status_code=404, detail="Sprite sheet not found")
+
+    return Response(
+        content=sheet_data,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get(
     "/pets/{repo_owner}/{repo_name}/image/{stage}/frame/{frame_index}",
     responses={
         200: {"content": {"image/png": {}}, "description": "Individual sprite frame"},
