@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ status_code }} — GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% include "_pwa_head.html" %}
+</head>
+<body>
+    {% set user = None %}
+    {% set active_page = "" %}
+    {% include "_nav.html" %}
+
+    <section class="hero" style="min-height: 60vh; display: flex; align-items: center;">
+        <div class="container" style="text-align: center;">
+            <h1 style="font-size: 4rem; margin-bottom: 0.5rem;">{{ status_code }}</h1>
+            <p style="font-size: 1.25rem; opacity: 0.8; margin-bottom: 2rem;">{{ message }}</p>
+            <a href="/" class="btn btn-primary">Back to home</a>
+        </div>
+    </section>
+</body>
+</html>

@@ -533,7 +533,7 @@ app.mount("/mcp", mcp_app)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
-register_exception_handlers(app)
+register_exception_handlers(app, templates)
 
 
 # --- PWA endpoints ---
@@ -669,14 +669,6 @@ async def pet_manifest(
     )
 
 
-@app.middleware("http")
-async def bugbarn_middleware(request: Request, call_next: object) -> Response:
-    """Forward unhandled exceptions to BugBarn; Sentry's middleware handles it upstream."""
-    try:
-        return await call_next(request)  # type: ignore[operator,no-any-return]
-    except Exception as exc:
-        bb.capture_error(exc)
-        raise
 
 
 @app.middleware("http")
