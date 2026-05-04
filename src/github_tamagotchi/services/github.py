@@ -200,6 +200,11 @@ class GitHubService:
             # Get security alerts
             security_counts = await self._get_security_alerts(client, owner, repo)
 
+            # Check for stale dependencies (any open Dependabot alerts)
+            has_stale_dependencies = await self._has_stale_dependencies(
+                client, owner, repo
+            )
+
             # Get dependent count (repos/packages that depend on this one)
             dependent_count = await self._get_dependent_count(client, owner, repo)
 
@@ -213,7 +218,7 @@ class GitHubService:
                 open_issues_count=open_issues_count,
                 oldest_issue_age_days=oldest_issue_age,
                 last_ci_success=last_ci_success,
-                has_stale_dependencies=False,  # TODO: Check dependabot
+                has_stale_dependencies=has_stale_dependencies,
                 release_count_30d=release_count_30d,
                 contributor_count=contributor_count,
                 security_alerts_critical=security_counts["critical"],
@@ -348,6 +353,29 @@ class GitHubService:
         except Exception as e:
             logger.warning("Failed to get security alerts", error=str(e))
         return counts
+
+    async def _has_stale_dependencies(
+        self, client: httpx.AsyncClient, owner: str, repo: str
+    ) -> bool:
+        """Check if the repo has any open Dependabot alerts (stale dependencies)."""
+        try:
+            resp = await client.get(
+                f"{self.base_url}/repos/{owner}/{repo}/dependabot/alerts",
+                headers=self._get_headers(),
+                params={"state": "open", "per_page": 1},
+            )
+            self._check_rate_limit(resp)
+            if resp.status_code in (403, 404):
+                # Dependabot not enabled or insufficient permissions
+                return False
+            resp.raise_for_status()
+            alerts: list[dict[str, Any]] = resp.json()
+            return len(alerts) > 0
+        except RateLimitError:
+            raise
+        except Exception as e:
+            logger.warning("Failed to check stale dependencies", error=str(e))
+        return False
 
     async def _get_star_fork_counts(
         self, client: httpx.AsyncClient, owner: str, repo: str
