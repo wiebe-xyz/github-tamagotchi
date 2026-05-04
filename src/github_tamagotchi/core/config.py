@@ -101,16 +101,7 @@ class Settings(BaseSettings):
     def validate_token_encryption_key(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        from cryptography.fernet import Fernet
-
-        v = v.strip()
-        try:
-            Fernet(v.encode())
-        except Exception as exc:
-            raise ValueError(
-                "token_encryption_key must be a valid Fernet key"
-            ) from exc
-        return v
+        return v.strip()
 
     @field_validator(
         "oauth_redirect_uri",
