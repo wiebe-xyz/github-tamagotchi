@@ -131,7 +131,8 @@ def build_sprite_sheet_prompt(
 
     negative = (
         style_def.get("negative", NEGATIVE_PROMPT)
-        + ", multiple different characters, text labels, cut off frames, "
+        + ", multiple different characters, text labels, numbers, digits, numerals, "
+        "annotations, grid lines, cell borders, cut off frames, "
         "misaligned grid, inconsistent character design"
     )
 

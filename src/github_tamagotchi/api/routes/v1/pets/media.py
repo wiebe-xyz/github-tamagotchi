@@ -290,6 +290,45 @@ async def get_pet_animated_gif(
     )
 
 
+@router.get(
+    "/pets/{repo_owner}/{repo_name}/image/{stage}/frame/{frame_index}",
+    responses={
+        200: {"content": {"image/png": {}}, "description": "Individual sprite frame"},
+        404: {"description": "Frame not found"},
+    },
+)
+async def get_pet_frame(
+    repo_owner: str,
+    repo_name: str,
+    stage: str,
+    frame_index: int,
+    storage: StorageDep,
+) -> Response:
+    """Get an individual frame from a pet's sprite sheet."""
+    valid_stages = [s.value for s in PetStage]
+    if stage not in valid_stages:
+        raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}")
+    if frame_index < 0 or frame_index > 5:
+        raise HTTPException(status_code=400, detail="frame_index must be 0-5")
+    if not _api_routes.settings.minio_endpoint:
+        raise HTTPException(status_code=503, detail="Image storage not configured")
+
+    try:
+        frame_data = await storage.get_frame(repo_owner, repo_name, stage, frame_index)
+    except Exception as e:
+        logger.error("Failed to get frame from storage: %s", e)
+        raise HTTPException(status_code=503, detail="Storage service unavailable") from None
+
+    if not frame_data:
+        raise HTTPException(status_code=404, detail="Frame not found")
+
+    return Response(
+        content=frame_data,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @router.post(
     "/pets/{repo_owner}/{repo_name}/generate-images",
     response_model=ImageGenerationResponse,

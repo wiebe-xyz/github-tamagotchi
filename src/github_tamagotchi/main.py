@@ -1395,10 +1395,12 @@ async def admin_sprites(
     )
     pets = pets_result.scalars().all()
     stages = [s.value for s in PetStage]
+    from github_tamagotchi.services.sprite_sheet import SPRITE_FRAMES
+    frame_names = [name for _, name, _ in SPRITE_FRAMES]
     return templates.TemplateResponse(
         request,
         "admin_sprites.html",
-        {"user": user, "pets": pets, "stages": stages},
+        {"user": user, "pets": pets, "stages": stages, "frame_names": frame_names},
     )
 
 
