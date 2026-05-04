@@ -147,8 +147,8 @@ async def get_pet_image(
 
     try:
         image_data = await storage.get_image(repo_owner, repo_name, stage)
-    except Exception as e:
-        logger.error("Failed to get image from storage: %s", e)
+    except Exception:
+        logger.error("Failed to get image from storage", exc_info=True)
         raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     if image_data:
@@ -177,8 +177,8 @@ async def get_pet_image(
         raise
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
-    except Exception as e:
-        logger.error("Failed to generate image: %s", e)
+    except Exception:
+        logger.error("Failed to generate image", exc_info=True)
         raise HTTPException(status_code=503, detail="Image generation failed") from None
 
 
@@ -209,8 +209,8 @@ async def get_pet_animated_gif(
 
     try:
         gif_data = await storage.get_animated_gif(repo_owner, repo_name, stage)
-    except Exception as e:
-        logger.error("Failed to get animated GIF from storage: %s", e)
+    except Exception:
+        logger.error("Failed to get animated GIF from storage", exc_info=True)
         raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     if gif_data:
@@ -245,8 +245,8 @@ async def get_pet_animated_gif(
             style=style,
             canonical_appearance=stored_appearance,
         )
-    except Exception as e:
-        logger.error("Sprite sheet generation failed: %s", e)
+    except Exception:
+        logger.error("Sprite sheet generation failed", exc_info=True)
         raise HTTPException(status_code=503, detail="Sprite sheet generation failed") from None
 
     if not sheet_result.success or not sheet_result.sprite_sheet_data:
@@ -266,8 +266,8 @@ async def get_pet_animated_gif(
 
     try:
         gif_data = compose_animated_gif(sheet_result.frames, mood=mood, health=health)
-    except Exception as e:
-        logger.error("GIF composition failed: %s", e)
+    except Exception:
+        logger.error("GIF composition failed", exc_info=True)
         raise HTTPException(status_code=503, detail="GIF composition failed") from None
 
     try:
@@ -318,8 +318,8 @@ async def get_pet_frame(
 
     try:
         frame_data = await storage.get_frame(repo_owner, repo_name, stage, frame_index)
-    except Exception as e:
-        logger.error("Failed to get frame from storage: %s", e)
+    except Exception:
+        logger.error("Failed to get frame from storage", exc_info=True)
         raise HTTPException(status_code=503, detail="Storage service unavailable") from None
 
     if not frame_data:
@@ -348,8 +348,8 @@ async def generate_pet_images(
         )
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
-    except Exception as e:
-        logger.error("Failed to generate images: %s", e)
+    except Exception:
+        logger.error("Failed to generate images", exc_info=True)
         raise HTTPException(status_code=503, detail="Image generation failed") from None
 
 
@@ -370,6 +370,6 @@ async def regenerate_pet_images(
         )
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Image generation timed out") from None
-    except Exception as e:
-        logger.error("Failed to regenerate images: %s", e)
+    except Exception:
+        logger.error("Failed to regenerate images", exc_info=True)
         raise HTTPException(status_code=503, detail="Image regeneration failed") from None
