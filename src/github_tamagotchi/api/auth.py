@@ -231,7 +231,11 @@ async def oauth_callback(
     # Encrypt token before storage
     encrypted = None
     if settings.token_encryption_key:
-        encrypted = encrypt_token(access_token)
+        try:
+            encrypted = encrypt_token(access_token)
+        except Exception:
+            logger.exception("Failed to encrypt token — storing without encryption")
+            encrypted = None
 
     # Create or update user in database
     user = await create_or_update_user(
