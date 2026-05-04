@@ -12,7 +12,10 @@ from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.image_generation import ImageGenerationService, remove_background
 from github_tamagotchi.services.openrouter import OpenRouterService
+from github_tamagotchi.services.pet import update_canonical_appearance, update_images_generated_at
 from github_tamagotchi.services.provider import ImageProvider
+from github_tamagotchi.services.sprite_sheet import compose_animated_gif
+from github_tamagotchi.services.storage import StorageService
 
 logger = structlog.get_logger()
 
@@ -266,8 +269,12 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
         # Determine which stages to generate (specific stage or all stages)
         stages = [job.stage] if job.stage else [stage.value for stage in PetStage]
 
-        # Generate images for each stage
+        # Generate images for each stage and upload to MinIO
         image_service = get_image_provider()
+        storage = StorageService()
+        style = getattr(pet, "style", "kawaii")
+        use_sprite_sheets = settings.image_generation_provider == "openrouter"
+
         for stage in stages:
             logger.info(
                 "Generating image for stage",
@@ -276,11 +283,75 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
                 stage=stage,
             )
 
+            if use_sprite_sheets:
+                # Use sprite sheet generation for OpenRouter (produces 6 animation frames)
+                openrouter = OpenRouterService()
+                sheet_result = await openrouter.generate_sprite_sheet(
+                    pet.repo_owner,
+                    pet.repo_name,
+                    stage,
+                    style=style,
+                    canonical_appearance=pet.canonical_appearance,
+                )
+
+                if sheet_result.success and sheet_result.sprite_sheet_data:
+                    # Upload sprite sheet
+                    await storage.upload_sprite_sheet(
+                        pet.repo_owner, pet.repo_name, stage, sheet_result.sprite_sheet_data
+                    )
+
+                    # Upload individual frames
+                    for idx, frame_bytes in enumerate(sheet_result.frames):
+                        await storage.upload_frame(
+                            pet.repo_owner, pet.repo_name, stage, idx, frame_bytes
+                        )
+
+                    # Compose and upload animated GIF
+                    gif_data = compose_animated_gif(
+                        sheet_result.frames,
+                        mood=pet.mood if hasattr(pet, "mood") else "content",
+                        health=pet.health if hasattr(pet, "health") else 100,
+                    )
+                    await storage.upload_animated_gif(
+                        pet.repo_owner, pet.repo_name, stage, gif_data
+                    )
+
+                    # Update canonical appearance if not already set
+                    if (
+                        not pet.canonical_appearance
+                        and sheet_result.canonical_appearance
+                    ):
+                        await update_canonical_appearance(
+                            session,
+                            pet.repo_owner,
+                            pet.repo_name,
+                            sheet_result.canonical_appearance,
+                        )
+                        pet.canonical_appearance = sheet_result.canonical_appearance
+
+                    logger.info(
+                        "Successfully generated and uploaded sprite sheet for stage",
+                        job_id=job.id,
+                        pet_id=job.pet_id,
+                        stage=stage,
+                        frame_count=len(sheet_result.frames),
+                    )
+                    continue
+
+                # Sprite sheet failed — fall back to single image generation
+                logger.warning(
+                    "Sprite sheet generation failed, falling back to single image",
+                    job_id=job.id,
+                    stage=stage,
+                    error=sheet_result.error,
+                )
+
+            # Single image fallback (non-OpenRouter or sprite sheet failure)
             result = await image_service.generate_pet_image(
                 owner=pet.repo_owner,
                 repo=pet.repo_name,
                 stage=stage,
-                style=getattr(pet, "style", "kawaii"),
+                style=style,
             )
 
             if not result.success:
@@ -291,18 +362,19 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
             # Remove chroma-key background to produce a transparent PNG
             if result.image_data:
                 result.image_data = remove_background(result.image_data)
+                await storage.upload_image(
+                    pet.repo_owner, pet.repo_name, stage, result.image_data
+                )
 
             logger.info(
-                "Successfully generated image for stage",
+                "Successfully generated and uploaded image for stage",
                 job_id=job.id,
                 pet_id=job.pet_id,
                 stage=stage,
-                filename=result.filename,
             )
 
-            # NOTE: Image storage to MinIO will be implemented separately.
-            # For now, ComfyUI saves images to its output directory.
-            # The badge endpoint can serve from there or use a fallback.
+        # Update the timestamp for when images were last generated
+        await update_images_generated_at(session, pet.repo_owner, pet.repo_name)
 
         await mark_job_completed(session, job.id)
         logger.info(

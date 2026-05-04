@@ -319,7 +319,15 @@ class TestProcessJob:
                 "github_tamagotchi.services.image_queue.remove_background",
                 return_value=b"transparent_png",
             ),
+            patch(
+                "github_tamagotchi.services.image_queue.StorageService"
+            ) as mock_storage_cls,
+            patch(
+                "github_tamagotchi.services.image_queue.update_images_generated_at",
+                new_callable=AsyncMock,
+            ),
         ):
+            mock_storage_cls.return_value = AsyncMock()
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
@@ -350,7 +358,15 @@ class TestProcessJob:
                 "github_tamagotchi.services.image_queue.remove_background",
                 return_value=b"transparent_png",
             ),
+            patch(
+                "github_tamagotchi.services.image_queue.StorageService"
+            ) as mock_storage_cls,
+            patch(
+                "github_tamagotchi.services.image_queue.update_images_generated_at",
+                new_callable=AsyncMock,
+            ),
         ):
+            mock_storage_cls.return_value = AsyncMock()
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
@@ -386,7 +402,15 @@ class TestProcessJob:
                 "github_tamagotchi.services.image_queue.remove_background",
                 return_value=b"transparent_png",
             ),
+            patch(
+                "github_tamagotchi.services.image_queue.StorageService"
+            ) as mock_storage_cls,
+            patch(
+                "github_tamagotchi.services.image_queue.update_images_generated_at",
+                new_callable=AsyncMock,
+            ),
         ):
+            mock_storage_cls.return_value = AsyncMock()
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
@@ -407,9 +431,19 @@ class TestProcessJob:
             error="ComfyUI connection failed",
         )
 
-        with patch(
-            "github_tamagotchi.services.image_queue.get_image_provider"
-        ) as mock_get_provider:
+        with (
+            patch(
+                "github_tamagotchi.services.image_queue.get_image_provider"
+            ) as mock_get_provider,
+            patch(
+                "github_tamagotchi.services.image_queue.StorageService"
+            ) as mock_storage_cls,
+            patch(
+                "github_tamagotchi.services.image_queue.update_images_generated_at",
+                new_callable=AsyncMock,
+            ),
+        ):
+            mock_storage_cls.return_value = AsyncMock()
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
@@ -486,7 +520,15 @@ class TestRunWorker:
                 "github_tamagotchi.services.image_queue.remove_background",
                 return_value=b"transparent_png",
             ),
+            patch(
+                "github_tamagotchi.services.image_queue.StorageService"
+            ) as mock_storage_cls,
+            patch(
+                "github_tamagotchi.services.image_queue.update_images_generated_at",
+                new_callable=AsyncMock,
+            ),
         ):
+            mock_storage_cls.return_value = AsyncMock()
             mock_service = AsyncMock()
             mock_service.generate_pet_image.return_value = mock_result
             mock_get_provider.return_value = mock_service
