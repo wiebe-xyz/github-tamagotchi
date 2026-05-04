@@ -77,7 +77,9 @@ spec:
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
             - name: MINIO_ENDPOINT
-              value: "minio.nijmegen-prod.svc.cluster.local:9000"
+              value: "s3.wiebe.xyz"
+            - name: MINIO_SECURE
+              value: "true"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -90,8 +92,6 @@ spec:
                   key: minio-secret-key
             - name: MINIO_BUCKET
               value: "tamagotchi-production"
-            - name: MINIO_SECURE
-              value: "false"
             - name: GITHUB_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -112,6 +112,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: token-encryption-key
+            - name: BASE_URL
+              value: "https://tamagotchi.webwiebe.nl"
             - name: OAUTH_REDIRECT_URI
               value: "https://tamagotchi.webwiebe.nl/auth/callback"
             - name: SENTRY_DSN
@@ -241,7 +243,9 @@ spec:
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
             - name: MINIO_ENDPOINT
-              value: "minio.nijmegen-prod.svc.cluster.local:9000"
+              value: "s3.wiebe.xyz"
+            - name: MINIO_SECURE
+              value: "true"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -254,8 +258,6 @@ spec:
                   key: minio-secret-key
             - name: MINIO_BUCKET
               value: "tamagotchi-production"
-            - name: MINIO_SECURE
-              value: "false"
             - name: GITHUB_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -276,6 +278,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: token-encryption-key
+            - name: BASE_URL
+              value: "https://tamagotchi.webwiebe.nl"
             - name: OAUTH_REDIRECT_URI
               value: "https://tamagotchi.webwiebe.nl/auth/callback"
             - name: SENTRY_DSN
