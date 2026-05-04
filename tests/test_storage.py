@@ -114,7 +114,7 @@ class TestStorageService:
     async def test_get_image_found(
         self, storage_service: StorageService, mock_minio_client: MagicMock
     ) -> None:
-        """Test retrieving existing image."""
+        """Test retrieving existing image — prefers idle frame over sprite sheet."""
         mock_response = MagicMock()
         mock_response.read.return_value = b"image data"
         mock_minio_client.get_object.return_value = mock_response
@@ -123,7 +123,7 @@ class TestStorageService:
 
         assert result == b"image data"
         mock_minio_client.get_object.assert_called_once_with(
-            "test-bucket", "pets/owner/repo/baby.png"
+            "test-bucket", "pets/owner/repo/baby_frame_0.png"
         )
         mock_response.close.assert_called_once()
         mock_response.release_conn.assert_called_once()

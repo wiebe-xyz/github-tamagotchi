@@ -137,6 +137,9 @@ class StorageService:
     async def get_image(self, owner: str, repo: str, stage: str) -> bytes | None:
         """Retrieve a pet image from storage.
 
+        Prefers the extracted idle frame (frame 0) over the raw sprite sheet,
+        since the sprite sheet has a magenta chroma-key background.
+
         Args:
             owner: Repository owner
             repo: Repository name
@@ -145,6 +148,11 @@ class StorageService:
         Returns:
             Image bytes or None if not found
         """
+        # Try idle frame first — it has the background removed
+        frame_data = await self.get_frame(owner, repo, stage, 0)
+        if frame_data:
+            return frame_data
+
         object_path = self._get_object_path(owner, repo, stage)
 
         try:

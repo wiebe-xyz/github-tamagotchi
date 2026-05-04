@@ -86,14 +86,14 @@
                     {% if pet.is_dead %}
                     <div class="pet-emoji-fallback" style="display:flex; font-size: 4rem;">&#129680;</div>
                     {% else %}
-                    <div
+                    <img
+                        src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}"
+                        data-animated="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}/animated"
+                        alt="{{ pet.name }}"
                         class="profile-sprite"
                         id="profile-pet"
-                        role="img"
-                        aria-label="{{ pet.name }}"
-                        data-sprite-url="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}"
-                        data-animated="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/image/{{ pet.stage }}/animated"
-                    ></div>
+                        onerror="this.style.display='none'; document.getElementById('pet-emoji-fallback').style.display='flex'; this.onerror=null;"
+                    >
                     <div id="pet-emoji-fallback" class="pet-emoji-fallback" style="display:none;">&#128049;</div>
                     <div class="pet-shadow"></div>
                     <div class="status-badge mood-{{ pet.mood }}">{{ pet.mood | capitalize }}</div>
@@ -449,26 +449,9 @@
     </footer>
 
     <script>
-        // Sprite sheet cutout: show only the idle frame (top-left cell of 3x2 grid)
+        // Bounce animation
         const pet = document.getElementById('profile-pet');
         if (pet) {
-            const spriteUrl = pet.dataset.spriteUrl;
-            if (spriteUrl) {
-                const spriteImg = new Image();
-                spriteImg.onload = function () {
-                    pet.style.backgroundImage = 'url(' + spriteUrl + ')';
-                    pet.style.backgroundSize = '300% 200%';
-                    pet.style.backgroundPosition = '0% 0%';
-                    pet.style.backgroundRepeat = 'no-repeat';
-                    pet.style.imageRendering = 'pixelated';
-                };
-                spriteImg.onerror = function () {
-                    pet.style.display = 'none';
-                    document.getElementById('pet-emoji-fallback').style.display = 'flex';
-                };
-                spriteImg.src = spriteUrl;
-            }
-
             function animatePet() {
                 pet.classList.add('bounce');
                 setTimeout(() => pet.classList.remove('bounce'), 500);
@@ -476,14 +459,10 @@
             }
             animatePet();
 
-            // Lazy-swap to animated GIF once loaded
+            // Lazy-swap to animated GIF once loaded; static image is already shown
             if (pet.dataset.animated) {
                 const animImg = new Image();
-                animImg.onload = function () {
-                    pet.style.backgroundImage = 'url(' + animImg.src + ')';
-                    pet.style.backgroundSize = 'contain';
-                    pet.style.backgroundPosition = 'center';
-                };
+                animImg.onload = function () { pet.src = animImg.src; };
                 animImg.src = pet.dataset.animated;
             }
         }
