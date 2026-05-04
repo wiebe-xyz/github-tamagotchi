@@ -741,9 +741,9 @@ async def register_complete_page(
     """Success page shown after pet registration with embed code."""
     if not user:
         return RedirectResponse(url="/auth/github", status_code=302)
-    base_url = str(request.base_url).rstrip("/")
-    embed_image_url = f"{base_url}/api/v1/pets/{owner}/{repo}/badge.svg"
-    pet_page_url = f"{base_url}/pet/{owner}/{repo}"
+    base = settings.base_url.rstrip("/")
+    embed_image_url = f"{base}/api/v1/pets/{owner}/{repo}/badge.svg"
+    pet_page_url = f"{base}/pet/{owner}/{repo}"
     embed_code = f"[![{pet_name}]({embed_image_url})]({pet_page_url})"
     return templates.TemplateResponse(
         request,

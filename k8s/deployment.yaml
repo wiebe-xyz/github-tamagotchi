@@ -113,6 +113,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: token-encryption-key
+            - name: BASE_URL
+              value: "https://tamagotchi.nijmegen.wiebe.xyz"
             - name: OAUTH_REDIRECT_URI
               value: "https://tamagotchi.nijmegen.wiebe.xyz/auth/callback"
             - name: SENTRY_DSN
@@ -278,6 +280,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: token-encryption-key
+            - name: BASE_URL
+              value: "https://tamagotchi.nijmegen.wiebe.xyz"
             - name: OAUTH_REDIRECT_URI
               value: "https://tamagotchi.nijmegen.wiebe.xyz/auth/callback"
             - name: SENTRY_DSN
