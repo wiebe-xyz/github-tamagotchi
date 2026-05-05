@@ -28,6 +28,11 @@ MOOD_MESSAGES: dict[str, str] = {
     PetMood.SICK: "is ill from stale dependencies. Time for an update!",
 }
 
+CAUSE_LABELS: dict[str, str] = {
+    "neglect": "neglect",
+    "abandonment": "abandonment",
+}
+
 MOOD_EMOJI: dict[str, str] = {
     PetMood.HUNGRY: "🍖",
     PetMood.WORRIED: "😟",
@@ -189,5 +194,111 @@ async def notify_unhappy_pets(session: AsyncSession) -> int:
 
     if sent > 0:
         logger.info("push_notifications_sent", count=sent)
+
+    return sent
+
+
+async def notify_dying_and_dead_pets(session: AsyncSession) -> int:
+    """Send push notifications for pets entering grace period or dying.
+
+    - Grace period: pet health is 0, grace_period_started is set, not yet dead
+    - Death: pet just died (died_at within the last poll interval)
+
+    Uses the same 4-hour cooldown as mood notifications.
+    """
+    if not settings.vapid_private_key:
+        return 0
+
+    cooldown_cutoff = datetime.now(UTC) - timedelta(hours=NOTIFY_COOLDOWN_HOURS)
+
+    # Pets in grace period (alive, health 0, grace period started)
+    grace_result = await session.execute(
+        select(PushSubscription)
+        .join(Pet, PushSubscription.pet_id == Pet.id)
+        .where(
+            Pet.is_dead.is_(False),
+            Pet.grace_period_started.isnot(None),
+            or_(
+                PushSubscription.last_notified_at.is_(None),
+                PushSubscription.last_notified_at < cooldown_cutoff,
+            ),
+        )
+    )
+    grace_subs = list(grace_result.scalars().all())
+
+    # Recently dead pets (died within last 24h to catch across poll intervals)
+    death_cutoff = datetime.now(UTC) - timedelta(hours=24)
+    death_result = await session.execute(
+        select(PushSubscription)
+        .join(Pet, PushSubscription.pet_id == Pet.id)
+        .where(
+            Pet.is_dead.is_(True),
+            Pet.died_at > death_cutoff,
+            or_(
+                PushSubscription.last_notified_at.is_(None),
+                PushSubscription.last_notified_at < cooldown_cutoff,
+            ),
+        )
+    )
+    death_subs = list(death_result.scalars().all())
+
+    all_subs = grace_subs + death_subs
+    if not all_subs:
+        return 0
+
+    pet_ids = list({sub.pet_id for sub in all_subs})
+    pets_result = await session.execute(select(Pet).where(Pet.id.in_(pet_ids)))
+    pets_by_id = {p.id: p for p in pets_result.scalars().all()}
+    grace_sub_ids = {sub.id for sub in grace_subs}
+
+    sent = 0
+    to_delete: list[PushSubscription] = []
+
+    for sub in all_subs:
+        pet = pets_by_id.get(sub.pet_id)
+        if not pet:
+            continue
+
+        is_grace = sub.id in grace_sub_ids and not pet.is_dead
+        if is_grace:
+            payload = {
+                "title": f"⚠️ {pet.name} is dying!",
+                "body": (
+                    f"{pet.name} has been at zero health for days. "
+                    "Push a commit to save it!"
+                ),
+                "icon": f"/api/v1/pets/{pet.repo_owner}/{pet.repo_name}/image/{pet.stage}",
+                "url": f"/pet/{pet.repo_owner}/{pet.repo_name}",
+                "tag": f"pet-{pet.id}-grace",
+            }
+        else:
+            raw = pet.cause_of_death or ""
+            cause = CAUSE_LABELS.get(raw, raw or "unknown causes")
+            payload = {
+                "title": f"💀 {pet.name} has died",
+                "body": (
+                    f"Rest in peace, {pet.name}. "
+                    f"Died of {cause}. Visit the graveyard to pay respects."
+                ),
+                "icon": f"/api/v1/pets/{pet.repo_owner}/{pet.repo_name}/image/{pet.stage}",
+                "url": f"/graveyard/{pet.repo_owner}/{pet.repo_name}",
+                "tag": f"pet-{pet.id}-death",
+            }
+
+        send_result = await _send_to_subscription(sub, payload)
+        if send_result is True:
+            sub.last_notified_at = datetime.now(UTC)
+            sent += 1
+        elif send_result is None:
+            to_delete.append(sub)
+
+    for sub in to_delete:
+        await session.delete(sub)
+
+    if sent > 0 or to_delete:
+        await session.commit()
+
+    if sent > 0:
+        logger.info("death_notifications_sent", count=sent)
 
     return sent

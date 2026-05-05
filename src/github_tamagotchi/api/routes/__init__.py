@@ -43,6 +43,7 @@ from github_tamagotchi.api.routes.v1.pets import (
 )
 from github_tamagotchi.api.routes.v1 import (
     admin,
+    graveyard,
     social,
     system,
     webhooks,
@@ -57,6 +58,7 @@ router.include_router(media.router)
 router.include_router(info.router)
 router.include_router(actions.router)
 router.include_router(admin.router)
+router.include_router(graveyard.router)
 router.include_router(social.router)
 router.include_router(system.router)
 router.include_router(webhooks.router)

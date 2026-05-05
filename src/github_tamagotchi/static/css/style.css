@@ -1839,3 +1839,82 @@ details[open] .webhook-summary::before {
     color: var(--text);
     font-weight: 700;
 }
+
+/* --- PWA install banner --- */
+.pwa-install-banner {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 70px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 900;
+    width: calc(100% - 2rem);
+    max-width: 480px;
+    animation: pwa-slide-up 0.3s ease-out;
+}
+
+@keyframes pwa-slide-up {
+    from { transform: translateX(-50%) translateY(100%); opacity: 0; }
+    to   { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+.pwa-install-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.pwa-install-icon {
+    font-size: 1.6rem;
+    flex-shrink: 0;
+}
+
+.pwa-install-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.pwa-install-text strong {
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.pwa-install-text span {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.pwa-install-btn {
+    padding: 0.4rem 1rem;
+    font-size: 0.82rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.pwa-install-dismiss {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.3rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.pwa-install-dismiss:hover {
+    color: var(--text);
+}
+
+@media (min-width: 769px) {
+    .pwa-install-banner {
+        bottom: 1.5rem;
+    }
+}

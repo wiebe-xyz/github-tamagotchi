@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>In Memory of {{ pet.name }} — GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% include "_pwa_head.html" %}
+
+    <!-- OG tags for social sharing -->
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="In Memory of {{ pet.name }} ({{ pet.repo_owner }}/{{ pet.repo_name }})">
+    <meta property="og:description" content="{{ cause_label }}. Lived {{ age_days }} day{{ 's' if age_days != 1 else '' }} and reached {{ pet.stage | upper }} stage.">
+    <meta property="og:url" content="{{ base_url }}/graveyard/{{ pet.repo_owner }}/{{ pet.repo_name }}">
+    <meta property="og:image" content="{{ base_url }}/api/v1/pets/{{ pet.repo_owner }}/{{ pet.repo_name }}/image/{{ pet.stage }}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="In Memory of {{ pet.name }}">
+    <meta name="twitter:description" content="{{ cause_label }}. Would have been {{ would_be_days }} days old today.">
+
+    <style>
+        .memorial {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 5rem 1rem 3rem;
+            text-align: center;
+        }
+        .memorial-sprite {
+            width: 160px;
+            height: 160px;
+            margin: 0 auto 1.5rem;
+            border-radius: 16px;
+            overflow: hidden;
+            filter: grayscale(0.85) brightness(0.85);
+            opacity: 0.85;
+        }
+        .memorial-sprite img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .memorial h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+        .memorial-repo {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+        .memorial-repo a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .headstone {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        .headstone-dates {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+        .headstone-cause {
+            font-style: italic;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+        .headstone-eulogy {
+            font-size: 1.1rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+            padding: 0 1rem;
+        }
+        .headstone-would-be {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .memorial-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .memorial-stat {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+        }
+        .memorial-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        .memorial-stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .flower-section {
+            margin-bottom: 2rem;
+        }
+        .flower-btn {
+            background: none;
+            border: 2px solid var(--border);
+            border-radius: 50px;
+            padding: 0.6rem 1.5rem;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: inherit;
+        }
+        .flower-btn:hover {
+            border-color: #f9a8d4;
+            background: rgba(249, 168, 212, 0.1);
+            transform: scale(1.05);
+        }
+        .flower-btn:disabled {
+            opacity: 0.5;
+            cursor: default;
+            transform: none;
+        }
+        .flower-count {
+            font-size: 1rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+        .petal-fall {
+            position: relative;
+            overflow: hidden;
+        }
+        .petal-fall::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #f9a8d4, #fbbf24, #f9a8d4, transparent);
+            border-radius: 2px;
+        }
+        .eulogy-edit {
+            margin-top: 1rem;
+        }
+        .eulogy-edit textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface);
+            color: inherit;
+            font-family: inherit;
+            font-size: 0.95rem;
+            resize: vertical;
+            min-height: 60px;
+            max-height: 120px;
+        }
+        .eulogy-edit-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        .eulogy-chars {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: right;
+        }
+        .memorial-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+            margin-top: 2rem;
+        }
+        .memorial-links a {
+            padding: 0.5rem 1.25rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            text-decoration: none;
+            color: inherit;
+            font-size: 0.9rem;
+            transition: background 0.15s;
+        }
+        .memorial-links a:hover {
+            background: rgba(255,255,255,0.05);
+        }
+    </style>
+</head>
+<body>
+    {% set active_page = "graveyard" %}
+    {% include "_nav.html" %}
+
+    <main class="memorial">
+        <div class="memorial-sprite">
+            <img src="/api/v1/pets/{{ pet.repo_owner }}/{{ pet.repo_name }}/image/{{ pet.stage }}"
+                 alt="{{ pet.name }}"
+                 onerror="this.parentElement.innerHTML='<span style=&quot;font-size:5rem;line-height:160px;&quot;>&#x1FAA6;</span>'">
+        </div>
+
+        <h1>{{ pet.name }}</h1>
+        <div class="memorial-repo">
+            <a href="https://github.com/{{ pet.repo_owner }}/{{ pet.repo_name }}" target="_blank" rel="noopener">
+                {{ pet.repo_owner }}/{{ pet.repo_name }}
+            </a>
+            {% if pet.generation > 1 %}<span style="opacity:0.6;"> &middot; Gen {{ pet.generation }}</span>{% endif %}
+        </div>
+
+        <div class="headstone {% if pet.flower_count > 100 %}petal-fall{% endif %}">
+            <div class="headstone-dates">
+                {% if pet.created_at %}{{ pet.created_at.strftime('%b %d, %Y') }}{% endif %}
+                &mdash;
+                {% if pet.died_at %}{{ pet.died_at.strftime('%b %d, %Y') }}{% endif %}
+            </div>
+
+            <div class="headstone-cause">{{ cause_label }}</div>
+
+            {% if pet.eulogy %}
+            <div class="headstone-eulogy">"{{ pet.eulogy }}"</div>
+            {% endif %}
+
+            <div class="headstone-would-be">
+                Would have been {{ would_be_days }} day{{ 's' if would_be_days != 1 else '' }} old today
+            </div>
+        </div>
+
+        {% if is_owner and not pet.eulogy %}
+        <div class="eulogy-edit" id="eulogy-section">
+            <button class="btn btn-primary" onclick="document.getElementById('eulogy-form').style.display='block'; this.style.display='none';" style="font-size:0.85rem; padding:0.4rem 1rem;">
+                Write an epitaph
+            </button>
+            <div id="eulogy-form" style="display:none;">
+                <textarea id="eulogy-text" maxlength="280" placeholder="Here lies my todo app, killed by scope creep..."></textarea>
+                <div class="eulogy-chars"><span id="eulogy-count">0</span>/280</div>
+                <div class="eulogy-edit-actions">
+                    <button class="btn btn-primary" onclick="saveEulogy()" style="font-size:0.85rem; padding:0.4rem 1rem;">Save</button>
+                </div>
+            </div>
+        </div>
+        {% elif is_owner and pet.eulogy %}
+        <div class="eulogy-edit" id="eulogy-section">
+            <button class="btn" onclick="editEulogy()" style="font-size:0.8rem; padding:0.3rem 0.75rem; opacity:0.6;">Edit epitaph</button>
+            <div id="eulogy-form" style="display:none;">
+                <textarea id="eulogy-text" maxlength="280">{{ pet.eulogy }}</textarea>
+                <div class="eulogy-chars"><span id="eulogy-count">{{ pet.eulogy | length }}</span>/280</div>
+                <div class="eulogy-edit-actions">
+                    <button class="btn btn-primary" onclick="saveEulogy()" style="font-size:0.85rem; padding:0.4rem 1rem;">Save</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="memorial-stats">
+            <div class="memorial-stat">
+                <div class="memorial-stat-value">{{ age_days }}</div>
+                <div class="memorial-stat-label">Days lived</div>
+            </div>
+            <div class="memorial-stat">
+                <div class="memorial-stat-value">{{ pet.stage | capitalize }}</div>
+                <div class="memorial-stat-label">Stage reached</div>
+            </div>
+            <div class="memorial-stat">
+                <div class="memorial-stat-value">{{ pet.experience }}</div>
+                <div class="memorial-stat-label">XP earned</div>
+            </div>
+            <div class="memorial-stat">
+                <div class="memorial-stat-value">{{ pet.longest_streak }}</div>
+                <div class="memorial-stat-label">Best streak</div>
+            </div>
+        </div>
+
+        <div class="flower-section">
+            <button class="flower-btn" id="flower-btn" onclick="placeFlower()">
+                &#x1F338; Leave flowers
+            </button>
+            <div class="flower-count" id="flower-count">
+                {{ pet.flower_count }} flower{{ 's' if pet.flower_count != 1 else '' }} left
+            </div>
+        </div>
+
+        <div class="memorial-links">
+            <a href="/graveyard/{{ pet.repo_owner }}">{{ pet.repo_owner }}'s graveyard</a>
+            <a href="/graveyard">All graves</a>
+            {% if is_owner %}
+            <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}">Pet profile</a>
+            {% endif %}
+        </div>
+    </main>
+
+    <script>
+    async function placeFlower() {
+        const btn = document.getElementById('flower-btn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/v1/graveyard/{{ pet.repo_owner }}/{{ pet.repo_name }}/flower', {
+                method: 'POST'
+            });
+            const data = await res.json();
+            document.getElementById('flower-count').textContent =
+                data.flower_count + ' flower' + (data.flower_count !== 1 ? 's' : '') + ' left';
+            if (!data.added) {
+                btn.textContent = '\u{1F338} Already left today';
+            } else {
+                btn.textContent = '\u{1F338} Flowers left!';
+            }
+        } catch (e) {
+            btn.textContent = '\u{1F338} Leave flowers';
+            btn.disabled = false;
+        }
+    }
+
+    const eulogyText = document.getElementById('eulogy-text');
+    if (eulogyText) {
+        eulogyText.addEventListener('input', function() {
+            document.getElementById('eulogy-count').textContent = this.value.length;
+        });
+    }
+
+    function editEulogy() {
+        document.getElementById('eulogy-form').style.display = 'block';
+        event.target.style.display = 'none';
+    }
+
+    async function saveEulogy() {
+        const text = document.getElementById('eulogy-text').value;
+        try {
+            const res = await fetch('/api/v1/graveyard/{{ pet.repo_owner }}/{{ pet.repo_name }}/eulogy', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({eulogy: text})
+            });
+            if (res.ok) {
+                location.reload();
+            }
+        } catch (e) { /* ignore */ }
+    }
+    </script>
+</body>
+</html>

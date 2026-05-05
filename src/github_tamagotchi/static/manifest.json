@@ -1,8 +1,10 @@
 {
   "name": "GitHub Tamagotchi",
   "short_name": "Tamagotchi",
-  "description": "Virtual pets for your GitHub repositories.",
+  "description": "Virtual pets for your GitHub repositories. Keep coding to keep them happy!",
   "start_url": "/dashboard",
+  "scope": "/",
+  "id": "/",
   "display": "standalone",
   "background_color": "#0f0f1a",
   "theme_color": "#6366f1",
@@ -20,6 +22,26 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "My Pets",
+      "short_name": "Pets",
+      "url": "/dashboard",
+      "icons": [{"src": "/pwa/icon/192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Leaderboard",
+      "short_name": "Top",
+      "url": "/leaderboard",
+      "icons": [{"src": "/pwa/icon/192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Graveyard",
+      "short_name": "Graveyard",
+      "url": "/graveyard",
+      "icons": [{"src": "/pwa/icon/192.png", "sizes": "192x192"}]
     }
   ]
 }
