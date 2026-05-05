@@ -142,11 +142,12 @@ def build_sprite_sheet_prompt(
 
 
 def _remove_background_from_corners(img: Image.Image, tolerance: int = 40) -> Image.Image:
-    """Remove background by flood-filling outward from all four corners.
+    """Remove background by flood-filling inward from all border pixels.
 
-    Each corner seeds a BFS using its own pixel colour as the reference,
-    so frames with mixed backgrounds (e.g. white grid lines at the top and
-    magenta fill at the bottom) are handled in a single pass.
+    Collects distinct background colours from the four corner pixels, then
+    seeds a BFS from every border pixel whose colour matches any corner
+    colour within *tolerance*.  This handles frames where the character
+    touches the edge and splits the background into disconnected regions.
 
     Args:
         img: RGBA PIL Image
@@ -159,42 +160,52 @@ def _remove_background_from_corners(img: Image.Image, tolerance: int = 40) -> Im
     width, height = img.size
     pixels: list[tuple[int, ...]] = list(img.get_flattened_data())  # type: ignore[arg-type]
 
+    corner_indices = [0, width - 1, (height - 1) * width, height * width - 1]
+    bg_colors: list[tuple[int, int, int]] = []
+    for ci in corner_indices:
+        cr, cg, cb = pixels[ci][:3]
+        if not any(
+            abs(cr - er) <= tolerance and abs(cg - eg) <= tolerance and abs(cb - eb) <= tolerance
+            for er, eg, eb in bg_colors
+        ):
+            bg_colors.append((cr, cg, cb))
+
+    def _matches_any(r: int, g: int, b: int) -> bool:
+        return any(
+            abs(r - br) <= tolerance and abs(g - bg) <= tolerance and abs(b - bb) <= tolerance
+            for br, bg, bb in bg_colors
+        )
+
     result: list[tuple[int, ...]] = list(pixels)
     visited: list[bool] = [False] * (width * height)
+    queue: deque[tuple[int, int]] = deque()
 
-    for sx, sy in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
-        idx = sy * width + sx
-        if visited[idx]:
-            continue
-        bg_r, bg_g, bg_b = pixels[idx][:3]
+    for x in range(width):
+        for y in (0, height - 1):
+            idx = y * width + x
+            if not visited[idx] and _matches_any(*pixels[idx][:3]):
+                visited[idx] = True
+                queue.append((x, y))
+    for y in range(1, height - 1):
+        for x in (0, width - 1):
+            idx = y * width + x
+            if not visited[idx] and _matches_any(*pixels[idx][:3]):
+                visited[idx] = True
+                queue.append((x, y))
 
-        def _matches(
-            r: int, g: int, b: int,
-            _br: int = bg_r, _bg: int = bg_g, _bb: int = bg_b,
-        ) -> bool:
-            return bool(
-                abs(r - _br) <= tolerance
-                and abs(g - _bg) <= tolerance
-                and abs(b - _bb) <= tolerance
-            )
-
-        queue: deque[tuple[int, int]] = deque()
-        visited[idx] = True
-        queue.append((sx, sy))
-
-        while queue:
-            x, y = queue.popleft()
-            cidx = y * width + x
-            r, g, b, a = result[cidx]
-            result[cidx] = (r, g, b, 0)
-            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-                if 0 <= nx < width and 0 <= ny < height:
-                    nidx = ny * width + nx
-                    if not visited[nidx]:
-                        nr, ng, nb, _ = pixels[nidx]
-                        if _matches(nr, ng, nb):
-                            visited[nidx] = True
-                            queue.append((nx, ny))
+    while queue:
+        x, y = queue.popleft()
+        cidx = y * width + x
+        r, g, b, a = result[cidx]
+        result[cidx] = (r, g, b, 0)
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < width and 0 <= ny < height:
+                nidx = ny * width + nx
+                if not visited[nidx]:
+                    nr, ng, nb, _ = pixels[nidx]
+                    if _matches_any(nr, ng, nb):
+                        visited[nidx] = True
+                        queue.append((nx, ny))
 
     out = img.copy()
     out.putdata(result)

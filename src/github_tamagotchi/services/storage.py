@@ -204,19 +204,28 @@ class StorageService:
                 return False
             raise
 
+    async def _delete_object(self, object_path: str) -> None:
+        """Delete a single object, ignoring NoSuchKey errors."""
+        try:
+            await asyncio.to_thread(
+                self.client.remove_object, self.bucket, object_path
+            )
+            logger.debug("Deleted object", path=object_path)
+        except S3Error as e:
+            if e.code != "NoSuchKey":
+                logger.warning("Failed to delete object", error=str(e), path=object_path)
+
     async def delete_images(self, owner: str, repo: str) -> None:
-        """Delete all images for a pet."""
-        stages = [stage.value for stage in PetStage]
-        for stage in stages:
-            object_path = self._get_object_path(owner, repo, stage)
-            try:
-                await asyncio.to_thread(
-                    self.client.remove_object, self.bucket, object_path
-                )
-                logger.debug("Deleted image", path=object_path)
-            except S3Error as e:
-                if e.code != "NoSuchKey":
-                    logger.warning("Failed to delete image", error=str(e), path=object_path)
+        """Delete all images for a pet including sprite sheets, frames, and GIFs."""
+        from github_tamagotchi.services.sprite_sheet import SPRITE_COLS, SPRITE_ROWS
+
+        num_frames = SPRITE_COLS * SPRITE_ROWS
+        for stage in (s.value for s in PetStage):
+            await self._delete_object(self._get_object_path(owner, repo, stage))
+            await self._delete_object(self._get_spritesheet_path(owner, repo, stage))
+            await self._delete_object(self._get_animated_gif_path(owner, repo, stage))
+            for idx in range(num_frames):
+                await self._delete_object(self._get_frame_path(owner, repo, stage, idx))
 
     async def list_pet_images(self, owner: str, repo: str) -> list[str]:
         """List all images for a pet.
