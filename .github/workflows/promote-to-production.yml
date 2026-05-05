@@ -123,11 +123,12 @@ jobs:
           kubectl apply -f k8s/production/deployment.yaml
           kubectl apply -f k8s/production/ingress.yaml
 
-          # Recreate ghcr-secret with current workflow token (ephemeral tokens expire)
+          # Recreate ghcr-secret (prefer long-lived PAT over ephemeral workflow token)
+          GHCR_TOKEN="${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}"
           kubectl create secret docker-registry ghcr-secret -n $NS \
             --docker-server=ghcr.io \
             --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            --docker-password="$GHCR_TOKEN" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           # Ensure app secrets exist

@@ -77,9 +77,9 @@ spec:
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
             - name: MINIO_ENDPOINT
-              value: "s3.wiebe.xyz"
+              value: "minio.production.svc.cluster.local:9000"
             - name: MINIO_SECURE
-              value: "true"
+              value: "false"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -243,9 +243,9 @@ spec:
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
             - name: MINIO_ENDPOINT
-              value: "s3.wiebe.xyz"
+              value: "minio.production.svc.cluster.local:9000"
             - name: MINIO_SECURE
-              value: "true"
+              value: "false"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
