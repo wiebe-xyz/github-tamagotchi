@@ -640,6 +640,8 @@ async def pet_manifest(
         "short_name": short_name,
         "description": description,
         "start_url": f"/pet/{repo_owner}/{repo_name}",
+        "scope": "/",
+        "id": f"/pet/{repo_owner}/{repo_name}",
         "display": "standalone",
         "background_color": "#0f0f1a",
         "theme_color": "#6366f1",

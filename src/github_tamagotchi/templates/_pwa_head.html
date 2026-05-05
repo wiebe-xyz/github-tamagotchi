@@ -9,6 +9,51 @@
 <script>
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(function (reg) {
+            // Register periodic background sync for pet health checks
+            if ('periodicSync' in reg) {
+                navigator.permissions.query({ name: 'periodic-background-sync' }).then(function (status) {
+                    if (status.state === 'granted') {
+                        reg.periodicSync.register('check-pet-health', {
+                            minInterval: 4 * 60 * 60 * 1000 // 4 hours
+                        }).catch(function () {});
+                    }
+                }).catch(function () {});
+            }
+        })
         .catch(function (err) { console.warn('SW registration failed:', err); });
 }
+
+// --- PWA install prompt ---
+var _deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    _deferredInstallPrompt = e;
+    try { if (sessionStorage.getItem('pwa-install-dismissed')) return; } catch {}
+    var banner = document.getElementById('pwa-install-banner');
+    if (banner) banner.style.display = '';
+});
+
+window.addEventListener('appinstalled', function () {
+    _deferredInstallPrompt = null;
+    var banner = document.getElementById('pwa-install-banner');
+    if (banner) banner.style.display = 'none';
+});
+
+window.installPwa = function () {
+    if (!_deferredInstallPrompt) return;
+    _deferredInstallPrompt.prompt();
+    _deferredInstallPrompt.userChoice.then(function (result) {
+        _deferredInstallPrompt = null;
+        var banner = document.getElementById('pwa-install-banner');
+        if (banner) banner.style.display = 'none';
+    });
+};
+
+window.dismissInstallBanner = function () {
+    var banner = document.getElementById('pwa-install-banner');
+    if (banner) banner.style.display = 'none';
+    try { sessionStorage.setItem('pwa-install-dismissed', '1'); } catch {}
+};
 </script>
