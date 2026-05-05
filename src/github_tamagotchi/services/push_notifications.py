@@ -272,7 +272,8 @@ async def notify_dying_and_dead_pets(session: AsyncSession) -> int:
                 "tag": f"pet-{pet.id}-grace",
             }
         else:
-            cause = CAUSE_LABELS.get(pet.cause_of_death or "", pet.cause_of_death or "unknown causes")
+            raw = pet.cause_of_death or ""
+            cause = CAUSE_LABELS.get(raw, raw or "unknown causes")
             payload = {
                 "title": f"💀 {pet.name} has died",
                 "body": (
