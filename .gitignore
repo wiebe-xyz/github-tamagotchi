@@ -58,3 +58,4 @@ htmlcov/
 uv.lock
 coverage.xml
 coverage.json
+.claude/worktrees/
