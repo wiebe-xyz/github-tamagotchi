@@ -119,21 +119,23 @@ def build_sprite_sheet_prompt(
     total_frames = SPRITE_COLS * SPRITE_ROWS
     prompt = (
         f"{style_def['prompt_prefix']} "
-        f"sprite sheet, {SPRITE_COLS} columns by {SPRITE_ROWS} rows grid, "
-        f"thin white separator lines between cells, "
-        f"transparent or solid flat magenta background #FF00FF. "
+        f"sprite sheet with EXACTLY {SPRITE_COLS} columns and {SPRITE_ROWS} rows "
+        f"(a {SPRITE_COLS}x{SPRITE_ROWS} grid, {total_frames} equally-sized cells total). "
+        f"Each cell must be the same width and height. "
+        f"Solid flat magenta #FF00FF background filling the entire image. "
         f"Character: {character_desc}, {stage_desc}. "
-        f"All {total_frames} frames show the EXACT SAME character with identical "
+        f"All {total_frames} cells show the EXACT SAME character with identical "
         f"proportions, identical colour palette, identical body shape. "
-        f"Frames reading left to right then top to bottom: {frame_list}. "
-        f"Consistent style throughout, clean cell alignment."
+        f"Cells reading left-to-right then top-to-bottom: {frame_list}. "
+        f"Do NOT label or number the cells. "
+        f"Consistent style throughout, perfectly aligned grid, no extra rows or columns."
     )
 
     negative = (
         style_def.get("negative", NEGATIVE_PROMPT)
         + ", multiple different characters, text labels, numbers, digits, numerals, "
-        "annotations, grid lines, cell borders, cut off frames, "
-        "misaligned grid, inconsistent character design"
+        "annotations, captions, 3x3 grid, 9 cells, extra rows, extra columns, "
+        "uneven cells, misaligned grid, inconsistent character design, white background"
     )
 
     return prompt, negative
@@ -320,6 +322,7 @@ def compose_animated_gif(
     for idx in clamped_sequence:
         raw = frames[idx]
         img = Image.open(io.BytesIO(raw)).convert("RGBA")
+        img = _remove_background_from_corners(img)
         p_img, trans_idx = _rgba_to_gif_frame(img)
         pil_frames.append(p_img)
         durations.append(FRAME_DURATIONS.get(idx, 350))

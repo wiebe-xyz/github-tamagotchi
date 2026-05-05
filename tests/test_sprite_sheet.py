@@ -39,8 +39,17 @@ def _make_sprite_sheet(  # noqa: E501
 
 
 def _make_frame(color: tuple[int, int, int, int] = (100, 150, 200, 255), size: int = 64) -> bytes:
-    """Create a minimal RGBA frame PNG for testing."""
-    img = Image.new("RGBA", (size, size), color=color)
+    """Create a frame with a magenta border and colored interior.
+
+    The border simulates the chroma-key background that gets removed,
+    while the interior remains after background removal.
+    """
+    img = Image.new("RGBA", (size, size), color=(255, 0, 255, 255))
+    # Draw a colored center that won't be reached by corner flood-fill
+    margin = 8
+    for x in range(margin, size - margin):
+        for y in range(margin, size - margin):
+            img.putpixel((x, y), color)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
