@@ -640,6 +640,8 @@ async def pet_manifest(
         "short_name": short_name,
         "description": description,
         "start_url": f"/pet/{repo_owner}/{repo_name}",
+        "scope": "/",
+        "id": f"/pet/{repo_owner}/{repo_name}",
         "display": "standalone",
         "background_color": "#0f0f1a",
         "theme_color": "#6366f1",
@@ -1128,12 +1130,20 @@ async def pet_profile(
 
     contributor_relationships = await get_contributors_for_pet(session, pet.id)
 
+    user_has_pets = False
+    if user:
+        own_pets = await session.execute(
+            select(func.count()).select_from(Pet).where(Pet.user_id == user.id)
+        )
+        user_has_pets = (own_pets.scalar_one() or 0) > 0
+
     page_url = str(request.url)
     return templates.TemplateResponse(
         request,
         "pet_profile.html",
         {
             "user": user,
+            "user_has_pets": user_has_pets,
             "pet": pet,
             "age_days": age_days,
             "evolution_timeline": evolution_timeline,

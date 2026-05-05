@@ -39,12 +39,14 @@
 </head>
 <body>
     {% include "_nav.html" %}
+    {% include "_pwa_install_banner.html" %}
 
     <!-- Profile -->
     <main class="profile-page">
         <div class="container">
 
-            <!-- Onboarding banner: shown once per browser, dismissed via localStorage -->
+            {% if not user or not user_has_pets %}
+            <!-- Onboarding banner: shown once per browser for new visitors, hidden for pet owners -->
             <div id="onboarding-banner" style="display:none; margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12)); border: 1px solid rgba(139,92,246,0.45); position: relative;">
                 <button
                     onclick="dismissOnboardingBanner()"
@@ -54,7 +56,8 @@
                     onmouseout="this.style.color='rgba(255,255,255,0.55)'; this.style.background='none';"
                 >&#x2715;</button>
                 <strong style="color: #a78bfa; font-size: 1rem;">Meet your repo&#8217;s pet!</strong>
-                <span style="color: rgba(255,255,255,0.85); font-size: 0.95rem;"> This Tamagotchi lives off your repository&#8217;s health &#8212; commits feed it, CI passes make it dance, and neglect makes it hungry. Keep your repo active to help it thrive.</span>
+                <span style="color: rgba(255,255,255,0.85); font-size: 0.95rem;"> This Tamagotchi lives off your repository&#8217;s health &#8212; commits feed it, CI passes make it dance, and neglect makes it hungry.</span>
+                <a href="/register" style="color: #a78bfa; font-weight: 600; text-decoration: none; margin-left: 0.25rem;">Register your own repo &rarr;</a>
             </div>
             <script>
             (function () {
@@ -69,6 +72,7 @@
                 if (el) { el.style.display = 'none'; }
             }
             </script>
+            {% endif %}
 
             {% if days_until_death is not none %}
             <div style="margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(249,115,22,0.10)); border: 1px solid rgba(239,68,68,0.5); display: flex; align-items: center; gap: 0.75rem;">

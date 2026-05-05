@@ -133,14 +133,19 @@ def calculate_experience(health: RepoHealth) -> int:
     """Calculate experience gained from repo activity."""
     exp = 0
 
-    # Experience from activity
     if health.last_ci_success:
         exp += 10
     if health.last_commit_at:
         now = datetime.now(UTC)
         hours_since_commit = (now - health.last_commit_at).total_seconds() / 3600
         if hours_since_commit < 24:
-            exp += 20  # Recent commit
+            exp += 20
+
+    # Releases and contributors mirror health_delta — repos that ship
+    # code and attract contributors should evolve even when the commit
+    # API call fails or the last push was >24 h ago.
+    exp += min(health.release_count_30d * 2, 10)
+    exp += min(health.contributor_count, 5)
 
     return exp
 
