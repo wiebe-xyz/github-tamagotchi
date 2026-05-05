@@ -79,12 +79,13 @@ async def add_flower(
     )
     record = existing.scalar_one_or_none()
 
-    if record and record.last_flower_at > cutoff:
-        # Already placed today
-        pet = await db.get(Pet, pet_id)
-        return False, pet.flower_count if pet else 0
-
     if record:
+        flower_at = record.last_flower_at
+        if flower_at.tzinfo is None:
+            flower_at = flower_at.replace(tzinfo=UTC)
+        if flower_at > cutoff:
+            pet = await db.get(Pet, pet_id)
+            return False, pet.flower_count if pet else 0
         record.last_flower_at = datetime.now(UTC)
     else:
         db.add(GraveFlowerIp(pet_id=pet_id, ip_hash=ip_h))
