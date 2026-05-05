@@ -1021,7 +1021,7 @@ async def graveyard_user_page(
     )
 
 
-@app.get("/graveyard/{username}/{repo_name}", response_class=HTMLResponse)
+@app.get("/graveyard/{username}/{repo_name}", response_class=HTMLResponse, response_model=None)
 async def graveyard_grave_page(
     request: Request,
     username: str,
