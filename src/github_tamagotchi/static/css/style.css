@@ -1844,17 +1844,17 @@ details[open] .webhook-summary::before {
 .pwa-install-banner {
     position: fixed;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 70px);
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 900;
-    width: calc(100% - 2rem);
+    left: 1rem;
+    right: 1rem;
+    margin: 0 auto;
     max-width: 480px;
+    z-index: 900;
     animation: pwa-slide-up 0.3s ease-out;
 }
 
 @keyframes pwa-slide-up {
-    from { transform: translateX(-50%) translateY(100%); opacity: 0; }
-    to   { transform: translateX(-50%) translateY(0); opacity: 1; }
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
 }
 
 .pwa-install-content {
@@ -1902,11 +1902,16 @@ details[open] .webhook-summary::before {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.3rem;
+    font-size: 1.4rem;
     cursor: pointer;
-    padding: 0.25rem;
+    padding: 0.5rem;
     line-height: 1;
     flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .pwa-install-dismiss:hover {
