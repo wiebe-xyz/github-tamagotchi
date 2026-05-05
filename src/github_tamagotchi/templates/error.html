@@ -6,16 +6,77 @@
     <title>{{ status_code }} — GitHub Tamagotchi</title>
     <link rel="stylesheet" href="/static/css/style.css">
     {% include "_pwa_head.html" %}
+    <style>
+        .error-page {
+            min-height: 70vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+        }
+        .error-content {
+            max-width: 480px;
+        }
+        .error-pet {
+            font-size: 5rem;
+            line-height: 1;
+            margin-bottom: 1rem;
+            animation: error-bounce 2s ease-in-out infinite;
+        }
+        @keyframes error-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .error-code {
+            font-size: 6rem;
+            font-weight: 800;
+            line-height: 1;
+            margin: 0 0 0.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark, #7c3aed));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .error-message {
+            font-size: 1.25rem;
+            opacity: 0.7;
+            margin-bottom: 2rem;
+        }
+        .error-hint {
+            font-size: 0.9rem;
+            opacity: 0.5;
+            margin-bottom: 2rem;
+        }
+    </style>
 </head>
 <body>
     {% set user = None %}
     {% set active_page = "" %}
     {% include "_nav.html" %}
 
-    <section class="hero" style="min-height: 60vh; display: flex; align-items: center;">
-        <div class="container" style="text-align: center;">
-            <h1 style="font-size: 4rem; margin-bottom: 0.5rem;">{{ status_code }}</h1>
-            <p style="font-size: 1.25rem; opacity: 0.8; margin-bottom: 2rem;">{{ message }}</p>
+    <section class="error-page">
+        <div class="error-content">
+            <div class="error-pet">
+                {% if status_code == 404 %}
+                    &#x1F50D;
+                {% elif status_code == 403 %}
+                    &#x1F512;
+                {% elif status_code == 500 %}
+                    &#x1F635;
+                {% elif status_code == 503 %}
+                    &#x1F6A7;
+                {% else %}
+                    &#x1F63F;
+                {% endif %}
+            </div>
+            <h1 class="error-code">{{ status_code }}</h1>
+            <p class="error-message">{{ message }}</p>
+            {% if status_code == 404 %}
+            <p class="error-hint">The pet you're looking for might have wandered off.</p>
+            {% elif status_code == 503 %}
+            <p class="error-hint">We're taking a short nap. Try again in a moment.</p>
+            {% endif %}
             <a href="/" class="btn btn-primary">Back to home</a>
         </div>
     </section>
