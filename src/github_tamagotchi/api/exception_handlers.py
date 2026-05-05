@@ -4,6 +4,7 @@ import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from github_tamagotchi.core import bugbarn as bb
 from github_tamagotchi.exceptions import ConflictError, NotFoundError, RepositoryError
@@ -54,12 +55,16 @@ def register_exception_handlers(
             return _error_html(request, templates, 500, "Something went wrong")
         return JSONResponse(status_code=500, content={"detail": "Internal error"})
 
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException) -> Response:
+    async def _handle_http_exc(
+        request: Request, exc: HTTPException | StarletteHTTPException,
+    ) -> Response:
         if _wants_html(request) and exc.status_code >= 400:
-            msg = exc.detail or "An error occurred"
+            msg = str(exc.detail) if exc.detail else "An error occurred"
             return _error_html(request, templates, exc.status_code, msg)
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    app.exception_handler(StarletteHTTPException)(_handle_http_exc)
+    app.exception_handler(HTTPException)(_handle_http_exc)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
