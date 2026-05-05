@@ -180,14 +180,22 @@ class TestStorageService:
     async def test_delete_images(
         self, storage_service: StorageService, mock_minio_client: MagicMock
     ) -> None:
-        """Test deleting all pet images."""
+        """Test deleting all pet images including sprite assets."""
         await storage_service.delete_images("owner", "repo")
 
-        assert mock_minio_client.remove_object.call_count == 6
         expected_stages = ["egg", "baby", "child", "teen", "adult", "elder"]
         for stage in expected_stages:
             mock_minio_client.remove_object.assert_any_call(
                 "test-bucket", f"pets/owner/repo/{stage}.png"
+            )
+            mock_minio_client.remove_object.assert_any_call(
+                "test-bucket", f"pets/owner/repo/{stage}_spritesheet.png"
+            )
+            mock_minio_client.remove_object.assert_any_call(
+                "test-bucket", f"pets/owner/repo/{stage}_animated.gif"
+            )
+            mock_minio_client.remove_object.assert_any_call(
+                "test-bucket", f"pets/owner/repo/{stage}_frame_0.png"
             )
 
     async def test_list_pet_images(
