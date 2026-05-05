@@ -8,6 +8,7 @@ from github_tamagotchi.models.contributor_relationship import (
     ContributorStanding,
 )
 from github_tamagotchi.models.excluded_contributor import ExcludedContributor
+from github_tamagotchi.models.grave_flower_ip import GraveFlowerIp
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.job_run import JobRun
 from github_tamagotchi.models.milestone import PetMilestone
@@ -24,6 +25,7 @@ __all__ = [
     "ContributorRelationship",
     "ContributorStanding",
     "ExcludedContributor",
+    "GraveFlowerIp",
     "ImageGenerationJob",
     "JobRun",
     "JobStatus",

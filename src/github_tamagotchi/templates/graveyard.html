@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if username %}{{ username }}'s Graveyard{% else %}The Graveyard{% endif %} — GitHub Tamagotchi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% include "_pwa_head.html" %}
+    <style>
+        .graveyard-hero {
+            text-align: center;
+            padding: 5rem 1rem 2rem;
+        }
+        .graveyard-hero h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        .graveyard-hero p {
+            color: var(--text-muted);
+            font-size: 1rem;
+            max-width: 520px;
+            margin: 0 auto;
+        }
+        .graves-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.25rem;
+            padding-bottom: 3rem;
+        }
+        .grave-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.15s, box-shadow 0.15s;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .grave-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .grave-card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .grave-sprite {
+            font-size: 2rem;
+            filter: grayscale(1) brightness(0.8);
+            opacity: 0.7;
+        }
+        .grave-name {
+            font-weight: 700;
+            font-size: 1.05rem;
+        }
+        .grave-repo {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .grave-cause {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        .grave-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            padding: 2rem 0;
+        }
+        .pagination a {
+            padding: 0.5rem 1.25rem;
+            border-radius: 8px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: inherit;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .pagination a:hover {
+            background: var(--primary);
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    {% set active_page = "graveyard" %}
+    {% include "_nav.html" %}
+
+    <main>
+        <div class="graveyard-hero">
+            {% if username %}
+            <h1>&#x1FAA6; {{ username }}'s Graveyard</h1>
+            <p>{{ total }} departed pet{{ "s" if total != 1 else "" }}.</p>
+            {% else %}
+            <h1>&#x1FAA6; The Graveyard</h1>
+            <p>A memorial for pets that didn't make it. Every project has a story, even the ones that ended.</p>
+            {% endif %}
+        </div>
+
+        <div class="container">
+            {% if graves %}
+            <div class="graves-grid">
+                {% for pet in graves %}
+                <a href="/graveyard/{{ pet.repo_owner }}/{{ pet.repo_name }}" class="grave-card">
+                    <div class="grave-card-header">
+                        <span class="grave-sprite">
+                            {% if pet.stage == "egg" %}&#x1F95A;
+                            {% elif pet.stage == "baby" %}&#x1F423;
+                            {% elif pet.stage == "child" %}&#x1F425;
+                            {% elif pet.stage == "teen" %}&#x1F426;
+                            {% elif pet.stage == "adult" %}&#x1F989;
+                            {% elif pet.stage == "elder" %}&#x1F985;
+                            {% else %}&#x1F95A;{% endif %}
+                        </span>
+                        <div>
+                            <div class="grave-name">{{ pet.name }}</div>
+                            <div class="grave-repo">{{ pet.repo_owner }}/{{ pet.repo_name }}</div>
+                        </div>
+                    </div>
+                    <div class="grave-cause">
+                        {% if pet.cause_of_death == "neglect" %}Died of neglect — the commits stopped coming
+                        {% elif pet.cause_of_death == "abandonment" %}Abandoned — the repository went dark
+                        {% elif pet.cause_of_death %}{{ pet.cause_of_death }}
+                        {% else %}Cause unknown{% endif %}
+                    </div>
+                    <div class="grave-meta">
+                        <span>{% if pet.died_at %}Died {{ pet.died_at.strftime('%b %d, %Y') }}{% endif %}</span>
+                        <span>&#x1F338; {{ pet.flower_count }}</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+
+            {% if total > per_page %}
+            <div class="pagination">
+                {% if page > 1 %}
+                <a href="?page={{ page - 1 }}">&larr; Newer</a>
+                {% endif %}
+                {% if page * per_page < total %}
+                <a href="?page={{ page + 1 }}">Older &rarr;</a>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% else %}
+            <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+                <p style="font-size: 2rem; margin-bottom: 1rem;">&#x1F331;</p>
+                <p>No graves yet. All pets are still alive!</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</body>
+</html>

@@ -182,6 +182,12 @@ class Pet(Base):
     # Canonical appearance description used for sprite sheet generation consistency
     canonical_appearance: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Graveyard
+    eulogy: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    flower_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"

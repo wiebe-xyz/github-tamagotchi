@@ -65,7 +65,10 @@ from github_tamagotchi.services.pet_logic import (
     update_commit_streak,
     update_grace_period,
 )
-from github_tamagotchi.services.push_notifications import notify_unhappy_pets
+from github_tamagotchi.services.push_notifications import (
+    notify_dying_and_dead_pets,
+    notify_unhappy_pets,
+)
 
 # Configure structured logging before anything else logs
 configure_logging()
@@ -320,6 +323,7 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
             # --- Web push notifications for unhappy pets ---
             if settings.vapid_private_key:
                 await notify_unhappy_pets(session)
+                await notify_dying_and_dead_pets(session)
 
             # --- Business metrics gauges ---
             now_ts = datetime.now(UTC)
@@ -959,6 +963,107 @@ async def org_overview(
             "neglected": neglected,
             "org_leaderboard": org_leaderboard,
         },
+    )
+
+
+@app.get("/graveyard", response_class=HTMLResponse)
+async def graveyard_page(
+    request: Request,
+    user: OptionalUser,
+    session: DbSession,
+    page: int = 1,
+) -> HTMLResponse:
+    """Public graveyard — all dead pets."""
+    from github_tamagotchi.repositories.graveyard import get_dead_pets
+
+    per_page = 20
+    graves, total = await get_dead_pets(session, page, per_page)
+    return templates.TemplateResponse(
+        request,
+        "graveyard.html",
+        {
+            "user": user,
+            "graves": graves,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "username": None,
+        },
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/graveyard/{username}", response_class=HTMLResponse)
+async def graveyard_user_page(
+    request: Request,
+    username: str,
+    user: OptionalUser,
+    session: DbSession,
+    page: int = 1,
+) -> HTMLResponse:
+    """Personal graveyard for a user's dead pets."""
+    from github_tamagotchi.repositories.graveyard import get_dead_pets_by_user
+
+    per_page = 20
+    graves, total = await get_dead_pets_by_user(session, username, page, per_page)
+    return templates.TemplateResponse(
+        request,
+        "graveyard.html",
+        {
+            "user": user,
+            "graves": graves,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "username": username,
+        },
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/graveyard/{username}/{repo_name}", response_class=HTMLResponse)
+async def graveyard_grave_page(
+    request: Request,
+    username: str,
+    repo_name: str,
+    user: OptionalUser,
+    session: DbSession,
+) -> HTMLResponse:
+    """Memorial page for a single dead pet."""
+    from github_tamagotchi.repositories.graveyard import get_grave
+    from github_tamagotchi.repositories.pet import get_pet_by_repo
+
+    pet = await get_grave(session, username, repo_name)
+    if not pet:
+        alive = await get_pet_by_repo(session, username, repo_name)
+        if alive:
+            return RedirectResponse(f"/pet/{username}/{repo_name}")
+        raise HTTPException(status_code=404, detail="Grave not found")
+
+    cause_labels = {
+        "neglect": "Died of neglect — the commits stopped coming",
+        "abandonment": "Abandoned — the repository went dark",
+    }
+    cause_label = cause_labels.get(pet.cause_of_death or "", pet.cause_of_death or "Cause unknown")
+
+    now = datetime.now(UTC)
+    age_days = (pet.died_at - pet.created_at).days if pet.died_at and pet.created_at else 0
+    would_be_days = (now - pet.created_at).days if pet.created_at else 0
+    is_owner = user is not None and pet.user_id is not None and user.id == pet.user_id
+
+    return templates.TemplateResponse(
+        request,
+        "graveyard_grave.html",
+        {
+            "user": user,
+            "pet": pet,
+            "cause_label": cause_label,
+            "age_days": age_days,
+            "would_be_days": would_be_days,
+            "is_owner": is_owner,
+            "base_url": str(request.base_url).rstrip("/"),
+        },
+        headers={"Cache-Control": "public, max-age=300"},
     )
 
 

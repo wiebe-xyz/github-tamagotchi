@@ -7,6 +7,7 @@
             <a href="/register" {% if (active_page | default('')) == 'register' %}class="nav-active"{% endif %}>Register</a>
             {% endif %}
             <a href="/leaderboard" {% if (active_page | default('')) == 'leaderboard' %}class="nav-active"{% endif %}>Leaderboard</a>
+            <a href="/graveyard" {% if (active_page | default('')) == 'graveyard' %}class="nav-active"{% endif %}>Graveyard</a>
             {% if user and user.is_admin %}
             <a href="/admin" {% if (active_page | default('')) == 'admin' %}class="nav-active"{% endif %}>Admin</a>
             {% endif %}
