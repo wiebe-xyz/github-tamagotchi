@@ -635,6 +635,79 @@ class TestCalculateExperience:
         )
         assert calculate_experience(health) == 0
 
+    def test_experience_from_releases(self) -> None:
+        """Should gain experience from recent releases."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            release_count_30d=3,
+        )
+        assert calculate_experience(health) == 6  # 3 * 2
+
+    def test_experience_from_contributors(self) -> None:
+        """Should gain experience from contributors."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            contributor_count=4,
+        )
+        assert calculate_experience(health) == 4
+
+    def test_experience_releases_capped(self) -> None:
+        """Release XP should be capped at 10."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            release_count_30d=20,
+        )
+        assert calculate_experience(health) == 10
+
+    def test_experience_contributors_capped(self) -> None:
+        """Contributor XP should be capped at 5."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            contributor_count=100,
+        )
+        assert calculate_experience(health) == 5
+
+    def test_active_repo_without_recent_commit_gains_xp(self) -> None:
+        """Regression test: active repos should gain XP even when last_commit_at
+        is None (e.g. API failure) if they have releases/contributors."""
+        health = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+            release_count_30d=2,
+            contributor_count=3,
+        )
+        # 2 * 2 (releases) + 3 (contributors) = 7
+        assert calculate_experience(health) == 7
+
 
 class TestGetNextStage:
     """Tests for get_next_stage function."""
