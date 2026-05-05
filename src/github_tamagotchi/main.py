@@ -1028,7 +1028,7 @@ async def graveyard_grave_page(
     repo_name: str,
     user: OptionalUser,
     session: DbSession,
-) -> HTMLResponse:
+) -> HTMLResponse | RedirectResponse:
     """Memorial page for a single dead pet."""
     from github_tamagotchi.repositories.graveyard import get_grave
     from github_tamagotchi.repositories.pet import get_pet_by_repo
