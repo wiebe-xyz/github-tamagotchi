@@ -41,7 +41,7 @@ def _remove_background_bytes(image_data: bytes) -> bytes:
 def remove_white_background(image_bytes: bytes, threshold: int = 240) -> bytes:
     """Convert near-white pixels to transparent in a PNG."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
-    pixels = list(img.getdata())
+    pixels: list[tuple[int, ...]] = list(img.get_flattened_data())  # type: ignore[arg-type]
     new_pixels = [
         (r, g, b, 0) if r > threshold and g > threshold and b > threshold else (r, g, b, a)
         for r, g, b, a in pixels

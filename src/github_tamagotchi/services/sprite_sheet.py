@@ -144,11 +144,9 @@ def build_sprite_sheet_prompt(
 def _remove_background_from_corners(img: Image.Image, tolerance: int = 40) -> Image.Image:
     """Remove background by flood-filling outward from all four corners.
 
-    Samples the top-left corner pixel as the background colour reference, then
-    BFS-floods from all 4 corners making matched pixels transparent.  This
-    works regardless of the exact shade the AI model generates (hot-pink,
-    magenta, salmon, etc.) and will never remove interior pixels of the same
-    colour because they are not reachable from the border.
+    Each corner seeds a BFS using its own pixel colour as the reference,
+    so frames with mixed backgrounds (e.g. white grid lines at the top and
+    magenta fill at the bottom) are handled in a single pass.
 
     Args:
         img: RGBA PIL Image
@@ -159,43 +157,44 @@ def _remove_background_from_corners(img: Image.Image, tolerance: int = 40) -> Im
     """
     img = img.convert("RGBA")
     width, height = img.size
-    pixels = list(img.getdata())
+    pixels: list[tuple[int, ...]] = list(img.get_flattened_data())  # type: ignore[arg-type]
 
-    # Derive background colour from the top-left corner pixel
-    bg_r, bg_g, bg_b = pixels[0][:3]
-
-    def _matches(r: int, g: int, b: int) -> bool:
-        return bool(
-            abs(r - bg_r) <= tolerance
-            and abs(g - bg_g) <= tolerance
-            and abs(b - bg_b) <= tolerance
-        )
-
-    result: list[tuple[int, int, int, int]] = list(pixels)
+    result: list[tuple[int, ...]] = list(pixels)
     visited: list[bool] = [False] * (width * height)
 
-    queue: deque[tuple[int, int]] = deque()
     for sx, sy in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
         idx = sy * width + sx
-        if not visited[idx]:
-            r, g, b, _ = pixels[idx]
-            if _matches(r, g, b):
-                visited[idx] = True
-                queue.append((sx, sy))
+        if visited[idx]:
+            continue
+        bg_r, bg_g, bg_b = pixels[idx][:3]
 
-    while queue:
-        x, y = queue.popleft()
-        idx = y * width + x
-        r, g, b, a = result[idx]
-        result[idx] = (r, g, b, 0)
-        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-            if 0 <= nx < width and 0 <= ny < height:
-                nidx = ny * width + nx
-                if not visited[nidx]:
-                    nr, ng, nb, _ = pixels[nidx]
-                    if _matches(nr, ng, nb):
-                        visited[nidx] = True
-                        queue.append((nx, ny))
+        def _matches(
+            r: int, g: int, b: int,
+            _br: int = bg_r, _bg: int = bg_g, _bb: int = bg_b,
+        ) -> bool:
+            return bool(
+                abs(r - _br) <= tolerance
+                and abs(g - _bg) <= tolerance
+                and abs(b - _bb) <= tolerance
+            )
+
+        queue: deque[tuple[int, int]] = deque()
+        visited[idx] = True
+        queue.append((sx, sy))
+
+        while queue:
+            x, y = queue.popleft()
+            cidx = y * width + x
+            r, g, b, a = result[cidx]
+            result[cidx] = (r, g, b, 0)
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if 0 <= nx < width and 0 <= ny < height:
+                    nidx = ny * width + nx
+                    if not visited[nidx]:
+                        nr, ng, nb, _ = pixels[nidx]
+                        if _matches(nr, ng, nb):
+                            visited[nidx] = True
+                            queue.append((nx, ny))
 
     out = img.copy()
     out.putdata(result)

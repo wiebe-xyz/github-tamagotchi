@@ -174,7 +174,7 @@ class TestExtractFrames:
         frames = extract_frames(sheet, cols=cols, rows=rows, border_trim=0)
         for frame in frames:
             frame_img = Image.open(io.BytesIO(frame)).convert("RGBA")
-            pixels = list(frame_img.getdata())
+            pixels = list(frame_img.get_flattened_data())
             # All pixels should be fully transparent (alpha == 0)
             assert all(a == 0 for _, _, _, a in pixels), "Magenta pixels should be transparent"
 
@@ -184,7 +184,7 @@ class TestRemoveBackgroundFromCorners:
         # Solid hot-pink (not pure magenta): all pixels connected to corners → all transparent
         img = Image.new("RGBA", (4, 4), color=(255, 105, 180, 255))
         result = _remove_background_from_corners(img)
-        pixels = list(result.getdata())
+        pixels = list(result.get_flattened_data())
         assert all(a == 0 for _, _, _, a in pixels)
 
     def test_interior_pixels_not_removed(self) -> None:
