@@ -147,7 +147,7 @@ def remove_background(
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     width, height = img.size
-    pixels = list(img.getdata())
+    pixels: list[tuple[int, ...]] = list(img.get_flattened_data())  # type: ignore[arg-type]
 
     bg_r, bg_g, bg_b = pixels[0][:3]
 
@@ -158,7 +158,7 @@ def remove_background(
             and abs(b - bg_b) <= tolerance
         )
 
-    result: list[tuple[int, int, int, int]] = list(pixels)
+    result: list[tuple[int, ...]] = list(pixels)
     visited: list[bool] = [False] * (width * height)
 
     queue: deque[tuple[int, int]] = deque()

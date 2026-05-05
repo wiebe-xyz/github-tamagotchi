@@ -157,9 +157,9 @@ def _remove_background_from_corners(img: Image.Image, tolerance: int = 40) -> Im
     """
     img = img.convert("RGBA")
     width, height = img.size
-    pixels = list(img.getdata())
+    pixels: list[tuple[int, ...]] = list(img.get_flattened_data())  # type: ignore[arg-type]
 
-    result: list[tuple[int, int, int, int]] = list(pixels)
+    result: list[tuple[int, ...]] = list(pixels)
     visited: list[bool] = [False] * (width * height)
 
     for sx, sy in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
@@ -168,7 +168,10 @@ def _remove_background_from_corners(img: Image.Image, tolerance: int = 40) -> Im
             continue
         bg_r, bg_g, bg_b = pixels[idx][:3]
 
-        def _matches(r: int, g: int, b: int, _br: int = bg_r, _bg: int = bg_g, _bb: int = bg_b) -> bool:
+        def _matches(
+            r: int, g: int, b: int,
+            _br: int = bg_r, _bg: int = bg_g, _bb: int = bg_b,
+        ) -> bool:
             return bool(
                 abs(r - _br) <= tolerance
                 and abs(g - _bg) <= tolerance
