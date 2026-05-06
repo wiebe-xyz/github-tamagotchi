@@ -17,6 +17,10 @@ from github_tamagotchi.services.provider import ImageProvider
 from github_tamagotchi.services.sprite_sheet import compose_animated_gif
 from github_tamagotchi.services.storage import StorageService
 
+from github_tamagotchi.core.telemetry import get_tracer
+
+_tracer = get_tracer(__name__)
+
 logger = structlog.get_logger()
 
 # Queue configuration
@@ -250,147 +254,154 @@ async def process_job(session: AsyncSession, job: ImageGenerationJob) -> None:
         session: Database session
         job: The job to process
     """
-    logger.info(
-        "Processing image generation job",
-        job_id=job.id,
-        pet_id=job.pet_id,
-        stage=job.stage,
-        attempt=job.attempts + 1,
-    )
+    with _tracer.start_as_current_span("image_queue.process_job") as span:
+        span.set_attribute("job.id", str(job.id))
+        span.set_attribute("job.pet_id", str(job.pet_id))
+        if job.stage:
+            span.set_attribute("job.stage", job.stage)
+        span.set_attribute("job.attempt", job.attempts + 1)
 
-    await mark_job_processing(session, job.id)
-
-    try:
-        # Fetch the pet to get owner/repo info
-        pet = await get_pet_by_id(session, job.pet_id)
-        if not pet:
-            raise ValueError(f"Pet with id {job.pet_id} not found")
-
-        # Determine which stages to generate (specific stage or all stages)
-        stages = [job.stage] if job.stage else [stage.value for stage in PetStage]
-
-        # Generate images for each stage and upload to MinIO
-        image_service = get_image_provider()
-        storage = StorageService()
-        style = getattr(pet, "style", "kawaii")
-        use_sprite_sheets = settings.image_generation_provider == "openrouter"
-
-        for stage in stages:
-            logger.info(
-                "Generating image for stage",
-                job_id=job.id,
-                pet_id=job.pet_id,
-                stage=stage,
-            )
-
-            if use_sprite_sheets:
-                # Use sprite sheet generation for OpenRouter (produces 6 animation frames)
-                openrouter = OpenRouterService()
-                sheet_result = await openrouter.generate_sprite_sheet(
-                    pet.repo_owner,
-                    pet.repo_name,
-                    stage,
-                    style=style,
-                    canonical_appearance=pet.canonical_appearance,
-                )
-
-                if sheet_result.success and sheet_result.sprite_sheet_data:
-                    # Upload sprite sheet
-                    await storage.upload_sprite_sheet(
-                        pet.repo_owner, pet.repo_name, stage, sheet_result.sprite_sheet_data
-                    )
-
-                    # Upload individual frames
-                    for idx, frame_bytes in enumerate(sheet_result.frames):
-                        await storage.upload_frame(
-                            pet.repo_owner, pet.repo_name, stage, idx, frame_bytes
-                        )
-
-                    # Compose and upload animated GIF
-                    gif_data = compose_animated_gif(
-                        sheet_result.frames,
-                        mood=pet.mood if hasattr(pet, "mood") else "content",
-                        health=pet.health if hasattr(pet, "health") else 100,
-                    )
-                    await storage.upload_animated_gif(
-                        pet.repo_owner, pet.repo_name, stage, gif_data
-                    )
-
-                    # Update canonical appearance if not already set
-                    if (
-                        not pet.canonical_appearance
-                        and sheet_result.canonical_appearance
-                    ):
-                        await update_canonical_appearance(
-                            session,
-                            pet.repo_owner,
-                            pet.repo_name,
-                            sheet_result.canonical_appearance,
-                        )
-                        pet.canonical_appearance = sheet_result.canonical_appearance
-
-                    logger.info(
-                        "Successfully generated and uploaded sprite sheet for stage",
-                        job_id=job.id,
-                        pet_id=job.pet_id,
-                        stage=stage,
-                        frame_count=len(sheet_result.frames),
-                    )
-                    continue
-
-                # Sprite sheet failed — fall back to single image generation
-                logger.warning(
-                    "Sprite sheet generation failed, falling back to single image",
-                    job_id=job.id,
-                    stage=stage,
-                    error=sheet_result.error,
-                )
-
-            # Single image fallback (non-OpenRouter or sprite sheet failure)
-            result = await image_service.generate_pet_image(
-                owner=pet.repo_owner,
-                repo=pet.repo_name,
-                stage=stage,
-                style=style,
-            )
-
-            if not result.success:
-                raise RuntimeError(
-                    f"Image generation failed for stage {stage}: {result.error}"
-                )
-
-            # Remove chroma-key background to produce a transparent PNG
-            if result.image_data:
-                result.image_data = remove_background(result.image_data)
-                await storage.upload_image(
-                    pet.repo_owner, pet.repo_name, stage, result.image_data
-                )
-
-            logger.info(
-                "Successfully generated and uploaded image for stage",
-                job_id=job.id,
-                pet_id=job.pet_id,
-                stage=stage,
-            )
-
-        # Update the timestamp for when images were last generated
-        await update_images_generated_at(session, pet.repo_owner, pet.repo_name)
-
-        await mark_job_completed(session, job.id)
         logger.info(
-            "Successfully processed job",
+            "Processing image generation job",
             job_id=job.id,
             pet_id=job.pet_id,
-            stages_generated=stages,
+            stage=job.stage,
+            attempt=job.attempts + 1,
         )
 
-    except Exception as e:
-        error_msg = str(e)
-        # Re-fetch job to get current attempts count
-        updated_job = await get_job_by_id(session, job.id)
-        if updated_job:
-            await mark_job_failed(session, job.id, error_msg, updated_job.attempts)
-        raise
+        await mark_job_processing(session, job.id)
+
+        try:
+            # Fetch the pet to get owner/repo info
+            pet = await get_pet_by_id(session, job.pet_id)
+            if not pet:
+                raise ValueError(f"Pet with id {job.pet_id} not found")
+
+            # Determine which stages to generate (specific stage or all stages)
+            stages = [job.stage] if job.stage else [stage.value for stage in PetStage]
+
+            # Generate images for each stage and upload to MinIO
+            image_service = get_image_provider()
+            storage = StorageService()
+            style = getattr(pet, "style", "kawaii")
+            use_sprite_sheets = settings.image_generation_provider == "openrouter"
+
+            for stage in stages:
+                logger.info(
+                    "Generating image for stage",
+                    job_id=job.id,
+                    pet_id=job.pet_id,
+                    stage=stage,
+                )
+
+                if use_sprite_sheets:
+                    # Use sprite sheet generation for OpenRouter (produces 6 animation frames)
+                    openrouter = OpenRouterService()
+                    sheet_result = await openrouter.generate_sprite_sheet(
+                        pet.repo_owner,
+                        pet.repo_name,
+                        stage,
+                        style=style,
+                        canonical_appearance=pet.canonical_appearance,
+                    )
+
+                    if sheet_result.success and sheet_result.sprite_sheet_data:
+                        # Upload sprite sheet
+                        await storage.upload_sprite_sheet(
+                            pet.repo_owner, pet.repo_name, stage, sheet_result.sprite_sheet_data
+                        )
+
+                        # Upload individual frames
+                        for idx, frame_bytes in enumerate(sheet_result.frames):
+                            await storage.upload_frame(
+                                pet.repo_owner, pet.repo_name, stage, idx, frame_bytes
+                            )
+
+                        # Compose and upload animated GIF
+                        gif_data = compose_animated_gif(
+                            sheet_result.frames,
+                            mood=pet.mood if hasattr(pet, "mood") else "content",
+                            health=pet.health if hasattr(pet, "health") else 100,
+                        )
+                        await storage.upload_animated_gif(
+                            pet.repo_owner, pet.repo_name, stage, gif_data
+                        )
+
+                        # Update canonical appearance if not already set
+                        if (
+                            not pet.canonical_appearance
+                            and sheet_result.canonical_appearance
+                        ):
+                            await update_canonical_appearance(
+                                session,
+                                pet.repo_owner,
+                                pet.repo_name,
+                                sheet_result.canonical_appearance,
+                            )
+                            pet.canonical_appearance = sheet_result.canonical_appearance
+
+                        logger.info(
+                            "Successfully generated and uploaded sprite sheet for stage",
+                            job_id=job.id,
+                            pet_id=job.pet_id,
+                            stage=stage,
+                            frame_count=len(sheet_result.frames),
+                        )
+                        continue
+
+                    # Sprite sheet failed — fall back to single image generation
+                    logger.warning(
+                        "Sprite sheet generation failed, falling back to single image",
+                        job_id=job.id,
+                        stage=stage,
+                        error=sheet_result.error,
+                    )
+
+                # Single image fallback (non-OpenRouter or sprite sheet failure)
+                result = await image_service.generate_pet_image(
+                    owner=pet.repo_owner,
+                    repo=pet.repo_name,
+                    stage=stage,
+                    style=style,
+                )
+
+                if not result.success:
+                    raise RuntimeError(
+                        f"Image generation failed for stage {stage}: {result.error}"
+                    )
+
+                # Remove chroma-key background to produce a transparent PNG
+                if result.image_data:
+                    result.image_data = remove_background(result.image_data)
+                    await storage.upload_image(
+                        pet.repo_owner, pet.repo_name, stage, result.image_data
+                    )
+
+                logger.info(
+                    "Successfully generated and uploaded image for stage",
+                    job_id=job.id,
+                    pet_id=job.pet_id,
+                    stage=stage,
+                )
+
+            # Update the timestamp for when images were last generated
+            await update_images_generated_at(session, pet.repo_owner, pet.repo_name)
+
+            await mark_job_completed(session, job.id)
+            logger.info(
+                "Successfully processed job",
+                job_id=job.id,
+                pet_id=job.pet_id,
+                stages_generated=stages,
+            )
+
+        except Exception as e:
+            error_msg = str(e)
+            # Re-fetch job to get current attempts count
+            updated_job = await get_job_by_id(session, job.id)
+            if updated_job:
+                await mark_job_failed(session, job.id, error_msg, updated_job.attempts)
+            raise
 
 
 async def run_worker(

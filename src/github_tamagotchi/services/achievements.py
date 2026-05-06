@@ -6,7 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.models.achievement import PetAchievement
 from github_tamagotchi.models.comment import PetComment
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.pet import Pet, PetStage
+
+_tracer = get_tracer(__name__)
 
 ACHIEVEMENTS: dict[str, dict[str, str | bool]] = {
     "first_commit": {
@@ -206,37 +209,41 @@ async def check_and_unlock_achievements(
 
     Returns list of newly unlocked achievement IDs.
     """
-    # Fetch already-unlocked achievement IDs for this pet
-    existing_result = await session.execute(
-        select(PetAchievement.achievement_id).where(PetAchievement.pet_id == pet.id)
-    )
-    already_unlocked: set[str] = set(existing_result.scalars().all())
+    with _tracer.start_as_current_span("achievements.check_and_unlock") as span:
+        span.set_attribute("pet.id", str(pet.id))
 
-    # Count comments for social_butterfly
-    comment_count_result = await session.execute(
-        select(func.count()).select_from(PetComment).where(
-            PetComment.repo_owner == pet.repo_owner,
-            PetComment.repo_name == pet.repo_name,
+        # Fetch already-unlocked achievement IDs for this pet
+        existing_result = await session.execute(
+            select(PetAchievement.achievement_id).where(PetAchievement.pet_id == pet.id)
         )
-    )
-    comment_count = comment_count_result.scalar() or 0
+        already_unlocked: set[str] = set(existing_result.scalars().all())
 
-    earned = _check_conditions(pet, comment_count, star_count=star_count, fork_count=fork_count)
-    newly_unlocked: list[str] = []
+        # Count comments for social_butterfly
+        comment_count_result = await session.execute(
+            select(func.count()).select_from(PetComment).where(
+                PetComment.repo_owner == pet.repo_owner,
+                PetComment.repo_name == pet.repo_name,
+            )
+        )
+        comment_count = comment_count_result.scalar() or 0
 
-    for achievement_id in earned:
-        if achievement_id in already_unlocked:
-            continue
-        new_achievement = PetAchievement(pet_id=pet.id, achievement_id=achievement_id)
-        session.add(new_achievement)
-        try:
-            await session.flush()
-            newly_unlocked.append(achievement_id)
-        except IntegrityError:
-            # Race condition: already inserted by concurrent request
-            await session.rollback()
+        earned = _check_conditions(pet, comment_count, star_count=star_count, fork_count=fork_count)
+        newly_unlocked: list[str] = []
 
-    return newly_unlocked
+        for achievement_id in earned:
+            if achievement_id in already_unlocked:
+                continue
+            new_achievement = PetAchievement(pet_id=pet.id, achievement_id=achievement_id)
+            session.add(new_achievement)
+            try:
+                await session.flush()
+                newly_unlocked.append(achievement_id)
+            except IntegrityError:
+                # Race condition: already inserted by concurrent request
+                await session.rollback()
+
+        span.set_attribute("achievements.unlocked_count", len(newly_unlocked))
+        return newly_unlocked
 
 
 async def get_unlocked_achievement_ids(pet_id: int, session: AsyncSession) -> set[str]:

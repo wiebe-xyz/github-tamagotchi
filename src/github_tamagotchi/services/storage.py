@@ -11,7 +11,10 @@ from minio.error import S3Error
 from PIL import Image
 
 from github_tamagotchi.core.config import settings
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.pet import PetStage
+
+_tracer = get_tracer(__name__)
 
 if TYPE_CHECKING:
     from minio.datatypes import Object as MinioObject
@@ -128,28 +131,31 @@ class StorageService:
         """
         object_path = self._get_object_path(owner, repo, stage)
 
-        try:
-            await self.ensure_bucket_exists()
-            processed = remove_white_background(image_data)
-            await asyncio.to_thread(
-                self.client.put_object,
-                self.bucket,
-                object_path,
-                io.BytesIO(processed),
-                len(processed),
-                "image/png",
-            )
-            logger.info(
-                "Uploaded pet image",
-                owner=owner,
-                repo=repo,
-                stage=stage,
-                path=object_path,
-            )
-            return object_path
-        except S3Error as e:
-            logger.error("Failed to upload image", error=str(e), path=object_path)
-            raise
+        with _tracer.start_as_current_span("storage.upload_image") as span:
+            span.set_attribute("storage.bucket", self.bucket)
+            span.set_attribute("storage.object_key", object_path)
+            try:
+                await self.ensure_bucket_exists()
+                processed = remove_white_background(image_data)
+                await asyncio.to_thread(
+                    self.client.put_object,
+                    self.bucket,
+                    object_path,
+                    io.BytesIO(processed),
+                    len(processed),
+                    "image/png",
+                )
+                logger.info(
+                    "Uploaded pet image",
+                    owner=owner,
+                    repo=repo,
+                    stage=stage,
+                    path=object_path,
+                )
+                return object_path
+            except S3Error as e:
+                logger.error("Failed to upload image", error=str(e), path=object_path)
+                raise
 
     async def get_image(self, owner: str, repo: str, stage: str) -> bytes | None:
         """Retrieve a pet image from storage.
@@ -331,7 +337,10 @@ class StorageService:
     ) -> str:
         """Upload a sprite sheet to storage."""
         object_path = self._get_spritesheet_path(owner, repo, stage)
-        return await self._upload_raw(object_path, image_data, "image/png")
+        with _tracer.start_as_current_span("storage.upload_sprite_sheet") as span:
+            span.set_attribute("storage.bucket", self.bucket)
+            span.set_attribute("storage.object_key", object_path)
+            return await self._upload_raw(object_path, image_data, "image/png")
 
     async def get_sprite_sheet(
         self, owner: str, repo: str, stage: str
@@ -345,7 +354,10 @@ class StorageService:
     ) -> str:
         """Upload an individual frame to storage."""
         object_path = self._get_frame_path(owner, repo, stage, frame_index)
-        return await self._upload_raw(object_path, image_data, "image/png")
+        with _tracer.start_as_current_span("storage.upload_frame") as span:
+            span.set_attribute("storage.bucket", self.bucket)
+            span.set_attribute("storage.object_key", object_path)
+            return await self._upload_raw(object_path, image_data, "image/png")
 
     async def get_frame(
         self, owner: str, repo: str, stage: str, frame_index: int
@@ -359,7 +371,10 @@ class StorageService:
     ) -> str:
         """Upload an animated GIF to storage."""
         object_path = self._get_animated_gif_path(owner, repo, stage)
-        return await self._upload_raw(object_path, gif_data, "image/gif")
+        with _tracer.start_as_current_span("storage.upload_animated_gif") as span:
+            span.set_attribute("storage.bucket", self.bucket)
+            span.set_attribute("storage.object_key", object_path)
+            return await self._upload_raw(object_path, gif_data, "image/gif")
 
     async def get_animated_gif(
         self, owner: str, repo: str, stage: str

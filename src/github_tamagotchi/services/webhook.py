@@ -14,6 +14,10 @@ from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.pet_logic import get_next_stage
 
+from github_tamagotchi.core.telemetry import get_tracer
+
+_tracer = get_tracer(__name__)
+
 logger = structlog.get_logger()
 
 # Experience and health rewards for webhook events
@@ -81,192 +85,208 @@ async def _apply_evolution(
 
 async def handle_push_event(payload: dict[str, Any], db: AsyncSession) -> str:
     """Handle push events - feed the pet and grant experience."""
-    repo_info = _extract_repo_from_payload(payload)
-    if not repo_info:
-        return "no repository in payload"
+    repo = payload.get("repository", {}).get("full_name", "unknown")
+    with _tracer.start_as_current_span("webhook.push") as span:
+        span.set_attribute("webhook.repo", repo)
 
-    owner, name = repo_info
-    pet = await pet_crud.get_pet_by_repo(db, owner, name)
-    if not pet:
-        return f"no pet found for {owner}/{name}"
+        repo_info = _extract_repo_from_payload(payload)
+        if not repo_info:
+            return "no repository in payload"
 
-    now = datetime.now(UTC)
-    pet.health = min(100, pet.health + PUSH_HEALTH_BONUS)
-    pet.experience = pet.experience + PUSH_EXPERIENCE_BONUS
-    pet.last_fed_at = now
-    pet.mood = PetMood.HAPPY.value
+        owner, name = repo_info
+        pet = await pet_crud.get_pet_by_repo(db, owner, name)
+        if not pet:
+            return f"no pet found for {owner}/{name}"
 
-    evolution = await _apply_evolution(pet, db)
-    if evolution:
+        now = datetime.now(UTC)
+        pet.health = min(100, pet.health + PUSH_HEALTH_BONUS)
+        pet.experience = pet.experience + PUSH_EXPERIENCE_BONUS
+        pet.last_fed_at = now
+        pet.mood = PetMood.HAPPY.value
+
+        evolution = await _apply_evolution(pet, db)
+        if evolution:
+            logger.info(
+                "pet_evolved_via_webhook",
+                pet_id=pet.id,
+                old_stage=evolution[0],
+                new_stage=evolution[1],
+            )
+
+        # Update contributor score for the pusher
+        pusher = payload.get("pusher", {}).get("name") or payload.get("sender", {}).get("login")
+        if pusher:
+            await apply_score_delta(
+                db=db,
+                pet_id=pet.id,
+                github_username=pusher,
+                delta=5,  # SCORE_PER_COMMIT
+                event_description="pushed commits",
+                now=now,
+            )
+
+        await db.commit()
+
         logger.info(
-            "pet_evolved_via_webhook",
+            "webhook_push_processed",
+            repo=f"{owner}/{name}",
             pet_id=pet.id,
-            old_stage=evolution[0],
-            new_stage=evolution[1],
+            new_health=pet.health,
+            new_experience=pet.experience,
         )
-
-    # Update contributor score for the pusher
-    pusher = payload.get("pusher", {}).get("name") or payload.get("sender", {}).get("login")
-    if pusher:
-        await apply_score_delta(
-            db=db,
-            pet_id=pet.id,
-            github_username=pusher,
-            delta=5,  # SCORE_PER_COMMIT
-            event_description="pushed commits",
-            now=now,
-        )
-
-    await db.commit()
-
-    logger.info(
-        "webhook_push_processed",
-        repo=f"{owner}/{name}",
-        pet_id=pet.id,
-        new_health=pet.health,
-        new_experience=pet.experience,
-    )
-    return f"push processed for {owner}/{name}"
+        return f"push processed for {owner}/{name}"
 
 
 async def handle_pull_request_event(payload: dict[str, Any], db: AsyncSession) -> str:
     """Handle pull_request events - affect mood based on action."""
-    repo_info = _extract_repo_from_payload(payload)
-    if not repo_info:
-        return "no repository in payload"
+    repo = payload.get("repository", {}).get("full_name", "unknown")
+    with _tracer.start_as_current_span("webhook.pull_request") as span:
+        span.set_attribute("webhook.repo", repo)
 
-    owner, name = repo_info
-    pet = await pet_crud.get_pet_by_repo(db, owner, name)
-    if not pet:
-        return f"no pet found for {owner}/{name}"
+        repo_info = _extract_repo_from_payload(payload)
+        if not repo_info:
+            return "no repository in payload"
 
-    action = payload.get("action", "")
-    now = datetime.now(UTC)
+        owner, name = repo_info
+        pet = await pet_crud.get_pet_by_repo(db, owner, name)
+        if not pet:
+            return f"no pet found for {owner}/{name}"
 
-    if action == "opened":
-        pet.mood = PetMood.WORRIED.value
-        pet.experience = pet.experience + PR_OPENED_EXPERIENCE_BONUS
-    elif action == "closed":
-        pr = payload.get("pull_request", {})
-        if pr.get("merged"):
-            pet.mood = PetMood.HAPPY.value
-            pet.health = min(100, pet.health + PR_MERGED_HEALTH_BONUS)
-            pet.experience = pet.experience + PR_MERGED_EXPERIENCE_BONUS
-            # Credit the merger in contributor relationships
-            merged_by = (pr.get("merged_by") or {}).get("login")
-            if merged_by:
-                await apply_score_delta(
-                    db=db,
-                    pet_id=pet.id,
-                    github_username=merged_by,
-                    delta=10,  # SCORE_PER_MERGED_PR
-                    event_description="merged a PR",
-                    now=now,
-                )
-        else:
-            # PR closed without merge
-            pet.mood = PetMood.CONTENT.value
-    elif action == "reopened":
-        pet.mood = PetMood.WORRIED.value
+        action = payload.get("action", "")
+        now = datetime.now(UTC)
 
-    await _apply_evolution(pet, db)
+        if action == "opened":
+            pet.mood = PetMood.WORRIED.value
+            pet.experience = pet.experience + PR_OPENED_EXPERIENCE_BONUS
+        elif action == "closed":
+            pr = payload.get("pull_request", {})
+            if pr.get("merged"):
+                pet.mood = PetMood.HAPPY.value
+                pet.health = min(100, pet.health + PR_MERGED_HEALTH_BONUS)
+                pet.experience = pet.experience + PR_MERGED_EXPERIENCE_BONUS
+                # Credit the merger in contributor relationships
+                merged_by = (pr.get("merged_by") or {}).get("login")
+                if merged_by:
+                    await apply_score_delta(
+                        db=db,
+                        pet_id=pet.id,
+                        github_username=merged_by,
+                        delta=10,  # SCORE_PER_MERGED_PR
+                        event_description="merged a PR",
+                        now=now,
+                    )
+            else:
+                # PR closed without merge
+                pet.mood = PetMood.CONTENT.value
+        elif action == "reopened":
+            pet.mood = PetMood.WORRIED.value
 
-    await db.commit()
+        await _apply_evolution(pet, db)
 
-    logger.info(
-        "webhook_pr_processed",
-        repo=f"{owner}/{name}",
-        pet_id=pet.id,
-        action=action,
-        new_mood=pet.mood,
-    )
-    return f"pull_request ({action}) processed for {owner}/{name}"
+        await db.commit()
+
+        logger.info(
+            "webhook_pr_processed",
+            repo=f"{owner}/{name}",
+            pet_id=pet.id,
+            action=action,
+            new_mood=pet.mood,
+        )
+        return f"pull_request ({action}) processed for {owner}/{name}"
 
 
 async def handle_issues_event(payload: dict[str, Any], db: AsyncSession) -> str:
     """Handle issues events - lonely state for new issues."""
-    repo_info = _extract_repo_from_payload(payload)
-    if not repo_info:
-        return "no repository in payload"
+    repo = payload.get("repository", {}).get("full_name", "unknown")
+    with _tracer.start_as_current_span("webhook.issues") as span:
+        span.set_attribute("webhook.repo", repo)
 
-    owner, name = repo_info
-    pet = await pet_crud.get_pet_by_repo(db, owner, name)
-    if not pet:
-        return f"no pet found for {owner}/{name}"
+        repo_info = _extract_repo_from_payload(payload)
+        if not repo_info:
+            return "no repository in payload"
 
-    action = payload.get("action", "")
+        owner, name = repo_info
+        pet = await pet_crud.get_pet_by_repo(db, owner, name)
+        if not pet:
+            return f"no pet found for {owner}/{name}"
 
-    if action == "opened":
-        pet.mood = PetMood.LONELY.value
-        pet.experience = pet.experience + ISSUE_OPENED_EXPERIENCE_BONUS
-    elif action == "closed":
-        pet.mood = PetMood.HAPPY.value
+        action = payload.get("action", "")
 
-    await _apply_evolution(pet, db)
+        if action == "opened":
+            pet.mood = PetMood.LONELY.value
+            pet.experience = pet.experience + ISSUE_OPENED_EXPERIENCE_BONUS
+        elif action == "closed":
+            pet.mood = PetMood.HAPPY.value
 
-    await db.commit()
+        await _apply_evolution(pet, db)
 
-    logger.info(
-        "webhook_issue_processed",
-        repo=f"{owner}/{name}",
-        pet_id=pet.id,
-        action=action,
-        new_mood=pet.mood,
-    )
-    return f"issues ({action}) processed for {owner}/{name}"
+        await db.commit()
+
+        logger.info(
+            "webhook_issue_processed",
+            repo=f"{owner}/{name}",
+            pet_id=pet.id,
+            action=action,
+            new_mood=pet.mood,
+        )
+        return f"issues ({action}) processed for {owner}/{name}"
 
 
 async def handle_check_run_event(payload: dict[str, Any], db: AsyncSession) -> str:
     """Handle check_run events - CI status affects health and mood."""
-    repo_info = _extract_repo_from_payload(payload)
-    if not repo_info:
-        return "no repository in payload"
+    repo = payload.get("repository", {}).get("full_name", "unknown")
+    with _tracer.start_as_current_span("webhook.check_run") as span:
+        span.set_attribute("webhook.repo", repo)
 
-    owner, name = repo_info
-    pet = await pet_crud.get_pet_by_repo(db, owner, name)
-    if not pet:
-        return f"no pet found for {owner}/{name}"
+        repo_info = _extract_repo_from_payload(payload)
+        if not repo_info:
+            return "no repository in payload"
 
-    action = payload.get("action", "")
-    if action != "completed":
-        return f"check_run ({action}) ignored for {owner}/{name}"
+        owner, name = repo_info
+        pet = await pet_crud.get_pet_by_repo(db, owner, name)
+        if not pet:
+            return f"no pet found for {owner}/{name}"
 
-    check_run = payload.get("check_run", {})
-    conclusion = check_run.get("conclusion", "")
-    now = datetime.now(UTC)
+        action = payload.get("action", "")
+        if action != "completed":
+            return f"check_run ({action}) ignored for {owner}/{name}"
 
-    if conclusion == "success":
-        pet.health = min(100, pet.health + CI_SUCCESS_HEALTH_BONUS)
-        pet.experience = pet.experience + CI_SUCCESS_EXPERIENCE_BONUS
-        pet.mood = PetMood.DANCING.value
-    elif conclusion in ("failure", "timed_out"):
-        pet.health = max(0, pet.health + CI_FAILURE_HEALTH_PENALTY)
-        pet.mood = PetMood.WORRIED.value
-        # Penalise the person who triggered the failing check
-        sender = payload.get("sender", {}).get("login")
-        if sender:
-            await apply_score_delta(
-                db=db,
-                pet_id=pet.id,
-                github_username=sender,
-                delta=-20,
-                event_description="broke CI",
-                now=now,
-            )
+        check_run = payload.get("check_run", {})
+        conclusion = check_run.get("conclusion", "")
+        now = datetime.now(UTC)
 
-    await _apply_evolution(pet, db)
+        if conclusion == "success":
+            pet.health = min(100, pet.health + CI_SUCCESS_HEALTH_BONUS)
+            pet.experience = pet.experience + CI_SUCCESS_EXPERIENCE_BONUS
+            pet.mood = PetMood.DANCING.value
+        elif conclusion in ("failure", "timed_out"):
+            pet.health = max(0, pet.health + CI_FAILURE_HEALTH_PENALTY)
+            pet.mood = PetMood.WORRIED.value
+            # Penalise the person who triggered the failing check
+            sender = payload.get("sender", {}).get("login")
+            if sender:
+                await apply_score_delta(
+                    db=db,
+                    pet_id=pet.id,
+                    github_username=sender,
+                    delta=-20,
+                    event_description="broke CI",
+                    now=now,
+                )
 
-    await db.commit()
+        await _apply_evolution(pet, db)
 
-    logger.info(
-        "webhook_check_run_processed",
-        repo=f"{owner}/{name}",
-        pet_id=pet.id,
-        conclusion=conclusion,
-        new_health=pet.health,
-        new_mood=pet.mood,
-    )
-    return f"check_run ({conclusion}) processed for {owner}/{name}"
+        await db.commit()
+
+        logger.info(
+            "webhook_check_run_processed",
+            repo=f"{owner}/{name}",
+            pet_id=pet.id,
+            conclusion=conclusion,
+            new_health=pet.health,
+            new_mood=pet.mood,
+        )
+        return f"check_run ({conclusion}) processed for {owner}/{name}"
 
 
 EVENT_HANDLERS: dict[str, Any] = {

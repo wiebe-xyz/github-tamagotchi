@@ -11,6 +11,10 @@ import httpx
 import structlog
 from PIL import Image
 
+from github_tamagotchi.core.telemetry import get_tracer
+
+_tracer = get_tracer(__name__)
+
 from github_tamagotchi.services.image_generation import (
     DEFAULT_STYLE,
     NEGATIVE_PROMPT,
@@ -242,33 +246,41 @@ def extract_frames(
     Returns:
         List of PNG frame bytes in reading order (left-to-right, top-to-bottom)
     """
-    img = Image.open(io.BytesIO(sprite_sheet_bytes)).convert("RGBA")
-    width, height = img.size
-    frame_w = width // cols
-    frame_h = height // rows
+    with _tracer.start_as_current_span(
+        "sprite.extract_frames",
+        attributes={
+            "sprite.cols": cols,
+            "sprite.rows": rows,
+        },
+    ) as span:
+        img = Image.open(io.BytesIO(sprite_sheet_bytes)).convert("RGBA")
+        width, height = img.size
+        frame_w = width // cols
+        frame_h = height // rows
 
-    frames: list[bytes] = []
-    for row in range(rows):
-        for col in range(cols):
-            x = col * frame_w
-            y = row * frame_h
-            frame = img.crop((x, y, x + frame_w, y + frame_h))
-            # Trim separator borders
-            if border_trim > 0:
-                fw, fh = frame.size
-                frame = frame.crop((
-                    border_trim,
-                    border_trim,
-                    fw - border_trim,
-                    fh - border_trim,
-                ))
-            # Remove background by flood-filling from corners
-            frame = _remove_background_from_corners(frame)
-            out = io.BytesIO()
-            frame.save(out, format="PNG")
-            frames.append(out.getvalue())
+        frames: list[bytes] = []
+        for row in range(rows):
+            for col in range(cols):
+                x = col * frame_w
+                y = row * frame_h
+                frame = img.crop((x, y, x + frame_w, y + frame_h))
+                # Trim separator borders
+                if border_trim > 0:
+                    fw, fh = frame.size
+                    frame = frame.crop((
+                        border_trim,
+                        border_trim,
+                        fw - border_trim,
+                        fh - border_trim,
+                    ))
+                # Remove background by flood-filling from corners
+                frame = _remove_background_from_corners(frame)
+                out = io.BytesIO()
+                frame.save(out, format="PNG")
+                frames.append(out.getvalue())
 
-    return frames
+        span.set_attribute("sprite.frame_count", len(frames))
+        return frames
 
 
 VISION_MODEL = "google/gemini-2.0-flash-001"
@@ -286,56 +298,63 @@ async def analyze_sprite_sheet(
 
     The emotion field is one of the FRAME_NAMES values, or "unknown".
     """
-    b64 = base64.b64encode(sprite_sheet_bytes).decode()
-    data_uri = f"data:image/png;base64,{b64}"
+    with _tracer.start_as_current_span(
+        "sprite.analyze_sprite_sheet",
+        attributes={
+            "sprite.vision_model": VISION_MODEL,
+        },
+    ) as span:
+        b64 = base64.b64encode(sprite_sheet_bytes).decode()
+        data_uri = f"data:image/png;base64,{b64}"
 
-    emotion_list = ", ".join(FRAME_NAMES)
-    prompt = (
-        "This is a pixel art sprite sheet arranged as a 3x3 grid (9 cells). "
-        "Analyze each cell from left-to-right, top-to-bottom (cells 0-8). "
-        "For each cell, determine:\n"
-        "1. Whether it contains a character (not empty)\n"
-        f"2. Which emotion best matches from: {emotion_list}\n\n"
-        "Respond with ONLY a JSON array of 9 objects, no other text:\n"
-        '[{"index": 0, "empty": false, "emotion": "idle"}, ...]\n'
-        "If a cell is empty or has no character, set empty=true and emotion=\"unknown\"."
-    )
+        emotion_list = ", ".join(FRAME_NAMES)
+        prompt = (
+            "This is a pixel art sprite sheet arranged as a 3x3 grid (9 cells). "
+            "Analyze each cell from left-to-right, top-to-bottom (cells 0-8). "
+            "For each cell, determine:\n"
+            "1. Whether it contains a character (not empty)\n"
+            f"2. Which emotion best matches from: {emotion_list}\n\n"
+            "Respond with ONLY a JSON array of 9 objects, no other text:\n"
+            '[{"index": 0, "empty": false, "emotion": "idle"}, ...]\n'
+            "If a cell is empty or has no character, set empty=true and emotion=\"unknown\"."
+        )
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": VISION_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": data_uri}},
-                ],
-            }
-        ],
-    }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": VISION_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": data_uri}},
+                    ],
+                }
+            ],
+        }
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(VISION_API_URL, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(VISION_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
 
-        text = data["choices"][0]["message"]["content"]
-        match = re.search(r"\[.*\]", text, re.DOTALL)
-        if not match:
-            logger.warning("vision_analysis_no_json", response_text=text[:200])
+            text = data["choices"][0]["message"]["content"]
+            match = re.search(r"\[.*\]", text, re.DOTALL)
+            if not match:
+                logger.warning("vision_analysis_no_json", response_text=text[:200])
+                return []
+
+            cells: list[dict[str, str | int | bool]] = json.loads(match.group())
+            span.set_attribute("sprite.cell_count", len(cells))
+            logger.info("vision_analysis_complete", cells=cells)
+            return cells
+        except Exception:
+            logger.exception("vision_analysis_failed")
             return []
-
-        cells: list[dict[str, str | int | bool]] = json.loads(match.group())
-        logger.info("vision_analysis_complete", cells=cells)
-        return cells
-    except Exception:
-        logger.exception("vision_analysis_failed")
-        return []
 
 
 def reorder_frames_by_analysis(
@@ -347,33 +366,34 @@ def reorder_frames_by_analysis(
     Maps each analyzed cell to the canonical frame index by emotion name.
     Falls back to the first non-empty frame for any emotion not found.
     """
-    if not analysis or len(raw_frames) != len(analysis):
-        return raw_frames[:len(SPRITE_FRAMES)]
+    with _tracer.start_as_current_span("sprite.reorder_frames"):
+        if not analysis or len(raw_frames) != len(analysis):
+            return raw_frames[:len(SPRITE_FRAMES)]
 
-    emotion_to_frame_idx: dict[str, int] = {
-        name: idx for idx, name, _ in SPRITE_FRAMES
-    }
+        emotion_to_frame_idx: dict[str, int] = {
+            name: idx for idx, name, _ in SPRITE_FRAMES
+        }
 
-    available: dict[int, bytes] = {}
-    first_nonempty: bytes | None = None
+        available: dict[int, bytes] = {}
+        first_nonempty: bytes | None = None
 
-    for cell, frame_data in zip(analysis, raw_frames, strict=False):
-        if cell.get("empty", False):
-            continue
-        if first_nonempty is None:
-            first_nonempty = frame_data
+        for cell, frame_data in zip(analysis, raw_frames, strict=False):
+            if cell.get("empty", False):
+                continue
+            if first_nonempty is None:
+                first_nonempty = frame_data
 
-        emotion = str(cell.get("emotion", "unknown")).lower()
-        canonical_idx = emotion_to_frame_idx.get(emotion)
-        if canonical_idx is not None and canonical_idx not in available:
-            available[canonical_idx] = frame_data
+            emotion = str(cell.get("emotion", "unknown")).lower()
+            canonical_idx = emotion_to_frame_idx.get(emotion)
+            if canonical_idx is not None and canonical_idx not in available:
+                available[canonical_idx] = frame_data
 
-    fallback = first_nonempty or raw_frames[0]
-    ordered: list[bytes] = []
-    for idx, _, _ in SPRITE_FRAMES:
-        ordered.append(available.get(idx, fallback))
+        fallback = first_nonempty or raw_frames[0]
+        ordered: list[bytes] = []
+        for idx, _, _ in SPRITE_FRAMES:
+            ordered.append(available.get(idx, fallback))
 
-    return ordered
+        return ordered
 
 
 def _rgba_to_gif_frame(img: Image.Image) -> tuple[Image.Image, int]:
@@ -427,40 +447,50 @@ def compose_animated_gif(
     Returns:
         Animated GIF bytes
     """
-    if not frames:
-        raise ValueError("No frames provided for GIF composition")
+    with _tracer.start_as_current_span(
+        "sprite.compose_animated_gif",
+        attributes={
+            "gif.mood": mood,
+            "gif.health": health,
+            "gif.frame_count": len(frames),
+        },
+    ) as span:
+        if not frames:
+            raise ValueError("No frames provided for GIF composition")
 
-    # Override to sick animation when health is very low
-    effective_mood = "sick" if health < 30 and mood not in ("sick",) else mood
+        # Override to sick animation when health is very low
+        effective_mood = "sick" if health < 30 and mood not in ("sick",) else mood
 
-    sequence = MOOD_FRAME_SEQUENCE.get(effective_mood, IDLE_FRAME_SEQUENCE)
+        sequence = MOOD_FRAME_SEQUENCE.get(effective_mood, IDLE_FRAME_SEQUENCE)
 
-    # Clamp indices to available frames
-    max_idx = len(frames) - 1
-    clamped_sequence = [min(i, max_idx) for i in sequence]
+        # Clamp indices to available frames
+        max_idx = len(frames) - 1
+        clamped_sequence = [min(i, max_idx) for i in sequence]
 
-    pil_frames: list[Image.Image] = []
-    durations: list[int] = []
-    transparency_indices: list[int] = []
+        pil_frames: list[Image.Image] = []
+        durations: list[int] = []
+        transparency_indices: list[int] = []
 
-    for idx in clamped_sequence:
-        raw = frames[idx]
-        img = Image.open(io.BytesIO(raw)).convert("RGBA")
-        img = _remove_background_from_corners(img)
-        p_img, trans_idx = _rgba_to_gif_frame(img)
-        pil_frames.append(p_img)
-        durations.append(FRAME_DURATIONS.get(idx, 350))
-        transparency_indices.append(trans_idx)
+        for idx in clamped_sequence:
+            raw = frames[idx]
+            img = Image.open(io.BytesIO(raw)).convert("RGBA")
+            img = _remove_background_from_corners(img)
+            p_img, trans_idx = _rgba_to_gif_frame(img)
+            pil_frames.append(p_img)
+            durations.append(FRAME_DURATIONS.get(idx, 350))
+            transparency_indices.append(trans_idx)
 
-    out = io.BytesIO()
-    pil_frames[0].save(
-        out,
-        format="GIF",
-        save_all=True,
-        append_images=pil_frames[1:],
-        loop=0,
-        duration=durations,
-        transparency=transparency_indices[0],
-        disposal=2,
-    )
-    return out.getvalue()
+        out = io.BytesIO()
+        pil_frames[0].save(
+            out,
+            format="GIF",
+            save_all=True,
+            append_images=pil_frames[1:],
+            loop=0,
+            duration=durations,
+            transparency=transparency_indices[0],
+            disposal=2,
+        )
+        gif_bytes = out.getvalue()
+        span.set_attribute("gif.size_bytes", len(gif_bytes))
+        return gif_bytes

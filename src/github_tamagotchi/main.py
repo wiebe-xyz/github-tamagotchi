@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import sentry_sdk
 import structlog
@@ -81,7 +81,10 @@ templates.env.globals["bugbarn_endpoint"] = settings.bugbarn_endpoint
 templates.env.globals["bugbarn_api_key"] = settings.bugbarn_api_key
 templates.env.globals["bugbarn_project"] = settings.bugbarn_project
 
+from github_tamagotchi.core.telemetry import get_tracer
+
 logger = structlog.get_logger()
+_tracer = get_tracer(__name__)
 
 # Track consecutive poll failures for alerting
 _consecutive_poll_failures = 0
@@ -97,6 +100,26 @@ async def _update_single_pet(
     Returns True if the pet was successfully updated, False on error.
     The caller is responsible for committing the session.
     """
+    with _tracer.start_as_current_span(
+        "update_single_pet",
+        attributes={
+            "pet.id": str(pet.id),
+            "pet.name": pet.name,
+            "pet.repo": f"{pet.repo_owner}/{pet.repo_name}",
+            "pet.stage": pet.stage,
+            "pet.health_before": pet.health,
+        },
+    ) as span:
+        return await _update_single_pet_inner(pet, session, github_service, span)
+
+
+async def _update_single_pet_inner(
+    pet: Pet,
+    session: AsyncSession,
+    github_service: GitHubService,
+    span: Any,
+) -> bool:
+    """Inner implementation of _update_single_pet with span context."""
     now = datetime.now(UTC)
 
     # Dead pets: still poll (grave page stays current) but skip health updates
@@ -146,6 +169,7 @@ async def _update_single_pet(
         await create_milestone(
             session, pet, current_stage.value, new_stage.value, new_experience
         )
+        span.add_event("pet_evolved", {"from_stage": current_stage.value, "to_stage": new_stage.value})
         logger.info(
             "pet_evolved",
             pet_id=pet.id,
@@ -180,6 +204,7 @@ async def _update_single_pet(
         pet.died_at = now
         pet.cause_of_death = cause
         metrics_service.deaths_total.labels(cause=cause).inc()
+        span.add_event("pet_died", {"cause": cause})
         logger.info(
             "pet_died",
             pet_id=pet.id,
@@ -231,6 +256,10 @@ async def _update_single_pet(
             exc_info=True,
         )
 
+    span.set_attribute("pet.health_after", new_health)
+    span.set_attribute("pet.health_delta", health_delta)
+    span.set_attribute("pet.experience_gained", experience_gained)
+    span.set_attribute("pet.mood", new_mood.value)
     logger.debug(
         "pet_updated",
         pet_id=pet.id,
@@ -246,6 +275,17 @@ async def _update_single_pet(
 
 async def poll_repositories(triggered_by: str = "scheduler") -> None:
     """Periodic task to check all registered repositories."""
+    global _consecutive_poll_failures  # noqa: PLW0603
+
+    with _tracer.start_as_current_span(
+        "poll_repositories",
+        attributes={"poll.triggered_by": triggered_by},
+    ) as poll_span:
+        await _poll_repositories_inner(triggered_by, poll_span)
+
+
+async def _poll_repositories_inner(triggered_by: str, poll_span: Any) -> None:
+    """Inner implementation of poll_repositories with span context."""
     global _consecutive_poll_failures  # noqa: PLW0603
 
     logger.info(
@@ -379,6 +419,13 @@ async def poll_repositories(triggered_by: str = "scheduler") -> None:
             job_run_result.error_details = "\n".join(error_messages) if error_messages else None
             await session.commit()
 
+    poll_span.set_attribute("poll.pet_count", updated_count + error_count)
+    poll_span.set_attribute("poll.updated_count", updated_count)
+    poll_span.set_attribute("poll.error_count", error_count)
+    poll_span.set_attribute("poll.rate_limited", rate_limited)
+    poll_span.set_attribute("poll.duration_seconds", poll_duration)
+    poll_span.set_attribute("poll.status", final_status)
+
     logger.info(
         "poll_completed",
         updated_count=updated_count,
@@ -468,6 +515,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         logger.info("BugBarn initialized", project=settings.bugbarn_project, env=environment)
 
+    from github_tamagotchi.core.telemetry import init_telemetry
+
+    init_telemetry(app)
+
     set_start_time()
 
     # Log VAPID key status for push notifications
@@ -510,6 +561,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Image generation queue worker stopped")
 
     scheduler.shutdown()
+    from github_tamagotchi.core.telemetry import shutdown_telemetry
+
+    shutdown_telemetry()
     logger.info("Flushing error tracking and log transports")
     bb.shutdown()
     shutdown_log_transport()
