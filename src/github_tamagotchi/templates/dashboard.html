@@ -232,6 +232,7 @@
                 }
                 notifyAllBtn.textContent = '🔔 Notifications on';
                 notifyAllBtn.dataset.state = 'enabled';
+                fbTrack(FB_EVENTS.PUSH_SUBSCRIBED_ALL, { pet_count: PETS.length });
             } catch {
                 notifyAllBtn.textContent = '🔔 Get notified';
                 notifyAllBtn.dataset.state = 'disabled';
@@ -243,6 +244,7 @@
             if (!confirm(`Delete pet for ${owner}/${repo}? This cannot be undone.`)) return;
             const resp = await fetch(`/api/v1/pets/${owner}/${repo}`, { method: 'DELETE' });
             if (resp.ok) {
+                fbTrack(FB_EVENTS.PET_DELETED, fbPetProps(owner, repo));
                 document.getElementById(cardId).remove();
                 const grid = document.querySelector('.feature-grid');
                 if (grid && grid.children.length === 0) location.reload();

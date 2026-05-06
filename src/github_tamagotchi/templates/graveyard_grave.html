@@ -307,6 +307,7 @@
                 btn.textContent = '\u{1F338} Already left today';
             } else {
                 btn.textContent = '\u{1F338} Flowers left!';
+                fbTrack(FB_EVENTS.FLOWER_PLACED, fbPetProps({{ pet.repo_owner | tojson }}, {{ pet.repo_name | tojson }}));
             }
         } catch (e) {
             btn.textContent = '\u{1F338} Leave flowers';
@@ -335,6 +336,7 @@
                 body: JSON.stringify({eulogy: text})
             });
             if (res.ok) {
+                fbTrack(FB_EVENTS.EULOGY_SAVED, fbPetProps({{ pet.repo_owner | tojson }}, {{ pet.repo_name | tojson }}));
                 location.reload();
             }
         } catch (e) { /* ignore */ }

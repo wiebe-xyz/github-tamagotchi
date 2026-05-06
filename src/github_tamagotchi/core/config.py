@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str | None = None
 
+    # FunnelBarn analytics (client-side, public key)
+    funnelbarn_api_key: str | None = None
+
     # BugBarn
     bugbarn_endpoint: str | None = None
     bugbarn_api_key: str | None = None

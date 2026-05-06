@@ -223,6 +223,7 @@
             document.getElementById('create-form').style.display = 'block';
             document.getElementById('create-error').style.display = 'none';
             document.getElementById('create-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            fbTrack(FB_EVENTS.REPO_SELECTED, fbPetProps(owner, name));
         }
 
         function clearSelection() {
@@ -264,6 +265,7 @@
                     const data = await resp.json();
                     throw new Error(data.detail || 'Failed to create pet');
                 }
+                fbTrack(FB_EVENTS.PET_ADOPTED, fbPetProps(selectedRepo.owner, selectedRepo.name, { pet_name: petName, style: selectedStyle }));
                 const params = new URLSearchParams({
                     owner: selectedRepo.owner,
                     repo: selectedRepo.name,

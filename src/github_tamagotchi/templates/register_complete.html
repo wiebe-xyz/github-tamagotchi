@@ -70,6 +70,7 @@
 
     <script>
         document.getElementById('webhook-url').textContent = window.location.origin + '/api/v1/webhooks/github';
+        fbTrack(FB_EVENTS.REGISTRATION_COMPLETE, fbPetProps({{ owner | tojson }}, {{ repo | tojson }}, { pet_name: {{ pet_name | tojson }} }));
 
         function copyEmbed() {
             const code = document.getElementById('embed-code').textContent;
@@ -81,6 +82,7 @@
                     btn.textContent = 'Copy';
                     btn.classList.remove('copied');
                 }, 2000);
+                fbTrack(FB_EVENTS.EMBED_COPIED, fbPetProps({{ owner | tojson }}, {{ repo | tojson }}));
             });
         }
 
