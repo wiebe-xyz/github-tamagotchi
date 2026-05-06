@@ -330,7 +330,7 @@ async def analyze_sprite_sheet(
             logger.warning("vision_analysis_no_json", response_text=text[:200])
             return []
 
-        cells = json.loads(match.group())
+        cells: list[dict[str, str | int | bool]] = json.loads(match.group())
         logger.info("vision_analysis_complete", cells=cells)
         return cells
     except Exception:
