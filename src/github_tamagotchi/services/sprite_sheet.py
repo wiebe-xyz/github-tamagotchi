@@ -394,37 +394,49 @@ def reorder_frames_by_analysis(
         return ordered
 
 
-def _rgba_to_gif_frame(img: Image.Image) -> tuple[Image.Image, int]:
-    """Convert an RGBA image to a GIF-compatible palette image with transparency.
+def _build_global_palette(
+    rgba_images: list[Image.Image],
+) -> Image.Image:
+    """Build a shared 255-color palette from all frames combined."""
+    widths = [img.width for img in rgba_images]
+    total_w = sum(widths)
+    h = rgba_images[0].height
+    composite = Image.new("RGB", (total_w, h))
+    x_off = 0
+    for img in rgba_images:
+        composite.paste(
+            Image.merge("RGB", img.split()[:3]), (x_off, 0)
+        )
+        x_off += img.width
+    return composite.quantize(
+        colors=255, dither=Image.Dither.NONE
+    )
 
-    Args:
-        img: RGBA PIL Image
 
-    Returns:
-        Tuple of (P-mode palette image, transparency index)
-    """
-    # Ensure RGBA
+def _apply_palette(
+    img: Image.Image, palette_img: Image.Image,
+) -> tuple[Image.Image, int]:
+    """Map an RGBA image to a shared palette with transparency."""
     img = img.convert("RGBA")
     r, g, b, a = img.split()
+    rgb = Image.merge("RGB", (r, g, b))
+    p_img = rgb.quantize(
+        palette=palette_img, dither=Image.Dither.NONE
+    )
 
-    # Quantize the RGB data to 255 colors (leaving index 255 for transparency)
-    rgb_img = Image.merge("RGB", (r, g, b))
-    p_img = rgb_img.quantize(colors=255, dither=Image.Dither.NONE)
-
-    # Extend palette to 256 entries with white at index 255 (the transparent slot)
     palette = p_img.getpalette() or []
-    # Ensure palette has 256 * 3 entries
     while len(palette) < 256 * 3:
         palette.extend([255, 255, 255])
-    palette[255 * 3 : 255 * 3 + 3] = [255, 255, 255]
+    palette[255 * 3: 255 * 3 + 3] = [255, 255, 255]
     p_img.putpalette(palette)
 
-    # Replace fully transparent pixels with the transparency index
     alpha_bytes = a.tobytes()
     pixel_bytes = p_img.tobytes()
-    new_pixels = [255 if alpha_bytes[i] < 128 else pixel_bytes[i] for i in range(len(pixel_bytes))]
+    new_pixels = [
+        255 if alpha_bytes[i] < 128 else pixel_bytes[i]
+        for i in range(len(pixel_bytes))
+    ]
     p_img.putdata(new_pixels)
-
     return p_img, 255
 
 
@@ -440,7 +452,7 @@ def compose_animated_gif(
     Args:
         frames: List of PNG frame bytes (from extract_frames)
         mood: Current pet mood string
-        health: Current pet health (0-100); health < 30 overrides to sick animation
+        health: Current pet health (0-100)
 
     Returns:
         Animated GIF bytes
@@ -456,27 +468,34 @@ def compose_animated_gif(
         if not frames:
             raise ValueError("No frames provided for GIF composition")
 
-        # Override to sick animation when health is very low
-        effective_mood = "sick" if health < 30 and mood not in ("sick",) else mood
+        effective_mood = (
+            "sick"
+            if health < 30 and mood not in ("sick",)
+            else mood
+        )
+        sequence = MOOD_FRAME_SEQUENCE.get(
+            effective_mood, IDLE_FRAME_SEQUENCE
+        )
 
-        sequence = MOOD_FRAME_SEQUENCE.get(effective_mood, IDLE_FRAME_SEQUENCE)
-
-        # Clamp indices to available frames
         max_idx = len(frames) - 1
         clamped_sequence = [min(i, max_idx) for i in sequence]
 
-        pil_frames: list[Image.Image] = []
-        durations: list[int] = []
-        transparency_indices: list[int] = []
-
+        rgba_images: list[Image.Image] = []
         for idx in clamped_sequence:
             raw = frames[idx]
-            img = Image.open(io.BytesIO(raw)).convert("RGBA")
-            img = _remove_background_from_corners(img)
-            p_img, trans_idx = _rgba_to_gif_frame(img)
+            rgba_images.append(
+                Image.open(io.BytesIO(raw)).convert("RGBA")
+            )
+
+        palette_img = _build_global_palette(rgba_images)
+
+        pil_frames: list[Image.Image] = []
+        durations: list[int] = []
+
+        for img, idx in zip(rgba_images, clamped_sequence, strict=True):
+            p_img, _ = _apply_palette(img, palette_img)
             pil_frames.append(p_img)
             durations.append(FRAME_DURATIONS.get(idx, 350))
-            transparency_indices.append(trans_idx)
 
         out = io.BytesIO()
         pil_frames[0].save(
@@ -486,7 +505,7 @@ def compose_animated_gif(
             append_images=pil_frames[1:],
             loop=0,
             duration=durations,
-            transparency=transparency_indices[0],
+            transparency=255,
             disposal=2,
         )
         gif_bytes = out.getvalue()
