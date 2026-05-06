@@ -1,3 +1,18 @@
+<!-- FunnelBarn analytics -->
+<script>
+window.__bugbarn = {
+    endpoint: {{ (bugbarn_endpoint or '') | tojson }},
+    apiKey: {{ (bugbarn_api_key or '') | tojson }},
+    project: {{ (bugbarn_project or '') | tojson }}
+};
+</script>
+<script src="/static/js/analytics.js"></script>
+{% if funnelbarn_api_key %}
+<script src="https://funnelbarn.wiebe.xyz/sdk.js" data-api-key="{{ funnelbarn_api_key }}" defer></script>
+{% if user %}
+<script>document.addEventListener('DOMContentLoaded', function() { fbIdentify({{ user.github_login | tojson }}); });</script>
+{% endif %}
+{% endif %}
 <!-- PWA: manifest, theme, and service worker registration -->
 <link rel="manifest" href="{{ pwa_manifest_url | default('/manifest.json') }}">
 <meta name="theme-color" content="#6366f1">
@@ -32,13 +47,14 @@ window.addEventListener('beforeinstallprompt', function (e) {
     _deferredInstallPrompt = e;
     try { if (sessionStorage.getItem('pwa-install-dismissed')) return; } catch {}
     var banner = document.getElementById('pwa-install-banner');
-    if (banner) banner.style.display = '';
+    if (banner) { banner.style.display = ''; fbTrack(FB_EVENTS.PWA_INSTALL_PROMPTED); }
 });
 
 window.addEventListener('appinstalled', function () {
     _deferredInstallPrompt = null;
     var banner = document.getElementById('pwa-install-banner');
     if (banner) banner.style.display = 'none';
+    fbTrack(FB_EVENTS.PWA_INSTALLED);
 });
 
 window.installPwa = function () {
@@ -55,5 +71,6 @@ window.dismissInstallBanner = function () {
     var banner = document.getElementById('pwa-install-banner');
     if (banner) banner.style.display = 'none';
     try { sessionStorage.setItem('pwa-install-dismissed', '1'); } catch {}
+    fbTrack(FB_EVENTS.PWA_INSTALL_DISMISSED);
 };
 </script>

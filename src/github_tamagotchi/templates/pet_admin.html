@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin — {{ pet.name }} | GitHub Tamagotchi</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+    window.__bugbarn = {
+        endpoint: {{ (bugbarn_endpoint or '') | tojson }},
+        apiKey: {{ (bugbarn_api_key or '') | tojson }},
+        project: {{ (bugbarn_project or '') | tojson }}
+    };
+    </script>
+    <script src="/static/js/analytics.js"></script>
     <style>
         .admin-section {
             background: var(--surface);
@@ -456,6 +464,7 @@
             dirty = false;
             saveBar.classList.remove('visible');
             showToast('Settings saved');
+            fbTrack(FB_EVENTS.PET_SETTINGS_SAVED, fbPetProps(REPO_OWNER, REPO_NAME));
         } catch (e) {
             showToast('Save failed', true);
         }
@@ -476,6 +485,7 @@
         }
         document.getElementById('exclude-login').value = '';
         showToast(`@${login} excluded`);
+        fbTrack(FB_EVENTS.CONTRIBUTOR_EXCLUDED, fbPetProps(REPO_OWNER, REPO_NAME, { login: login }));
         // Reload page to refresh the table
         location.reload();
     }
@@ -491,6 +501,7 @@
         const row = document.getElementById(`row-${login}`);
         if (row) row.remove();
         showToast(`@${login} exclusion removed`);
+        fbTrack(FB_EVENTS.CONTRIBUTOR_UNEXCLUDED, fbPetProps(REPO_OWNER, REPO_NAME, { login: login }));
     }
 
     // --- Danger zone ---
@@ -501,6 +512,7 @@
             async () => {
                 const res = await fetch(`${API_BASE}/reset`, { method: 'POST' });
                 if (!res.ok) { showToast('Reset failed', true); return; }
+                fbTrack(FB_EVENTS.ADMIN_PET_RESET, fbPetProps(REPO_OWNER, REPO_NAME));
                 showToast('Pet reset. Starting fresh...');
                 setTimeout(() => location.href = `/pet/${REPO_OWNER}/${REPO_NAME}`, 1500);
             }
@@ -514,6 +526,7 @@
             async () => {
                 const res = await fetch(API_BASE, { method: 'DELETE' });
                 if (!res.ok) { showToast('Delete failed', true); return; }
+                fbTrack(FB_EVENTS.ADMIN_PET_DELETED, fbPetProps(REPO_OWNER, REPO_NAME));
                 showToast('Pet deleted.');
                 setTimeout(() => location.href = '/dashboard', 1500);
             }

@@ -111,6 +111,7 @@
     var btn = document.getElementById('logout-btn');
     if (btn) {
         btn.addEventListener('click', async function () {
+            fbTrack(FB_EVENTS.LOGOUT);
             await fetch('/auth/logout', { method: 'POST' });
             window.location.href = '/';
         });
@@ -120,10 +121,16 @@
     var mobileLogout = document.getElementById('more-logout-btn');
     if (mobileLogout) {
         mobileLogout.addEventListener('click', async function () {
+            fbTrack(FB_EVENTS.LOGOUT);
             await fetch('/auth/logout', { method: 'POST' });
             window.location.href = '/';
         });
     }
+
+    // Track login clicks
+    document.querySelectorAll('a[href="/auth/github"]').forEach(function (link) {
+        link.addEventListener('click', function () { fbTrack(FB_EVENTS.LOGIN_STARTED); });
+    });
 })();
 
 function openMoreSheet() {

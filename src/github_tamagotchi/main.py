@@ -76,6 +76,10 @@ configure_logging()
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.globals["funnelbarn_api_key"] = settings.funnelbarn_api_key
+templates.env.globals["bugbarn_endpoint"] = settings.bugbarn_endpoint
+templates.env.globals["bugbarn_api_key"] = settings.bugbarn_api_key
+templates.env.globals["bugbarn_project"] = settings.bugbarn_project
 
 logger = structlog.get_logger()
 

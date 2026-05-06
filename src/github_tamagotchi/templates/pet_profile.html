@@ -70,6 +70,7 @@
                 localStorage.setItem('tamagotchi_onboarding_dismissed', '1');
                 var el = document.getElementById('onboarding-banner');
                 if (el) { el.style.display = 'none'; }
+                fbTrack(FB_EVENTS.ONBOARDING_DISMISSED);
             }
             </script>
             {% endif %}
@@ -244,6 +245,7 @@
                             target="_blank"
                             rel="noopener"
                             class="share-btn share-twitter"
+                            onclick="fbTrack(FB_EVENTS.SHARED_TWITTER, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}))"
                         >&#120143; Share</a>
                         <button class="share-btn share-copy" id="copy-link-btn" data-url="{{ page_url }}">&#128279; Copy link</button>
                         <a href="/pet/{{ repo_owner }}/{{ repo_name }}/insights" class="share-btn">&#128200; Insights</a>
@@ -479,6 +481,7 @@
                     const original = copyBtn.textContent;
                     copyBtn.innerHTML = '✓ Copied!';
                     setTimeout(() => { copyBtn.innerHTML = '&#128279; Copy link'; }, 2000);
+                    fbTrack(FB_EVENTS.LINK_COPIED, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}));
                 });
             });
         }
@@ -492,6 +495,7 @@
                     const orig = btn.innerHTML;
                     btn.innerHTML = '&#10003; Copied!';
                     setTimeout(() => { btn.innerHTML = orig; }, 2000);
+                    fbTrack(FB_EVENTS.BADGE_EMBED_COPIED, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}));
                 });
             });
         });
@@ -573,6 +577,7 @@
                     }
                     commentBody.value = '';
                     commentChars.textContent = '0 / 500';
+                    fbTrack(FB_EVENTS.COMMENT_POSTED, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}));
                     await loadComments();
                 } catch {
                     commentError.textContent = 'Network error. Please try again.';
@@ -610,6 +615,7 @@
                     const healthValue = document.getElementById('health-value');
                     if (healthBar) healthBar.style.width = newHealth + '%';
                     if (healthValue) healthValue.textContent = newHealth + '%';
+                    fbTrack(FB_EVENTS.PET_FED, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}, { new_health: newHealth }));
                     feedFeedback.style.color = '#4caf50';
                     feedFeedback.textContent = 'Fed! +10 health ❤️';
                     feedFeedback.style.display = 'inline';
@@ -648,6 +654,7 @@
                         resurrectBtn.innerHTML = '&#10024; Resurrect {{ pet.name }}';
                         return;
                     }
+                    fbTrack(FB_EVENTS.PET_RESURRECTED, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}));
                     window.location.reload();
                 } catch (e) {
                     resurrectError.textContent = 'Network error, please try again.';
@@ -686,12 +693,16 @@
                 );
                 const pageUrl = encodeURIComponent('{{ page_url }}');
                 tweetBtn.href = `https://twitter.com/intent/tweet?text=${tweetText}&url=${pageUrl}`;
+                tweetBtn.addEventListener('click', () => {
+                    fbTrack(FB_EVENTS.MILESTONE_SHARED_TWITTER, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}, { new_stage: m.new_stage }));
+                });
 
                 copyBtn.addEventListener('click', () => {
                     navigator.clipboard.writeText('{{ page_url }}').then(() => {
                         const orig = copyBtn.innerHTML;
                         copyBtn.innerHTML = '✓ Copied!';
                         setTimeout(() => { copyBtn.innerHTML = orig; }, 2000);
+                        fbTrack(FB_EVENTS.MILESTONE_LINK_COPIED, fbPetProps({{ repo_owner | tojson }}, {{ repo_name | tojson }}));
                     });
                 });
 
@@ -935,6 +946,7 @@
                             })
                         });
                         setNotifyState('enabled');
+                        fbTrack(FB_EVENTS.PUSH_SUBSCRIBED, fbPetProps(PET_OWNER, PET_NAME));
                     } catch (e) {
                         setNotifyState('disabled');
                     }
