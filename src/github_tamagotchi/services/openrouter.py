@@ -9,8 +9,6 @@ import structlog
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.telemetry import get_tracer
-
-_tracer = get_tracer(__name__)
 from github_tamagotchi.services.image_generation import (
     DEFAULT_STYLE,
     NEGATIVE_PROMPT,
@@ -29,6 +27,7 @@ from github_tamagotchi.services.sprite_sheet import (
 )
 
 logger = structlog.get_logger()
+_tracer = get_tracer(__name__)
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -221,7 +220,10 @@ class OpenRouterService:
                 analysis = await analyze_sprite_sheet(image_data, self.api_key or "")
                 span.add_event("vision_analysis", {"success": bool(analysis)})
 
-                frames = reorder_frames_by_analysis(raw_frames, analysis) if analysis else raw_frames
+                if analysis:
+                    frames = reorder_frames_by_analysis(raw_frames, analysis)
+                else:
+                    frames = raw_frames
 
                 logger.info(
                     "Sprite sheet generated",

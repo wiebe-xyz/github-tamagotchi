@@ -81,9 +81,10 @@ templates.env.globals["bugbarn_endpoint"] = settings.bugbarn_endpoint
 templates.env.globals["bugbarn_api_key"] = settings.bugbarn_api_key
 templates.env.globals["bugbarn_project"] = settings.bugbarn_project
 
-from github_tamagotchi.core.telemetry import get_tracer
-
 logger = structlog.get_logger()
+
+from github_tamagotchi.core.telemetry import get_tracer  # noqa: E402
+
 _tracer = get_tracer(__name__)
 
 # Track consecutive poll failures for alerting
@@ -169,7 +170,10 @@ async def _update_single_pet_inner(
         await create_milestone(
             session, pet, current_stage.value, new_stage.value, new_experience
         )
-        span.add_event("pet_evolved", {"from_stage": current_stage.value, "to_stage": new_stage.value})
+        span.add_event(
+            "pet_evolved",
+            {"from_stage": current_stage.value, "to_stage": new_stage.value},
+        )
         logger.info(
             "pet_evolved",
             pet_id=pet.id,

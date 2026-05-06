@@ -4,9 +4,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.achievement import PetAchievement
 from github_tamagotchi.models.comment import PetComment
-from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.pet import Pet, PetStage
 
 _tracer = get_tracer(__name__)

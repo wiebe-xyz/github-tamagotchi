@@ -473,7 +473,7 @@ class GitHubService:
             async with httpx.AsyncClient() as client:
                 since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
 
-                # Get user's commits in last 30d and all commits in last 30d (for top-contributor check)
+                # Get user's commits and all commits in last 30d
                 user_commits, all_commits = await self._fetch_commits_parallel(
                     client, owner, repo, username, since_30d
                 )
@@ -697,7 +697,9 @@ class GitHubService:
             attributes={"github.repo": f"{owner}/{repo}"},
         ):
             async with httpx.AsyncClient() as client:
-                weekly_commits, total_commits = await self._get_weekly_commits_30d(client, owner, repo)
+                weekly_commits, total_commits = await self._get_weekly_commits_30d(
+                    client, owner, repo
+                )
                 avg_merge_hours = await self._get_avg_pr_merge_hours(client, owner, repo)
                 open_prs = await self._get_open_prs(client, owner, repo)
                 avg_response_hours = await self._get_avg_issue_response_hours(client, owner, repo)

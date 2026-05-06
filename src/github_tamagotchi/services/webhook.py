@@ -8,13 +8,12 @@ from typing import Any
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.crud.contributor_relationship import apply_score_delta
 from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.pet_logic import get_next_stage
-
-from github_tamagotchi.core.telemetry import get_tracer
 
 _tracer = get_tracer(__name__)
 

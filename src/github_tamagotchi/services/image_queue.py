@@ -8,6 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from github_tamagotchi.core.config import settings
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.services.image_generation import ImageGenerationService, remove_background
@@ -16,8 +17,6 @@ from github_tamagotchi.services.pet import update_canonical_appearance, update_i
 from github_tamagotchi.services.provider import ImageProvider
 from github_tamagotchi.services.sprite_sheet import compose_animated_gif
 from github_tamagotchi.services.storage import StorageService
-
-from github_tamagotchi.core.telemetry import get_tracer
 
 _tracer = get_tracer(__name__)
 

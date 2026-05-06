@@ -12,9 +12,6 @@ import structlog
 from PIL import Image
 
 from github_tamagotchi.core.telemetry import get_tracer
-
-_tracer = get_tracer(__name__)
-
 from github_tamagotchi.services.image_generation import (
     DEFAULT_STYLE,
     NEGATIVE_PROMPT,
@@ -23,6 +20,7 @@ from github_tamagotchi.services.image_generation import (
 )
 
 logger = structlog.get_logger()
+_tracer = get_tracer(__name__)
 
 # Sprite sheet grid layout
 SPRITE_COLS = 3
