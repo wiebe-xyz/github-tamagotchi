@@ -175,12 +175,30 @@ def _bugbarn_processor(
     return event_dict
 
 
+def _otel_trace_processor(
+    logger: object, method: str, event_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """Inject OpenTelemetry trace/span IDs into every log entry."""
+    try:
+        from opentelemetry import trace
+
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx and ctx.trace_id != 0:
+            event_dict["trace_id"] = format(ctx.trace_id, "032x")
+            event_dict["span_id"] = format(ctx.span_id, "016x")
+    except ImportError:
+        pass
+    return event_dict
+
+
 def configure_logging() -> None:
     """Configure structlog and stdlib logging. Call once at application startup."""
     is_dev = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
 
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
+        _otel_trace_processor,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),

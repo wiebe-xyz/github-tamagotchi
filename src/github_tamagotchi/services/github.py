@@ -10,8 +10,10 @@ import structlog
 
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.core.config import settings
+from github_tamagotchi.core.telemetry import get_tracer
 
 logger = structlog.get_logger()
+_tracer = get_tracer(__name__)
 
 
 class RateLimitError(Exception):
@@ -174,56 +176,60 @@ class GitHubService:
 
     async def get_repo_health(self, owner: str, repo: str) -> RepoHealth:
         """Fetch health metrics for a repository."""
-        async with httpx.AsyncClient() as client:
-            # Get last commit
-            last_commit_at = await self._get_last_commit(client, owner, repo)
+        with _tracer.start_as_current_span(
+            "github.get_repo_health",
+            attributes={"github.repo": f"{owner}/{repo}"},
+        ):
+            async with httpx.AsyncClient() as client:
+                # Get last commit
+                last_commit_at = await self._get_last_commit(client, owner, repo)
 
-            # Get open PRs
-            prs = await self._get_open_prs(client, owner, repo)
-            open_prs_count = len(prs)
-            oldest_pr_age = self._get_oldest_age_hours(prs) if prs else None
+                # Get open PRs
+                prs = await self._get_open_prs(client, owner, repo)
+                open_prs_count = len(prs)
+                oldest_pr_age = self._get_oldest_age_hours(prs) if prs else None
 
-            # Get open issues
-            issues = await self._get_open_issues(client, owner, repo)
-            open_issues_count = len(issues)
-            oldest_issue_age = self._get_oldest_age_days(issues) if issues else None
+                # Get open issues
+                issues = await self._get_open_issues(client, owner, repo)
+                open_issues_count = len(issues)
+                oldest_issue_age = self._get_oldest_age_days(issues) if issues else None
 
-            # Get CI status
-            last_ci_success = await self._get_ci_status(client, owner, repo)
+                # Get CI status
+                last_ci_success = await self._get_ci_status(client, owner, repo)
 
-            # Get release frequency (last 30 days)
-            release_count_30d = await self._get_release_count_30d(client, owner, repo)
+                # Get release frequency (last 30 days)
+                release_count_30d = await self._get_release_count_30d(client, owner, repo)
 
-            # Get contributor count (last 90 days)
-            contributor_count = await self._get_contributor_count_90d(client, owner, repo)
+                # Get contributor count (last 90 days)
+                contributor_count = await self._get_contributor_count_90d(client, owner, repo)
 
-            # Get security alerts
-            security_counts = await self._get_security_alerts(client, owner, repo)
+                # Get security alerts
+                security_counts = await self._get_security_alerts(client, owner, repo)
 
-            # Get dependent count (repos/packages that depend on this one)
-            dependent_count = await self._get_dependent_count(client, owner, repo)
+                # Get dependent count (repos/packages that depend on this one)
+                dependent_count = await self._get_dependent_count(client, owner, repo)
 
-            # Get star and fork counts
-            star_count, fork_count = await self._get_star_fork_counts(client, owner, repo)
+                # Get star and fork counts
+                star_count, fork_count = await self._get_star_fork_counts(client, owner, repo)
 
-            return RepoHealth(
-                last_commit_at=last_commit_at,
-                open_prs_count=open_prs_count,
-                oldest_pr_age_hours=oldest_pr_age,
-                open_issues_count=open_issues_count,
-                oldest_issue_age_days=oldest_issue_age,
-                last_ci_success=last_ci_success,
-                has_stale_dependencies=False,  # TODO: Check dependabot
-                release_count_30d=release_count_30d,
-                contributor_count=contributor_count,
-                security_alerts_critical=security_counts["critical"],
-                security_alerts_high=security_counts["high"],
-                security_alerts_medium=security_counts["medium"],
-                security_alerts_low=security_counts["low"],
-                dependent_count=dependent_count,
-                star_count=star_count,
-                fork_count=fork_count,
-            )
+                return RepoHealth(
+                    last_commit_at=last_commit_at,
+                    open_prs_count=open_prs_count,
+                    oldest_pr_age_hours=oldest_pr_age,
+                    open_issues_count=open_issues_count,
+                    oldest_issue_age_days=oldest_issue_age,
+                    last_ci_success=last_ci_success,
+                    has_stale_dependencies=False,  # TODO: Check dependabot
+                    release_count_30d=release_count_30d,
+                    contributor_count=contributor_count,
+                    security_alerts_critical=security_counts["critical"],
+                    security_alerts_high=security_counts["high"],
+                    security_alerts_medium=security_counts["medium"],
+                    security_alerts_low=security_counts["low"],
+                    dependent_count=dependent_count,
+                    star_count=star_count,
+                    fork_count=fork_count,
+                )
 
     async def _get_last_commit(
         self, client: httpx.AsyncClient, owner: str, repo: str
@@ -460,63 +466,67 @@ class GitHubService:
 
     async def get_contributor_stats(self, owner: str, repo: str, username: str) -> ContributorStats:
         """Fetch activity stats for a specific contributor in a repository."""
-        async with httpx.AsyncClient() as client:
-            since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+        with _tracer.start_as_current_span(
+            "github.get_contributor_stats",
+            attributes={"github.repo": f"{owner}/{repo}", "github.username": username},
+        ):
+            async with httpx.AsyncClient() as client:
+                since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
 
-            # Get user's commits in last 30d and all commits in last 30d (for top-contributor check)
-            user_commits, all_commits = await self._fetch_commits_parallel(
-                client, owner, repo, username, since_30d
-            )
-
-            commits_30d = len(user_commits)
-
-            # Determine last commit date (from user commits, or fall back to all-time lookup)
-            last_commit_at: datetime | None = None
-            if user_commits:
-                raw_date = (
-                    user_commits[0]
-                    .get("commit", {})
-                    .get("committer", {})
-                    .get("date")
+                # Get user's commits and all commits in last 30d
+                user_commits, all_commits = await self._fetch_commits_parallel(
+                    client, owner, repo, username, since_30d
                 )
-                if raw_date:
-                    last_commit_at = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
-            elif commits_30d == 0:
-                # Try 90d window to detect absence vs. complete stranger
-                last_commit_at = await self._get_user_last_commit(client, owner, repo, username)
 
-            # Determine if this user is the top contributor in last 30d
-            is_top_contributor = False
-            if commits_30d > 0 and all_commits:
-                author_counts: dict[str, int] = {}
-                for c in all_commits:
-                    login = (
-                        c["author"].get("login") if c.get("author") else None
+                commits_30d = len(user_commits)
+
+                # Determine last commit date (from user commits, or fall back to all-time lookup)
+                last_commit_at: datetime | None = None
+                if user_commits:
+                    raw_date = (
+                        user_commits[0]
+                        .get("commit", {})
+                        .get("committer", {})
+                        .get("date")
                     )
-                    if login:
-                        author_counts[login] = author_counts.get(login, 0) + 1
-                top_count = max(author_counts.values(), default=0)
-                user_count = author_counts.get(username, 0)
-                is_top_contributor = user_count >= 3 and user_count == top_count
+                    if raw_date:
+                        last_commit_at = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                elif commits_30d == 0:
+                    # Try 90d window to detect absence vs. complete stranger
+                    last_commit_at = await self._get_user_last_commit(client, owner, repo, username)
 
-            # Check CI status of user's latest commit
-            has_failed_ci = False
-            if user_commits:
-                latest_sha = user_commits[0].get("sha", "")
-                if latest_sha:
-                    has_failed_ci = await self._has_failed_ci(client, owner, repo, latest_sha)
+                # Determine if this user is the top contributor in last 30d
+                is_top_contributor = False
+                if commits_30d > 0 and all_commits:
+                    author_counts: dict[str, int] = {}
+                    for c in all_commits:
+                        login = (
+                            c["author"].get("login") if c.get("author") else None
+                        )
+                        if login:
+                            author_counts[login] = author_counts.get(login, 0) + 1
+                    top_count = max(author_counts.values(), default=0)
+                    user_count = author_counts.get(username, 0)
+                    is_top_contributor = user_count >= 3 and user_count == top_count
 
-            days_since: int | None = None
-            if last_commit_at:
-                days_since = max(0, (datetime.now(UTC) - last_commit_at).days)
+                # Check CI status of user's latest commit
+                has_failed_ci = False
+                if user_commits:
+                    latest_sha = user_commits[0].get("sha", "")
+                    if latest_sha:
+                        has_failed_ci = await self._has_failed_ci(client, owner, repo, latest_sha)
 
-            return ContributorStats(
-                commits_30d=commits_30d,
-                last_commit_at=last_commit_at,
-                is_top_contributor=is_top_contributor,
-                has_failed_ci=has_failed_ci,
-                days_since_last_commit=days_since,
-            )
+                days_since: int | None = None
+                if last_commit_at:
+                    days_since = max(0, (datetime.now(UTC) - last_commit_at).days)
+
+                return ContributorStats(
+                    commits_30d=commits_30d,
+                    last_commit_at=last_commit_at,
+                    is_top_contributor=is_top_contributor,
+                    has_failed_ci=has_failed_ci,
+                    days_since_last_commit=days_since,
+                )
 
     async def _fetch_commits_parallel(
         self,
@@ -603,99 +613,109 @@ class GitHubService:
         self, owner: str, repo: str
     ) -> AllContributorActivity:
         """Fetch commit and PR activity for all contributors in the last 30 days."""
-        async with httpx.AsyncClient() as client:
-            since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+        with _tracer.start_as_current_span(
+            "github.get_contributor_activity",
+            attributes={"github.repo": f"{owner}/{repo}"},
+        ):
+            async with httpx.AsyncClient() as client:
+                since_30d = (datetime.now(UTC) - timedelta(days=30)).isoformat()
 
-            commits_by_user: dict[str, int] = {}
-            last_activity_by_user: dict[str, datetime] = {}
+                commits_by_user: dict[str, int] = {}
+                last_activity_by_user: dict[str, datetime] = {}
 
-            try:
-                resp = await client.get(
-                    f"{self.base_url}/repos/{owner}/{repo}/commits",
-                    headers=self._get_headers(),
-                    params={"since": since_30d, "per_page": 100},
-                )
-                self._check_rate_limit(resp)
-                resp.raise_for_status()
-                commits: list[dict[str, Any]] = resp.json()
-                for commit in commits:
-                    login = (
-                        commit["author"].get("login") if commit.get("author") else None
+                try:
+                    resp = await client.get(
+                        f"{self.base_url}/repos/{owner}/{repo}/commits",
+                        headers=self._get_headers(),
+                        params={"since": since_30d, "per_page": 100},
                     )
-                    if not login:
-                        continue
-                    commits_by_user[login] = commits_by_user.get(login, 0) + 1
-                    raw_date = commit.get("commit", {}).get("committer", {}).get("date")
-                    if raw_date:
-                        commit_dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                    self._check_rate_limit(resp)
+                    resp.raise_for_status()
+                    commits: list[dict[str, Any]] = resp.json()
+                    for commit in commits:
+                        login = (
+                            commit["author"].get("login") if commit.get("author") else None
+                        )
+                        if not login:
+                            continue
+                        commits_by_user[login] = commits_by_user.get(login, 0) + 1
+                        raw_date = commit.get("commit", {}).get("committer", {}).get("date")
+                        if raw_date:
+                            commit_dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                            existing = last_activity_by_user.get(login)
+                            if existing is None or commit_dt > existing:
+                                last_activity_by_user[login] = commit_dt
+                except RateLimitError:
+                    raise
+                except Exception as e:
+                    logger.warning("Failed to fetch all contributor commits", error=str(e))
+
+                merged_prs_by_user: dict[str, int] = {}
+
+                try:
+                    resp = await client.get(
+                        f"{self.base_url}/repos/{owner}/{repo}/pulls",
+                        headers=self._get_headers(),
+                        params={"state": "closed", "per_page": 100},
+                    )
+                    self._check_rate_limit(resp)
+                    resp.raise_for_status()
+                    prs: list[dict[str, Any]] = resp.json()
+                    cutoff = datetime.now(UTC) - timedelta(days=30)
+                    for pr in prs:
+                        merged_at_raw = pr.get("merged_at")
+                        if not merged_at_raw:
+                            continue
+                        merged_at = datetime.fromisoformat(merged_at_raw.replace("Z", "+00:00"))
+                        if merged_at < cutoff:
+                            continue
+                        merged_by = pr.get("merged_by") or {}
+                        login = merged_by.get("login")
+                        if not login:
+                            continue
+                        merged_prs_by_user[login] = merged_prs_by_user.get(login, 0) + 1
                         existing = last_activity_by_user.get(login)
-                        if existing is None or commit_dt > existing:
-                            last_activity_by_user[login] = commit_dt
-            except RateLimitError:
-                raise
-            except Exception as e:
-                logger.warning("Failed to fetch all contributor commits", error=str(e))
+                        if existing is None or merged_at > existing:
+                            last_activity_by_user[login] = merged_at
+                except RateLimitError:
+                    raise
+                except Exception as e:
+                    logger.warning(
+                        "Failed to fetch merged PRs for contributor activity", error=str(e)
+                    )
 
-            merged_prs_by_user: dict[str, int] = {}
-
-            try:
-                resp = await client.get(
-                    f"{self.base_url}/repos/{owner}/{repo}/pulls",
-                    headers=self._get_headers(),
-                    params={"state": "closed", "per_page": 100},
+                return AllContributorActivity(
+                    commits_by_user=commits_by_user,
+                    merged_prs_by_user=merged_prs_by_user,
+                    last_activity_by_user=last_activity_by_user,
                 )
-                self._check_rate_limit(resp)
-                resp.raise_for_status()
-                prs: list[dict[str, Any]] = resp.json()
-                cutoff = datetime.now(UTC) - timedelta(days=30)
-                for pr in prs:
-                    merged_at_raw = pr.get("merged_at")
-                    if not merged_at_raw:
-                        continue
-                    merged_at = datetime.fromisoformat(merged_at_raw.replace("Z", "+00:00"))
-                    if merged_at < cutoff:
-                        continue
-                    merged_by = pr.get("merged_by") or {}
-                    login = merged_by.get("login")
-                    if not login:
-                        continue
-                    merged_prs_by_user[login] = merged_prs_by_user.get(login, 0) + 1
-                    existing = last_activity_by_user.get(login)
-                    if existing is None or merged_at > existing:
-                        last_activity_by_user[login] = merged_at
-            except RateLimitError:
-                raise
-            except Exception as e:
-                logger.warning(
-                    "Failed to fetch merged PRs for contributor activity", error=str(e)
-                )
-
-            return AllContributorActivity(
-                commits_by_user=commits_by_user,
-                merged_prs_by_user=merged_prs_by_user,
-                last_activity_by_user=last_activity_by_user,
-            )
 
     async def get_repo_insights(self, owner: str, repo: str) -> RepoInsights:
         """Fetch detailed insights metrics for a repository."""
-        async with httpx.AsyncClient() as client:
-            weekly_commits, total_commits = await self._get_weekly_commits_30d(client, owner, repo)
-            avg_merge_hours = await self._get_avg_pr_merge_hours(client, owner, repo)
-            open_prs = await self._get_open_prs(client, owner, repo)
-            avg_response_hours = await self._get_avg_issue_response_hours(client, owner, repo)
-            ci_pass_rate, ci_runs = await self._get_ci_pass_rate(client, owner, repo)
-            contributors = await self._get_contributor_count_90d(client, owner, repo)
+        with _tracer.start_as_current_span(
+            "github.get_repo_insights",
+            attributes={"github.repo": f"{owner}/{repo}"},
+        ):
+            async with httpx.AsyncClient() as client:
+                weekly_commits, total_commits = await self._get_weekly_commits_30d(
+                    client, owner, repo
+                )
+                avg_merge_hours = await self._get_avg_pr_merge_hours(client, owner, repo)
+                open_prs = await self._get_open_prs(client, owner, repo)
+                avg_response_hours = await self._get_avg_issue_response_hours(client, owner, repo)
+                ci_pass_rate, ci_runs = await self._get_ci_pass_rate(client, owner, repo)
+                contributors = await self._get_contributor_count_90d(client, owner, repo)
 
-        return RepoInsights(
-            weekly_commits=weekly_commits,
-            total_commits_30d=total_commits,
-            avg_pr_merge_hours=avg_merge_hours,
-            open_prs_count=len(open_prs),
-            avg_issue_response_hours=avg_response_hours,
-            ci_pass_rate=ci_pass_rate,
-            ci_runs_checked=ci_runs,
-            contributor_count_90d=contributors,
-        )
+            return RepoInsights(
+                weekly_commits=weekly_commits,
+                total_commits_30d=total_commits,
+                avg_pr_merge_hours=avg_merge_hours,
+                open_prs_count=len(open_prs),
+                avg_issue_response_hours=avg_response_hours,
+                ci_pass_rate=ci_pass_rate,
+                ci_runs_checked=ci_runs,
+                contributor_count_90d=contributors,
+            )
 
     async def _get_weekly_commits_30d(
         self, client: httpx.AsyncClient, owner: str, repo: str
@@ -870,26 +890,30 @@ class GitHubService:
         entries showing who is responsible. When healthy, returns hero entries showing
         who deserves credit.
         """
-        unhealthy_moods = {"sick", "hungry", "worried", "lonely"}
-        is_healthy = pet_health >= 50 and pet_mood not in unhealthy_moods
+        with _tracer.start_as_current_span(
+            "github.get_blame_board",
+            attributes={"github.repo": f"{owner}/{repo}"},
+        ):
+            unhealthy_moods = {"sick", "hungry", "worried", "lonely"}
+            is_healthy = pet_health >= 50 and pet_mood not in unhealthy_moods
 
-        async with httpx.AsyncClient() as client:
-            if is_healthy:
-                hero_entries = await self._build_hero_entries(client, owner, repo)
-                return BlameBoardData(
-                    is_healthy=True,
-                    blame_entries=[],
-                    hero_entries=hero_entries,
-                )
-            else:
-                blame_entries = await self._build_blame_entries(
-                    client, owner, repo, pet_mood
-                )
-                return BlameBoardData(
-                    is_healthy=False,
-                    blame_entries=blame_entries,
-                    hero_entries=[],
-                )
+            async with httpx.AsyncClient() as client:
+                if is_healthy:
+                    hero_entries = await self._build_hero_entries(client, owner, repo)
+                    return BlameBoardData(
+                        is_healthy=True,
+                        blame_entries=[],
+                        hero_entries=hero_entries,
+                    )
+                else:
+                    blame_entries = await self._build_blame_entries(
+                        client, owner, repo, pet_mood
+                    )
+                    return BlameBoardData(
+                        is_healthy=False,
+                        blame_entries=blame_entries,
+                        hero_entries=[],
+                    )
 
     def _format_duration(self, dt: datetime) -> str:
         """Format a datetime as a human-readable 'how long ago' string."""
