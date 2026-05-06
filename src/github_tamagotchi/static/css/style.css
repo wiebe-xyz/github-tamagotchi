@@ -1862,8 +1862,8 @@ details[open] .webhook-summary::before {
     align-items: center;
     gap: 0.75rem;
     padding: 0.85rem 1rem;
-    background: var(--card);
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border: 1px solid var(--surface-light);
     border-radius: 1rem;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
