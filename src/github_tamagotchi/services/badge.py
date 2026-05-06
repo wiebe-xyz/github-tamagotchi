@@ -5,7 +5,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.pet import PetMood, PetStage
+
+_tracer = get_tracer(__name__)
 
 STAGE_EMOJI: dict[str, str] = {
     PetStage.EGG: "🥚",
@@ -506,45 +509,69 @@ def generate_badge_svg(
         dependent_count: Number of repos/packages that depend on this one.
         unlocked_achievements: Set of achievement IDs for cosmetic effects.
     """
-    display_name = name if len(name) <= 14 else name[:13] + "…"
-    achievements = unlocked_achievements or set()
+    with _tracer.start_as_current_span(
+        "service.badge.generate_badge_svg",
+        attributes={
+            "badge.name": name,
+            "badge.stage": stage,
+            "badge.mood": mood,
+            "badge.health": health,
+            "badge.style": badge_style,
+            "badge.is_dead": is_dead,
+        },
+    ):
+        display_name = (
+            name if len(name) <= 14 else name[:13] + "…"
+        )
+        achievements = unlocked_achievements or set()
 
-    if is_dead:
-        return _dead_badge(
+        if is_dead:
+            return _dead_badge(
+                display_name,
+                died_at=died_at,
+                created_at=created_at,
+                badge_style=badge_style,
+                pet_image_b64=pet_image_b64,
+            )
+
+        if badge_style == "minimal":
+            return _minimal_badge(
+                display_name,
+                stage,
+                mood,
+                health,
+                commit_streak=commit_streak,
+            )
+
+        if badge_style == "maintained":
+            return _maintained_badge(
+                display_name, stage, health
+            )
+
+        # Default: playful — apply star cosmetics and flair
+        flair_text = (
+            _get_flair_text(achievements)
+            or _dependent_flair_text(dependent_count)
+        )
+        svg = _playful_badge(
             display_name,
-            died_at=died_at,
-            created_at=created_at,
-            badge_style=badge_style,
+            stage,
+            mood,
+            health,
+            commit_streak=commit_streak,
             pet_image_b64=pet_image_b64,
+            flair_text=flair_text,
         )
 
-    if badge_style == "minimal":
-        return _minimal_badge(
-            display_name, stage, mood, health, commit_streak=commit_streak
-        )
+        border_color = _get_star_border(achievements)
+        if border_color:
+            has_sprite = bool(pet_image_b64)
+            width = _SPRITE_W if has_sprite else 120
+            svg = _apply_star_border(
+                svg, border_color, width, 80
+            )
 
-    if badge_style == "maintained":
-        return _maintained_badge(display_name, stage, health)
-
-    # Default: playful — apply star cosmetics and dependent flair
-    flair_text = _get_flair_text(achievements) or _dependent_flair_text(dependent_count)
-    svg = _playful_badge(
-        display_name,
-        stage,
-        mood,
-        health,
-        commit_streak=commit_streak,
-        pet_image_b64=pet_image_b64,
-        flair_text=flair_text,
-    )
-
-    border_color = _get_star_border(achievements)
-    if border_color:
-        has_sprite = bool(pet_image_b64)
-        width = _SPRITE_W if has_sprite else 120
-        svg = _apply_star_border(svg, border_color, width, 80)
-
-    return svg
+        return svg
 
 
 class ContributorStanding(StrEnum):
@@ -631,17 +658,53 @@ def generate_contributor_badge_svg(
         days_away: Days since last commit (used for ABSENT standing).
         shame_detail: Short explanation for DOGHOUSE (shown when details=true).
     """
-    cfg = _STANDING_CONFIG.get(standing, _STANDING_CONFIG[ContributorStanding.NEUTRAL])
+    with _tracer.start_as_current_span(
+        "service.badge.generate_contributor_badge_svg",
+        attributes={
+            "badge.pet_name": pet_name,
+            "badge.username": username,
+            "badge.standing": standing,
+        },
+    ):
+        return _generate_contributor_badge_svg_inner(
+            pet_name,
+            pet_stage,
+            username,
+            standing,
+            score=score,
+            days_away=days_away,
+            shame_detail=shame_detail,
+        )
+
+
+def _generate_contributor_badge_svg_inner(
+    pet_name: str,
+    pet_stage: str,
+    username: str,
+    standing: str,
+    *,
+    score: int | None = None,
+    days_away: int | None = None,
+    shame_detail: str | None = None,
+) -> str:
+    cfg = _STANDING_CONFIG.get(
+        standing,
+        _STANDING_CONFIG[ContributorStanding.NEUTRAL],
+    )
     accent: str = cfg["accent"]
     icon: str = cfg["icon"]
     label: str = cfg["label"]
     verb: str = cfg["verb"]
 
-    stage_emoji = STAGE_EMOJI.get(pet_stage, "🐣")
+    stage_emoji = STAGE_EMOJI.get(pet_stage, "\U0001f423")
 
     # Truncate strings to keep badge compact
-    display_pet = pet_name if len(pet_name) <= 12 else pet_name[:11] + "…"
-    display_user = username if len(username) <= 14 else username[:13] + "…"
+    display_pet = (
+        pet_name if len(pet_name) <= 12 else pet_name[:11] + "…"
+    )
+    display_user = (
+        username if len(username) <= 14 else username[:13] + "…"
+    )
 
     width = 200
     height = 56
@@ -781,7 +844,30 @@ def generate_showcase_svg(
         layout: Card arrangement — "horizontal", "vertical", or "grid".
         theme: Colour scheme — "dark" or "light".
     """
-    card_bg, outer_bg, text_color, sub_color = _THEME.get(theme, _THEME["dark"])
+    with _tracer.start_as_current_span(
+        "service.badge.generate_showcase_svg",
+        attributes={
+            "showcase.username": username,
+            "showcase.layout": layout,
+            "showcase.theme": theme,
+            "showcase.pet_count": len(pets),
+        },
+    ):
+        return _generate_showcase_inner(
+            pets, username, layout=layout, theme=theme
+        )
+
+
+def _generate_showcase_inner(
+    pets: list[dict[str, Any]],
+    username: str,
+    *,
+    layout: str = "horizontal",
+    theme: str = "dark",
+) -> str:
+    card_bg, outer_bg, text_color, sub_color = _THEME.get(
+        theme, _THEME["dark"]
+    )
 
     if not pets:
         width, height = 220, 44

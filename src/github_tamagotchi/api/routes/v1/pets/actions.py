@@ -9,12 +9,14 @@ import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible 
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.auth import get_current_user
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404, require_pet_owner
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.pet import PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.schemas.pets import PetResponse
 from github_tamagotchi.services import pet as pet_service
 
 logger = structlog.get_logger()
+_tracer = get_tracer(__name__)
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["pets"])
 
 
@@ -28,14 +30,33 @@ async def resurrect_pet(
     """Resurrect a dead pet after the mandatory 7-day mourning period."""
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     require_pet_owner(pet, user)
-    try:
-        pet = await pet_service.resurrect(session, pet)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    metrics_service.resurrections_total.inc()
-    try:
-        _api_routes.get_image_provider()
-        await _api_routes.image_queue.create_job(session, pet.id, PetStage.EGG.value)
-    except ValueError:
-        logger.debug("image_enqueue_skipped", pet_id=pet.id, reason="no image provider")
-    return PetResponse.model_validate(pet)
+    with _tracer.start_as_current_span(
+        "api.pets.resurrect",
+        attributes={
+            "pet.repo_owner": repo_owner,
+            "pet.repo_name": repo_name,
+            "pet.id": str(pet.id),
+        },
+    ) as span:
+        try:
+            pet = await pet_service.resurrect(session, pet)
+        except ValueError as exc:
+            span.set_attribute("error", True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        metrics_service.resurrections_total.inc()
+        try:
+            _api_routes.get_image_provider()
+            await _api_routes.image_queue.create_job(
+                session, pet.id, PetStage.EGG.value
+            )
+        except ValueError:
+            logger.debug(
+                "image_enqueue_skipped",
+                pet_id=pet.id,
+                reason="no image provider",
+            )
+        span.set_attribute("pet.name", pet.name)
+        return PetResponse.model_validate(pet)
