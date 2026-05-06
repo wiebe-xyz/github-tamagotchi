@@ -47,14 +47,7 @@ def init_telemetry(app: FastAPI) -> None:
     sampler = TraceIdRatioBased(settings.otel_traces_sample_rate)
     _provider = TracerProvider(resource=resource, sampler=sampler)
 
-    headers: dict[str, str] = {}
-    if settings.spanbarn_api_key:
-        headers["Authorization"] = f"Bearer {settings.spanbarn_api_key}"
-
-    exporter = OTLPSpanExporter(
-        endpoint=settings.otel_endpoint,
-        headers=headers,
-    )
+    exporter = OTLPSpanExporter()
     _provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(_provider)
 
@@ -65,9 +58,12 @@ def init_telemetry(app: FastAPI) -> None:
 
     HTTPXClientInstrumentor().instrument()
 
+    endpoint = os.getenv(
+        "OTEL_EXPORTER_OTLP_ENDPOINT", ""
+    )
     logger.info(
         "OpenTelemetry initialized",
-        endpoint=settings.otel_endpoint,
+        endpoint=endpoint,
         sample_rate=settings.otel_traces_sample_rate,
     )
 
