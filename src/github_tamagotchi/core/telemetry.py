@@ -27,7 +27,7 @@ def init_telemetry(app: FastAPI) -> None:
 
     try:
         from opentelemetry import trace
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
         from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
@@ -47,9 +47,13 @@ def init_telemetry(app: FastAPI) -> None:
     sampler = TraceIdRatioBased(settings.otel_traces_sample_rate)
     _provider = TracerProvider(resource=resource, sampler=sampler)
 
+    headers: dict[str, str] = {}
+    if settings.spanbarn_api_key:
+        headers["Authorization"] = f"Bearer {settings.spanbarn_api_key}"
+
     exporter = OTLPSpanExporter(
         endpoint=settings.otel_endpoint,
-        insecure=settings.otel_insecure,
+        headers=headers,
     )
     _provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(_provider)

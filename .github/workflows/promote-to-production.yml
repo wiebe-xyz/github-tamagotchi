@@ -104,6 +104,7 @@ jobs:
           BUGBARN_CI_KEY: ${{ secrets.BUGBARN_CI_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.PROD_VAPID_PRIVATE_KEY || secrets.VAPID_PRIVATE_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.PROD_VAPID_PUBLIC_KEY || secrets.VAPID_PUBLIC_KEY }}
+          SPANBARN_API_KEY: ${{ secrets.SPANBARN_API_KEY }}
         run: |
           KUBECFG="$(mktemp)"
           echo "$KUBECONFIG_DATA" > "$KUBECFG"
@@ -153,6 +154,7 @@ jobs:
               'bugbarn-api-key': 'BUGBARN_API_KEY',
               'vapid-private-key': 'VAPID_PRIVATE_KEY',
               'vapid-public-key': 'VAPID_PUBLIC_KEY',
+              'spanbarn-api-key': 'SPANBARN_API_KEY',
           }
           for k, env in mappings.items():
               v = os.environ.get(env, '')
