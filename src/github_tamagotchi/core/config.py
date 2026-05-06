@@ -70,12 +70,12 @@ class Settings(BaseSettings):
     # Admin
     admin_github_logins: list[str] = ["webwiebe"]
 
-    # OpenTelemetry
+    # OpenTelemetry / SpanBarn
     otel_enabled: bool = False
-    otel_endpoint: str = "https://spanbarn.wiebe.xyz"
+    otel_endpoint: str = "https://spanbarn.wiebe.xyz/v1/traces"
     otel_service_name: str = "github-tamagotchi"
     otel_traces_sample_rate: float = 1.0
-    otel_insecure: bool = False
+    spanbarn_api_key: str | None = None
 
     # Sentry
     sentry_dsn: str | None = None

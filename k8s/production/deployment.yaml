@@ -138,6 +138,15 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: vapid-public-key
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_ENDPOINT
+              value: "https://spanbarn.wiebe.xyz/v1/traces"
+            - name: SPANBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: spanbarn-api-key
           resources:
             requests:
               memory: "128Mi"
@@ -304,6 +313,15 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: vapid-public-key
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_ENDPOINT
+              value: "https://spanbarn.wiebe.xyz/v1/traces"
+            - name: SPANBARN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: spanbarn-api-key
           resources:
             requests:
               memory: "128Mi"
