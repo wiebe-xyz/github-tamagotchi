@@ -609,6 +609,16 @@ async def service_worker() -> Response:
     )
 
 
+@app.get("/manifest.json", include_in_schema=False)
+async def root_manifest() -> Response:
+    """Serve the root PWA manifest."""
+    manifest_path = BASE_DIR / "static" / "manifest.json"
+    return Response(
+        content=manifest_path.read_text(),
+        media_type="application/manifest+json",
+    )
+
+
 @app.get("/pet/{repo_owner}/{repo_name}/manifest.json", include_in_schema=False)
 async def pet_manifest(
     repo_owner: str,
