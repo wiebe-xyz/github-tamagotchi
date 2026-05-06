@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.crud.user import create_or_update_user, get_user_by_id
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.token_encryption import encrypt_token
 
 logger = logging.getLogger(__name__)
+_tracer = get_tracer(__name__)
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -182,90 +184,118 @@ async def oauth_callback(
             detail="GitHub OAuth is not configured",
         )
 
-    # Exchange code for access token
-    async with httpx.AsyncClient() as client:
-        token_response = await client.post(
-            GITHUB_TOKEN_URL,
-            data={
-                "client_id": settings.github_oauth_client_id,
-                "client_secret": settings.github_oauth_client_secret,
-                "code": code,
-                "redirect_uri": settings.oauth_redirect_uri,
-            },
-            headers={"Accept": "application/json"},
+    with _tracer.start_as_current_span(
+        "api.auth.oauth_callback",
+    ) as span:
+        # Exchange code for access token
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                GITHUB_TOKEN_URL,
+                data={
+                    "client_id": settings.github_oauth_client_id,
+                    "client_secret": (
+                        settings.github_oauth_client_secret
+                    ),
+                    "code": code,
+                    "redirect_uri": settings.oauth_redirect_uri,
+                },
+                headers={"Accept": "application/json"},
+            )
+            if token_response.status_code != 200:
+                logger.error(
+                    "GitHub token exchange failed: %s",
+                    token_response.text,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Failed to exchange code for token",
+                )
+
+            token_data = token_response.json()
+            access_token = token_data.get("access_token")
+            if not access_token:
+                error = token_data.get(
+                    "error_description",
+                    token_data.get("error", "unknown"),
+                )
+                logger.error("GitHub OAuth error: %s", error)
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"GitHub OAuth error: {error}",
+                )
+
+            # Fetch user info from GitHub
+            user_response = await client.get(
+                GITHUB_USER_URL,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                },
+            )
+            if user_response.status_code != 200:
+                logger.error(
+                    "GitHub user info fetch failed: %s",
+                    user_response.text,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        "Failed to fetch user info from GitHub"
+                    ),
+                )
+
+            github_user = user_response.json()
+
+        span.set_attribute(
+            "auth.github_login", github_user["login"]
         )
-        if token_response.status_code != 200:
-            logger.error("GitHub token exchange failed: %s", token_response.text)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to exchange code for token",
-            )
 
-        token_data = token_response.json()
-        access_token = token_data.get("access_token")
-        if not access_token:
-            error = token_data.get("error_description", token_data.get("error", "unknown"))
-            logger.error("GitHub OAuth error: %s", error)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"GitHub OAuth error: {error}",
-            )
+        # Encrypt token before storage
+        encrypted = None
+        if settings.token_encryption_key:
+            try:
+                encrypted = encrypt_token(access_token)
+            except Exception:
+                logger.exception(
+                    "Failed to encrypt token"
+                    " — storing without encryption"
+                )
+                encrypted = None
 
-        # Fetch user info from GitHub
-        user_response = await client.get(
-            GITHUB_USER_URL,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/json",
-            },
+        # Create or update user in database
+        user = await create_or_update_user(
+            session,
+            github_id=github_user["id"],
+            github_login=github_user["login"],
+            github_avatar_url=github_user.get("avatar_url"),
+            encrypted_token=encrypted,
         )
-        if user_response.status_code != 200:
-            logger.error("GitHub user info fetch failed: %s", user_response.text)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch user info from GitHub",
-            )
 
-        github_user = user_response.json()
+        # Set admin flag based on configured logins
+        user.is_admin = (
+            github_user["login"] in settings.admin_github_logins
+        )
+        await session.flush()
 
-    # Encrypt token before storage
-    encrypted = None
-    if settings.token_encryption_key:
-        try:
-            encrypted = encrypt_token(access_token)
-        except Exception:
-            logger.exception("Failed to encrypt token — storing without encryption")
-            encrypted = None
+        span.set_attribute("auth.user_id", str(user.id))
+        span.set_attribute("auth.is_admin", user.is_admin)
 
-    # Create or update user in database
-    user = await create_or_update_user(
-        session,
-        github_id=github_user["id"],
-        github_login=github_user["login"],
-        github_avatar_url=github_user.get("avatar_url"),
-        encrypted_token=encrypted,
-    )
+        # Create JWT session token
+        token = _create_jwt(user.id)
 
-    # Set admin flag based on configured logins
-    user.is_admin = github_user["login"] in settings.admin_github_logins
-    await session.flush()
-
-    # Create JWT session token
-    token = _create_jwt(user.id)
-
-    response = Response(
-        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-        headers={"location": "/register"},
-    )
-    response.set_cookie(
-        key="session_token",
-        value=token,
-        httponly=True,
-        secure=not settings.debug,
-        samesite="lax",
-        max_age=settings.jwt_expire_minutes * 60,
-    )
-    return response
+        response = Response(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"location": "/register"},
+        )
+        response.set_cookie(
+            key="session_token",
+            value=token,
+            httponly=True,
+            secure=not settings.debug,
+            samesite="lax",
+            max_age=settings.jwt_expire_minutes * 60,
+        )
+        return response
 
 
 @auth_router.get("/me", response_model=UserResponse)

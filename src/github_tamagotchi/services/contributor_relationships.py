@@ -3,8 +3,11 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.contributor_relationship import ContributorStanding
 from github_tamagotchi.services.github import AllContributorActivity
+
+_tracer = get_tracer(__name__)
 
 
 @dataclass
@@ -70,48 +73,72 @@ def build_contributor_updates(
     now: datetime | None = None,
 ) -> list[ContributorUpdate]:
     """Compute score, standing, and event lists for each contributor."""
-    if now is None:
-        now = datetime.now(UTC)
+    with _tracer.start_as_current_span(
+        "service.contributor_relationships.build_updates",
+    ) as span:
+        if now is None:
+            now = datetime.now(UTC)
 
-    all_usernames = set(activity.commits_by_user) | set(activity.merged_prs_by_user)
-
-    # Find top scorer for "favorite" standing
-    scores: dict[str, int] = {
-        username: calculate_score(
-            activity.commits_by_user.get(username, 0),
-            activity.merged_prs_by_user.get(username, 0),
+        all_usernames = (
+            set(activity.commits_by_user)
+            | set(activity.merged_prs_by_user)
         )
-        for username in all_usernames
-    }
-    max_score = max(scores.values(), default=0)
+        span.set_attribute(
+            "contributor.count", len(all_usernames)
+        )
 
-    updates: list[ContributorUpdate] = []
-    for username in all_usernames:
-        commits = activity.commits_by_user.get(username, 0)
-        merged_prs = activity.merged_prs_by_user.get(username, 0)
-        score = scores[username]
-        last_activity = activity.last_activity_by_user.get(username)
-        is_top = score > 0 and score == max_score
-
-        standing = calculate_standing(score, is_top, last_activity, now)
-
-        good_deeds: list[str] = []
-        if commits > 0:
-            good_deeds.append(f"{commits} commit{'s' if commits != 1 else ''} in last 30 days")
-        if merged_prs > 0:
-            pr_label = f"PR{'s' if merged_prs != 1 else ''}"
-            good_deeds.append(f"{merged_prs} {pr_label} merged in last 30 days")
-        good_deeds = good_deeds[:MAX_RECENT_EVENTS]
-
-        updates.append(
-            ContributorUpdate(
-                github_username=username,
-                score=score,
-                standing=standing,
-                last_activity=last_activity,
-                good_deeds=good_deeds,
-                sins=[],
+        # Find top scorer for "favorite" standing
+        scores: dict[str, int] = {
+            username: calculate_score(
+                activity.commits_by_user.get(username, 0),
+                activity.merged_prs_by_user.get(username, 0),
             )
-        )
+            for username in all_usernames
+        }
+        max_score = max(scores.values(), default=0)
 
-    return updates
+        updates: list[ContributorUpdate] = []
+        for username in all_usernames:
+            commits = activity.commits_by_user.get(username, 0)
+            merged_prs = activity.merged_prs_by_user.get(
+                username, 0
+            )
+            score = scores[username]
+            last_activity = activity.last_activity_by_user.get(
+                username
+            )
+            is_top = score > 0 and score == max_score
+
+            standing = calculate_standing(
+                score, is_top, last_activity, now
+            )
+
+            good_deeds: list[str] = []
+            if commits > 0:
+                s = "s" if commits != 1 else ""
+                good_deeds.append(
+                    f"{commits} commit{s} in last 30 days"
+                )
+            if merged_prs > 0:
+                pr_label = (
+                    f"PR{'s' if merged_prs != 1 else ''}"
+                )
+                good_deeds.append(
+                    f"{merged_prs} {pr_label} merged "
+                    f"in last 30 days"
+                )
+            good_deeds = good_deeds[:MAX_RECENT_EVENTS]
+
+            updates.append(
+                ContributorUpdate(
+                    github_username=username,
+                    score=score,
+                    standing=standing,
+                    last_activity=last_activity,
+                    good_deeds=good_deeds,
+                    sins=[],
+                )
+            )
+
+        span.set_attribute("result.count", len(updates))
+        return updates

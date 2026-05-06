@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi.api.auth import get_current_user
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.pet import Pet
 from github_tamagotchi.models.user import User
 from github_tamagotchi.schemas.admin import (
@@ -19,6 +20,7 @@ from github_tamagotchi.schemas.admin import (
 from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.naming import is_valid_pet_name
 
+_tracer = get_tracer(__name__)
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["admin"])
 
 
@@ -96,15 +98,33 @@ async def update_pet_admin_settings(
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
 
-    if body.name is not None:
-        if not is_valid_pet_name(body.name):
-            raise HTTPException(status_code=422, detail="Invalid pet name")
-        pet.name = body.name
-    for field, value in body.model_dump(exclude_unset=True, exclude={"name"}).items():
-        setattr(pet, field, value)
+    with _tracer.start_as_current_span(
+        "api.admin.update_settings",
+        attributes={
+            "pet.repo_owner": repo_owner,
+            "pet.repo_name": repo_name,
+            "pet.id": str(pet.id),
+            "user.github_login": user.github_login,
+        },
+    ) as span:
+        if body.name is not None:
+            if not is_valid_pet_name(body.name):
+                raise HTTPException(
+                    status_code=422, detail="Invalid pet name"
+                )
+            pet.name = body.name
+        changed = body.model_dump(
+            exclude_unset=True, exclude={"name"}
+        )
+        for field, value in changed.items():
+            setattr(pet, field, value)
+        span.set_attribute(
+            "settings.changed_fields",
+            ",".join(body.model_dump(exclude_unset=True).keys()),
+        )
 
-    pet = await pet_service.save(session, pet)
-    return await _build_pet_admin_response(pet, session)
+        pet = await pet_service.save(session, pet)
+        return await _build_pet_admin_response(pet, session)
 
 
 @router.post(
@@ -119,11 +139,24 @@ async def exclude_contributor(
     github_login: str = Query(..., min_length=1, max_length=255),
 ) -> dict[str, str]:
     """Exclude a contributor from this pet's tracking. Requires repo admin permission."""
-    from github_tamagotchi.repositories.excluded_contributor import add_excluded
+    from github_tamagotchi.repositories.excluded_contributor import (
+        add_excluded,
+    )
 
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-    await add_excluded(session, pet.id, github_login, user.github_login)
+    with _tracer.start_as_current_span(
+        "api.admin.exclude_contributor",
+        attributes={
+            "pet.repo_owner": repo_owner,
+            "pet.repo_name": repo_name,
+            "pet.id": str(pet.id),
+            "contributor.github_login": github_login,
+        },
+    ):
+        await add_excluded(
+            session, pet.id, github_login, user.github_login
+        )
     return {"status": "excluded", "github_login": github_login}
 
 
@@ -139,11 +172,22 @@ async def unexclude_contributor(
     user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, str]:
     """Remove contributor exclusion. Requires repo admin permission."""
-    from github_tamagotchi.repositories.excluded_contributor import remove_excluded
+    from github_tamagotchi.repositories.excluded_contributor import (
+        remove_excluded,
+    )
 
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-    await remove_excluded(session, pet.id, github_login)
+    with _tracer.start_as_current_span(
+        "api.admin.unexclude_contributor",
+        attributes={
+            "pet.repo_owner": repo_owner,
+            "pet.repo_name": repo_name,
+            "pet.id": str(pet.id),
+            "contributor.github_login": github_login,
+        },
+    ):
+        await remove_excluded(session, pet.id, github_login)
     return {"status": "unexcluded", "github_login": github_login}
 
 
@@ -157,8 +201,18 @@ async def reset_pet(
     """Reset pet stats and start a new generation. Requires repo admin permission."""
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-    pet = await pet_service.reset(session, pet)
-    return await _build_pet_admin_response(pet, session)
+    with _tracer.start_as_current_span(
+        "api.admin.reset_pet",
+        attributes={
+            "pet.repo_owner": repo_owner,
+            "pet.repo_name": repo_name,
+            "pet.id": str(pet.id),
+            "user.github_login": user.github_login,
+        },
+    ) as span:
+        pet = await pet_service.reset(session, pet)
+        span.set_attribute("pet.generation", pet.generation)
+        return await _build_pet_admin_response(pet, session)
 
 
 @router.delete("/pets/{repo_owner}/{repo_name}/admin", status_code=status.HTTP_204_NO_CONTENT)
@@ -171,5 +225,14 @@ async def delete_pet_admin(
     """Delete a pet entirely. Requires repo admin permission."""
     pet = await get_pet_or_404(repo_owner, repo_name, session)
     await _require_repo_admin(repo_owner, repo_name, user, session)
-    await pet_service.delete(session, pet)
+    with _tracer.start_as_current_span(
+        "api.admin.delete_pet",
+        attributes={
+            "pet.repo_owner": repo_owner,
+            "pet.repo_name": repo_name,
+            "pet.id": str(pet.id),
+            "user.github_login": user.github_login,
+        },
+    ):
+        await pet_service.delete(session, pet)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

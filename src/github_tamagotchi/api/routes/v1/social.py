@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
 from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
+from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.schemas.social import (
     LeaderboardCategory,
     LeaderboardEntry,
@@ -17,6 +18,7 @@ from github_tamagotchi.services.badge import ContributorStanding, classify_contr
 from github_tamagotchi.services.github import GitHubService
 
 logger = structlog.get_logger()
+_tracer = get_tracer(__name__)
 router: APIRouter = APIRouter(prefix="/api/v1", tags=["social"])
 
 # Shared headers for all SVG responses
@@ -44,32 +46,42 @@ _LEADERBOARD_CATEGORIES = [
 @router.get("/leaderboard", response_model=LeaderboardResponse)
 async def get_leaderboard(session: DbSession) -> LeaderboardResponse:
     """Return the public leaderboard with multiple categories."""
-    categories: list[LeaderboardCategory] = []
-    now = datetime.now(UTC)
+    with _tracer.start_as_current_span(
+        "api.social.leaderboard",
+    ) as span:
+        categories: list[LeaderboardCategory] = []
+        now = datetime.now(UTC)
 
-    for cat in _LEADERBOARD_CATEGORIES:
-        pets = await pet_service.get_leaderboard(session, cat["id"], limit=10)
-        entries = [
-            LeaderboardEntry(
-                rank=i + 1,
-                pet_name=p.name,
-                repo_owner=p.repo_owner,
-                repo_name=p.repo_name,
-                stage=p.stage,
-                value=getattr(p, cat["value_field"]),
+        for cat in _LEADERBOARD_CATEGORIES:
+            pets = await pet_service.get_leaderboard(
+                session, cat["id"], limit=10
             )
-            for i, p in enumerate(pets)
-        ]
-        categories.append(
-            LeaderboardCategory(
-                id=cat["id"],
-                title=cat["title"],
-                description=cat["description"],
-                entries=entries,
+            entries = [
+                LeaderboardEntry(
+                    rank=i + 1,
+                    pet_name=p.name,
+                    repo_owner=p.repo_owner,
+                    repo_name=p.repo_name,
+                    stage=p.stage,
+                    value=getattr(p, cat["value_field"]),
+                )
+                for i, p in enumerate(pets)
+            ]
+            categories.append(
+                LeaderboardCategory(
+                    id=cat["id"],
+                    title=cat["title"],
+                    description=cat["description"],
+                    entries=entries,
+                )
             )
+
+        span.set_attribute(
+            "result.categories", len(categories)
         )
-
-    return LeaderboardResponse(categories=categories, cached_at=now)
+        return LeaderboardResponse(
+            categories=categories, cached_at=now
+        )
 
 
 @router.get("/showcase/{username}.svg", response_class=Response)
@@ -83,19 +95,36 @@ async def get_showcase(
     """Return an SVG showcase of all pets for a GitHub user."""
     from github_tamagotchi.services.badge import generate_showcase_svg
 
-    pets = await pet_service.get_by_username(session, username, limit=max)
-    pets_data = [
-        {
-            "name": pet.name,
-            "stage": pet.stage,
-            "mood": pet.mood,
-            "health": pet.health,
-            "is_dead": pet.is_dead,
-        }
-        for pet in pets
-    ]
-    svg_content = generate_showcase_svg(pets_data, username, layout=layout, theme=theme)
-    return Response(content=svg_content, media_type="image/svg+xml", headers=_SVG_HEADERS)
+    with _tracer.start_as_current_span(
+        "api.social.showcase",
+        attributes={
+            "username": username,
+            "layout": layout,
+            "theme": theme,
+        },
+    ) as span:
+        pets = await pet_service.get_by_username(
+            session, username, limit=max
+        )
+        pets_data = [
+            {
+                "name": pet.name,
+                "stage": pet.stage,
+                "mood": pet.mood,
+                "health": pet.health,
+                "is_dead": pet.is_dead,
+            }
+            for pet in pets
+        ]
+        span.set_attribute("result.pet_count", len(pets_data))
+        svg_content = generate_showcase_svg(
+            pets_data, username, layout=layout, theme=theme
+        )
+        return Response(
+            content=svg_content,
+            media_type="image/svg+xml",
+            headers=_SVG_HEADERS,
+        )
 
 
 @router.get("/contributor/{repo_owner}/{repo_name}/{username}.svg", response_class=Response)
@@ -107,48 +136,79 @@ async def get_contributor_badge(
     details: bool = Query(default=False, description="Include shame detail in badge"),
 ) -> Response:
     """Return an SVG badge showing a contributor's standing with the repo pet."""
-    from github_tamagotchi.services.badge import generate_contributor_badge_svg
+    from github_tamagotchi.services.badge import (
+        generate_contributor_badge_svg,
+    )
     from github_tamagotchi.services.github import ContributorStats
 
     pet = await get_pet_or_404(repo_owner, repo_name, session)
 
-    gh = GitHubService()
-    try:
-        stats: ContributorStats = await gh.get_contributor_stats(repo_owner, repo_name, username)
-    except Exception:
-        logger.warning(
-            "contributor_stats_fetch_failed",
-            repo=f"{repo_owner}/{repo_name}",
+    with _tracer.start_as_current_span(
+        "api.social.contributor_badge",
+        attributes={
+            "pet.repo_owner": repo_owner,
+            "pet.repo_name": repo_name,
+            "username": username,
+        },
+    ) as span:
+        gh = GitHubService()
+        try:
+            stats: ContributorStats = (
+                await gh.get_contributor_stats(
+                    repo_owner, repo_name, username
+                )
+            )
+        except Exception:
+            logger.warning(
+                "contributor_stats_fetch_failed",
+                repo=f"{repo_owner}/{repo_name}",
+                username=username,
+                exc_info=True,
+            )
+            stats = ContributorStats(
+                commits_30d=0,
+                last_commit_at=None,
+                is_top_contributor=False,
+                has_failed_ci=False,
+                days_since_last_commit=None,
+            )
+
+        standing = classify_contributor_standing(
+            commits_30d=stats.commits_30d,
+            is_top_contributor=stats.is_top_contributor,
+            has_failed_ci=stats.has_failed_ci,
+            days_since_last_commit=stats.days_since_last_commit,
+        )
+        span.set_attribute("result.standing", standing.value)
+
+        shame_detail: str | None = None
+        if details and standing == ContributorStanding.DOGHOUSE:
+            days = stats.days_since_last_commit or 0
+            shame_detail = (
+                f"Broke CI {days}d ago"
+                if days
+                else "Broke CI recently"
+            )
+
+        svg_content = generate_contributor_badge_svg(
+            pet_name=pet.name,
+            pet_stage=pet.stage,
             username=username,
-            exc_info=True,
+            standing=standing,
+            score=(
+                stats.commits_30d * 10
+                if standing == ContributorStanding.GOOD
+                else None
+            ),
+            days_away=(
+                stats.days_since_last_commit
+                if standing == ContributorStanding.ABSENT
+                else None
+            ),
+            shame_detail=shame_detail,
         )
-        stats = ContributorStats(
-            commits_30d=0,
-            last_commit_at=None,
-            is_top_contributor=False,
-            has_failed_ci=False,
-            days_since_last_commit=None,
+        return Response(
+            content=svg_content,
+            media_type="image/svg+xml",
+            headers=_SVG_HEADERS,
         )
-
-    standing = classify_contributor_standing(
-        commits_30d=stats.commits_30d,
-        is_top_contributor=stats.is_top_contributor,
-        has_failed_ci=stats.has_failed_ci,
-        days_since_last_commit=stats.days_since_last_commit,
-    )
-
-    shame_detail: str | None = None
-    if details and standing == ContributorStanding.DOGHOUSE:
-        days = stats.days_since_last_commit or 0
-        shame_detail = f"Broke CI {days}d ago" if days else "Broke CI recently"
-
-    svg_content = generate_contributor_badge_svg(
-        pet_name=pet.name,
-        pet_stage=pet.stage,
-        username=username,
-        standing=standing,
-        score=stats.commits_30d * 10 if standing == ContributorStanding.GOOD else None,
-        days_away=stats.days_since_last_commit if standing == ContributorStanding.ABSENT else None,
-        shame_detail=shame_detail,
-    )
-    return Response(content=svg_content, media_type="image/svg+xml", headers=_SVG_HEADERS)
