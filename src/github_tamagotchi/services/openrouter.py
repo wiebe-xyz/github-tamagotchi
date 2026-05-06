@@ -18,9 +18,11 @@ from github_tamagotchi.services.image_generation import (
 )
 from github_tamagotchi.services.sprite_sheet import (
     SpriteSheetResult,
+    analyze_sprite_sheet,
     build_sprite_sheet_prompt,
     extract_frames,
     get_canonical_appearance_description,
+    reorder_frames_by_analysis,
 )
 
 logger = structlog.get_logger()
@@ -186,17 +188,22 @@ class OpenRouterService:
                     error="No image data in OpenRouter sprite sheet response",
                 )
 
-            frames = extract_frames(image_data)
+            raw_frames = extract_frames(image_data)
             appearance_desc = canonical_appearance or get_canonical_appearance_description(
                 owner, repo
             )
+
+            analysis = await analyze_sprite_sheet(image_data, self.api_key or "")
+            frames = reorder_frames_by_analysis(raw_frames, analysis) if analysis else raw_frames
 
             logger.info(
                 "Sprite sheet generated",
                 owner=owner,
                 repo=repo,
                 stage=stage,
-                frame_count=len(frames),
+                raw_frame_count=len(raw_frames),
+                reordered_frame_count=len(frames),
+                vision_analysis=bool(analysis),
             )
             return SpriteSheetResult(
                 success=True,

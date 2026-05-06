@@ -1,9 +1,13 @@
 """Sprite sheet generation, frame extraction, and animated GIF composition."""
 
+import base64
 import io
+import json
+import re
 from collections import deque
 from dataclasses import dataclass, field
 
+import httpx
 import structlog
 from PIL import Image
 
@@ -18,9 +22,9 @@ logger = structlog.get_logger()
 
 # Sprite sheet grid layout
 SPRITE_COLS = 3
-SPRITE_ROWS = 2
+SPRITE_ROWS = 3
 
-# Frame index constants
+# Frame index constants — the canonical order we want
 FRAME_IDLE = 0
 FRAME_BLINK = 1
 FRAME_HAPPY = 2
@@ -36,7 +40,12 @@ SPRITE_FRAMES: list[tuple[int, str, str]] = [
     (FRAME_SAD, "sad", "sad frown, single teardrop on cheek, slightly slumped posture"),
     (FRAME_SICK, "sick", "sickly green tinge, droopy half-closed eyes, unsteady outline"),
     (FRAME_SLEEPING, "sleeping", "eyes closed, small zzz bubble floating above, resting"),
+    (6, "eating", "mouth open, small food particle nearby, chewing expression"),
+    (7, "excited", "wide eyes, jumping pose, exclamation sparkle"),
+    (8, "angry", "furrowed brows, puffed cheeks, small angry vein mark"),
 ]
+
+FRAME_NAMES = [name for _, name, _ in SPRITE_FRAMES]
 
 # Frame display durations in milliseconds
 FRAME_DURATIONS: dict[int, int] = {
@@ -134,7 +143,7 @@ def build_sprite_sheet_prompt(
     negative = (
         style_def.get("negative", NEGATIVE_PROMPT)
         + ", multiple different characters, text labels, numbers, digits, numerals, "
-        "annotations, captions, 3x3 grid, 9 cells, extra rows, extra columns, "
+        "annotations, captions, extra rows, extra columns, "
         "uneven cells, misaligned grid, inconsistent character design, white background"
     )
 
@@ -260,6 +269,111 @@ def extract_frames(
             frames.append(out.getvalue())
 
     return frames
+
+
+VISION_MODEL = "google/gemini-2.0-flash-001"
+VISION_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+async def analyze_sprite_sheet(
+    sprite_sheet_bytes: bytes,
+    api_key: str,
+) -> list[dict[str, str | int | bool]]:
+    """Use a vision model to analyze a sprite sheet and identify each cell's content.
+
+    Returns a list of dicts, one per grid cell (left-to-right, top-to-bottom):
+        [{"index": 0, "empty": False, "emotion": "idle"}, ...]
+
+    The emotion field is one of the FRAME_NAMES values, or "unknown".
+    """
+    b64 = base64.b64encode(sprite_sheet_bytes).decode()
+    data_uri = f"data:image/png;base64,{b64}"
+
+    emotion_list = ", ".join(FRAME_NAMES)
+    prompt = (
+        "This is a pixel art sprite sheet arranged as a 3x3 grid (9 cells). "
+        "Analyze each cell from left-to-right, top-to-bottom (cells 0-8). "
+        "For each cell, determine:\n"
+        "1. Whether it contains a character (not empty)\n"
+        f"2. Which emotion best matches from: {emotion_list}\n\n"
+        "Respond with ONLY a JSON array of 9 objects, no other text:\n"
+        '[{"index": 0, "empty": false, "emotion": "idle"}, ...]\n'
+        "If a cell is empty or has no character, set empty=true and emotion=\"unknown\"."
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": VISION_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_uri}},
+                ],
+            }
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VISION_API_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+        text = data["choices"][0]["message"]["content"]
+        match = re.search(r"\[.*\]", text, re.DOTALL)
+        if not match:
+            logger.warning("vision_analysis_no_json", response_text=text[:200])
+            return []
+
+        cells: list[dict[str, str | int | bool]] = json.loads(match.group())
+        logger.info("vision_analysis_complete", cells=cells)
+        return cells
+    except Exception:
+        logger.exception("vision_analysis_failed")
+        return []
+
+
+def reorder_frames_by_analysis(
+    raw_frames: list[bytes],
+    analysis: list[dict[str, str | int | bool]],
+) -> list[bytes]:
+    """Reorder extracted frames to match canonical FRAME_* order using vision analysis.
+
+    Maps each analyzed cell to the canonical frame index by emotion name.
+    Falls back to the first non-empty frame for any emotion not found.
+    """
+    if not analysis or len(raw_frames) != len(analysis):
+        return raw_frames[:len(SPRITE_FRAMES)]
+
+    emotion_to_frame_idx: dict[str, int] = {
+        name: idx for idx, name, _ in SPRITE_FRAMES
+    }
+
+    available: dict[int, bytes] = {}
+    first_nonempty: bytes | None = None
+
+    for cell, frame_data in zip(analysis, raw_frames, strict=False):
+        if cell.get("empty", False):
+            continue
+        if first_nonempty is None:
+            first_nonempty = frame_data
+
+        emotion = str(cell.get("emotion", "unknown")).lower()
+        canonical_idx = emotion_to_frame_idx.get(emotion)
+        if canonical_idx is not None and canonical_idx not in available:
+            available[canonical_idx] = frame_data
+
+    fallback = first_nonempty or raw_frames[0]
+    ordered: list[bytes] = []
+    for idx, _, _ in SPRITE_FRAMES:
+        ordered.append(available.get(idx, fallback))
+
+    return ordered
 
 
 def _rgba_to_gif_frame(img: Image.Image) -> tuple[Image.Image, int]:
