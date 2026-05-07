@@ -53,19 +53,11 @@ class TestReadinessEndpoint:
         self, async_client: AsyncClient
     ) -> None:
         """Readiness returns 200 when all dependency checks pass."""
-        github_ok = CheckResult(status="ok", latency_ms=50.0, rate_limit_remaining=4500)
         scheduler_ok = CheckResult(status="ok", next_poll_in="28m0s")
 
-        with (
-            patch(
-                "github_tamagotchi.api.health._check_github_api",
-                new_callable=AsyncMock,
-                return_value=github_ok,
-            ),
-            patch(
-                "github_tamagotchi.api.health._check_scheduler",
-                return_value=scheduler_ok,
-            ),
+        with patch(
+            "github_tamagotchi.api.health._check_scheduler",
+            return_value=scheduler_ok,
         ):
             response = await async_client.get("/api/v1/health/ready")
 
@@ -73,10 +65,9 @@ class TestReadinessEndpoint:
         data = response.json()
         assert data["status"] == "healthy"
         assert "database" in data["checks"]
-        assert "github_api" in data["checks"]
         assert "scheduler" in data["checks"]
+        assert "github_api" not in data["checks"]
         assert data["checks"]["database"]["status"] == "ok"
-        assert data["checks"]["github_api"]["status"] == "ok"
         assert data["checks"]["scheduler"]["status"] == "ok"
 
     async def test_readiness_503_when_critical_check_fails(
@@ -84,7 +75,6 @@ class TestReadinessEndpoint:
     ) -> None:
         """Readiness returns 503 when any critical check fails."""
         db_error = CheckResult(status="error", error="Connection refused")
-        github_ok = CheckResult(status="ok", latency_ms=45.0, rate_limit_remaining=4000)
         scheduler_ok = CheckResult(status="ok", next_poll_in="10m0s")
 
         with (
@@ -92,11 +82,6 @@ class TestReadinessEndpoint:
                 "github_tamagotchi.api.health._check_database",
                 new_callable=AsyncMock,
                 return_value=db_error,
-            ),
-            patch(
-                "github_tamagotchi.api.health._check_github_api",
-                new_callable=AsyncMock,
-                return_value=github_ok,
             ),
             patch(
                 "github_tamagotchi.api.health._check_scheduler",
@@ -107,23 +92,17 @@ class TestReadinessEndpoint:
 
         assert response.status_code == 503
 
-    async def test_readiness_degraded_when_github_rate_limit_low(
+    async def test_readiness_degraded_when_scheduler_degraded(
         self, async_client: AsyncClient
     ) -> None:
-        """Readiness returns 200 with degraded when GitHub rate limit is low."""
-        github_degraded = CheckResult(status="degraded", latency_ms=40.0, rate_limit_remaining=50)
-        scheduler_ok = CheckResult(status="ok", next_poll_in="5m0s")
+        """Readiness returns 200 with degraded when scheduler is degraded."""
+        scheduler_degraded = CheckResult(
+            status="degraded", next_poll_in="3600s overdue"
+        )
 
-        with (
-            patch(
-                "github_tamagotchi.api.health._check_github_api",
-                new_callable=AsyncMock,
-                return_value=github_degraded,
-            ),
-            patch(
-                "github_tamagotchi.api.health._check_scheduler",
-                return_value=scheduler_ok,
-            ),
+        with patch(
+            "github_tamagotchi.api.health._check_scheduler",
+            return_value=scheduler_degraded,
         ):
             response = await async_client.get("/api/v1/health/ready")
 
@@ -132,27 +111,18 @@ class TestReadinessEndpoint:
         assert data["status"] == "degraded"
 
     async def test_readiness_includes_check_details(self, async_client: AsyncClient) -> None:
-        """Readiness response includes latency and rate limit info."""
-        github_ok = CheckResult(status="ok", latency_ms=55.3, rate_limit_remaining=4800)
+        """Readiness response includes latency and scheduler info."""
         scheduler_ok = CheckResult(status="ok", next_poll_in="14m30s")
 
-        with (
-            patch(
-                "github_tamagotchi.api.health._check_github_api",
-                new_callable=AsyncMock,
-                return_value=github_ok,
-            ),
-            patch(
-                "github_tamagotchi.api.health._check_scheduler",
-                return_value=scheduler_ok,
-            ),
+        with patch(
+            "github_tamagotchi.api.health._check_scheduler",
+            return_value=scheduler_ok,
         ):
             response = await async_client.get("/api/v1/health/ready")
 
         assert response.status_code == 200
         data = response.json()
         assert data["checks"]["database"]["latency_ms"] is not None
-        assert data["checks"]["github_api"]["rate_limit_remaining"] == 4800
         assert data["checks"]["scheduler"]["next_poll_in"] == "14m30s"
 
 

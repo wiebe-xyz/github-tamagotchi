@@ -176,14 +176,12 @@ async def liveness() -> LivenessResponse:
 
 @health_router.get("/ready", response_model=ReadinessResponse)
 async def readiness(session: DbSession) -> ReadinessResponse:
-    """Readiness probe — checks all critical dependencies."""
+    """Readiness probe — checks local dependencies only (no external API calls)."""
     db_check = await _check_database(session)
-    github_check = await _check_github_api()
     scheduler_check = _check_scheduler()
 
     checks = {
         "database": db_check,
-        "github_api": github_check,
         "scheduler": scheduler_check,
     }
 
