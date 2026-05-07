@@ -99,7 +99,7 @@ async def get_current_user(
     should_be_admin = user.github_login in settings.admin_github_logins
     if user.is_admin != should_be_admin:
         user.is_admin = should_be_admin
-        await session.flush()
+        await session.commit()
     return user
 
 
@@ -129,7 +129,7 @@ async def get_optional_user(
         should_be_admin = user.github_login in settings.admin_github_logins
         if user.is_admin != should_be_admin:
             user.is_admin = should_be_admin
-            await session.flush()
+            await session.commit()
     return user
 
 
@@ -275,7 +275,7 @@ async def oauth_callback(
         user.is_admin = (
             github_user["login"] in settings.admin_github_logins
         )
-        await session.flush()
+        await session.commit()
 
         span.set_attribute("auth.user_id", str(user.id))
         span.set_attribute("auth.is_admin", user.is_admin)
