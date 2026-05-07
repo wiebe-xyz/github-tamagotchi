@@ -143,7 +143,7 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
                 processed=processed,
             )
             session.add(event_log)
-            await session.flush()
+            await session.commit()
         except Exception:
             logger.exception("Failed to log webhook event")
 
