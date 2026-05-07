@@ -6,12 +6,10 @@ from typing import Any
 
 import httpx
 import structlog
+from opentelemetry.trace import SpanKind
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.telemetry import get_tracer
-
-from opentelemetry.trace import SpanKind
-
 from github_tamagotchi.services.image_generation import (
     DEFAULT_STYLE,
     NEGATIVE_PROMPT,
