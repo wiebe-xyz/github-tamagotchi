@@ -430,9 +430,15 @@ async def run_worker(
                 job = await get_next_pending_job(session)
 
                 if job:
-                    await process_job(session, job)
+                    with _tracer.start_as_current_span(
+                        "image_queue.worker_cycle",
+                        attributes={
+                            "worker.job_id": str(job.id),
+                            "worker.pet_id": str(job.pet_id),
+                        },
+                    ):
+                        await process_job(session, job)
                 else:
-                    # No pending jobs, wait before polling again
                     await asyncio.sleep(interval)
 
         except asyncio.CancelledError:
