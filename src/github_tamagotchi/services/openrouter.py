@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import structlog
+from opentelemetry.trace import SpanKind
 
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.telemetry import get_tracer
@@ -30,6 +31,27 @@ logger = structlog.get_logger()
 _tracer = get_tracer(__name__)
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def _set_genai_response_attributes(span: Any, data: dict[str, Any]) -> None:
+    """Set GenAI semantic convention attributes from an OpenRouter response."""
+    if resp_id := data.get("id"):
+        span.set_attribute("gen_ai.response.id", resp_id)
+    if resp_model := data.get("model"):
+        span.set_attribute("gen_ai.response.model", resp_model)
+
+    choices = data.get("choices", [])
+    if choices:
+        reasons = [c.get("finish_reason", "") for c in choices if c.get("finish_reason")]
+        if reasons:
+            span.set_attribute("gen_ai.response.finish_reasons", reasons)
+
+    usage = data.get("usage", {})
+    if usage:
+        if (v := usage.get("prompt_tokens")) is not None:
+            span.set_attribute("gen_ai.usage.input_tokens", v)
+        if (v := usage.get("completion_tokens")) is not None:
+            span.set_attribute("gen_ai.usage.output_tokens", v)
 
 
 class OpenRouterService:
@@ -127,16 +149,32 @@ class OpenRouterService:
             ],
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                OPENROUTER_API_URL,
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        with _tracer.start_as_current_span(
+            f"chat {self.model}",
+            kind=SpanKind.CLIENT,
+            attributes={
+                "gen_ai.operation.name": "chat",
+                "gen_ai.provider.name": "openrouter",
+                "gen_ai.request.model": self.model,
+                "server.address": "openrouter.ai",
+                "server.port": 443,
+            },
+        ) as span:
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(
+                        OPENROUTER_API_URL,
+                        headers=headers,
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
 
-        return self._extract_image(data)
+                _set_genai_response_attributes(span, data)
+                return self._extract_image(data)
+            except Exception as exc:
+                span.set_attribute("error.type", type(exc).__qualname__)
+                raise
 
     def _extract_image(self, data: dict[str, Any]) -> bytes | None:
         """Extract image bytes from OpenRouter response."""

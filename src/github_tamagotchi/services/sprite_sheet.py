@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 import httpx
 import structlog
+from opentelemetry.trace import SpanKind
 from PIL import Image
 
 from github_tamagotchi.core.telemetry import get_tracer
@@ -296,10 +297,17 @@ async def analyze_sprite_sheet(
 
     The emotion field is one of the FRAME_NAMES values, or "unknown".
     """
+    from github_tamagotchi.services.openrouter import _set_genai_response_attributes
+
     with _tracer.start_as_current_span(
-        "sprite.analyze_sprite_sheet",
+        f"chat {VISION_MODEL}",
+        kind=SpanKind.CLIENT,
         attributes={
-            "sprite.vision_model": VISION_MODEL,
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "openrouter",
+            "gen_ai.request.model": VISION_MODEL,
+            "server.address": "openrouter.ai",
+            "server.port": 443,
         },
     ) as span:
         b64 = base64.b64encode(sprite_sheet_bytes).decode()
@@ -340,6 +348,8 @@ async def analyze_sprite_sheet(
                 response.raise_for_status()
                 data = response.json()
 
+            _set_genai_response_attributes(span, data)
+
             text = data["choices"][0]["message"]["content"]
             match = re.search(r"\[.*\]", text, re.DOTALL)
             if not match:
@@ -351,6 +361,7 @@ async def analyze_sprite_sheet(
             logger.info("vision_analysis_complete", cells=cells)
             return cells
         except Exception:
+            span.set_attribute("error.type", "vision_analysis_error")
             logger.exception("vision_analysis_failed")
             return []
 
