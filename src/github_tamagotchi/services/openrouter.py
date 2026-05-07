@@ -10,12 +10,7 @@ import structlog
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.telemetry import get_tracer
 
-try:
-    from opentelemetry.trace import SpanKind
-
-    _SPAN_KIND_CLIENT = SpanKind.CLIENT
-except ImportError:
-    _SPAN_KIND_CLIENT = None  # type: ignore[assignment]
+from opentelemetry.trace import SpanKind
 
 from github_tamagotchi.services.image_generation import (
     DEFAULT_STYLE,
@@ -158,7 +153,7 @@ class OpenRouterService:
 
         with _tracer.start_as_current_span(
             f"chat {self.model}",
-            kind=_SPAN_KIND_CLIENT,
+            kind=SpanKind.CLIENT,
             attributes={
                 "gen_ai.operation.name": "chat",
                 "gen_ai.provider.name": "openrouter",
