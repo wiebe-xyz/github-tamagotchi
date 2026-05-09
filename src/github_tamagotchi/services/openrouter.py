@@ -15,6 +15,7 @@ from github_tamagotchi.services.image_generation import (
     NEGATIVE_PROMPT,
     STYLES,
     GenerationResult,
+    OpenRouterInsufficientCreditsError,
     build_prompt,
     get_pet_appearance,
 )
@@ -167,6 +168,10 @@ class OpenRouterService:
                         headers=headers,
                         json=payload,
                     )
+                    if response.status_code == 402:
+                        raise OpenRouterInsufficientCreditsError(
+                            "OpenRouter account has insufficient credits"
+                        )
                     response.raise_for_status()
                     data = response.json()
 

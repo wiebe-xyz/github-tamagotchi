@@ -3,6 +3,9 @@
 import os
 from unittest.mock import patch
 
+import pytest
+from cryptography.fernet import Fernet
+
 from github_tamagotchi.core.config import Settings
 
 
@@ -118,3 +121,30 @@ class TestSettingsTypes:
         """Database URL should be a string."""
         settings = Settings()
         assert isinstance(settings.database_url, str)
+
+
+class TestTokenEncryptionKeyValidation:
+    """Tests for Fernet key validation at config load time."""
+
+    def test_valid_fernet_key_accepted(self) -> None:
+        key = Fernet.generate_key().decode()
+        with patch.dict(os.environ, {"TOKEN_ENCRYPTION_KEY": key}):
+            settings = Settings()
+            assert settings.token_encryption_key == key
+
+    def test_invalid_base64_rejected(self) -> None:
+        env = {"TOKEN_ENCRYPTION_KEY": "not-valid-base64!!!"}
+        with patch.dict(os.environ, env), pytest.raises(Exception, match="32 bytes"):
+            Settings()
+
+    def test_wrong_length_rejected(self) -> None:
+        import base64
+
+        short_key = base64.urlsafe_b64encode(b"tooshort").decode()
+        env = {"TOKEN_ENCRYPTION_KEY": short_key}
+        with patch.dict(os.environ, env), pytest.raises(Exception, match="32 bytes"):
+            Settings()
+
+    def test_none_key_accepted(self) -> None:
+        settings = Settings()
+        assert settings.token_encryption_key is None

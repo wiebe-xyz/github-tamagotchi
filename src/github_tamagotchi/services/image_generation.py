@@ -17,6 +17,11 @@ from github_tamagotchi.models.pet import PetStage
 
 logger = structlog.get_logger()
 
+
+class OpenRouterInsufficientCreditsError(Exception):
+    """Raised when the OpenRouter account has insufficient credits (HTTP 402)."""
+
+
 # Stage-specific prompt descriptions for visual evolution
 STAGE_PROMPTS: dict[str, str] = {
     PetStage.EGG.value: "oval egg shape with subtle crack pattern, soft inner glow",
