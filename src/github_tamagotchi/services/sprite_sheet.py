@@ -17,6 +17,7 @@ from github_tamagotchi.services.image_generation import (
     DEFAULT_STYLE,
     NEGATIVE_PROMPT,
     STYLES,
+    OpenRouterInsufficientCreditsError,
     get_pet_appearance,
 )
 
@@ -346,7 +347,6 @@ async def analyze_sprite_sheet(
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(VISION_API_URL, headers=headers, json=payload)
                 if response.status_code == 402:
-                    from github_tamagotchi.services.openrouter import OpenRouterInsufficientCreditsError
                     raise OpenRouterInsufficientCreditsError(
                         "OpenRouter account has insufficient credits"
                     )

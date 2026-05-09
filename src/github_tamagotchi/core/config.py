@@ -114,12 +114,12 @@ class Settings(BaseSettings):
 
         try:
             decoded = base64.urlsafe_b64decode(v)
-        except Exception:
+        except Exception as exc:
             raise ValueError(
                 "token_encryption_key is not valid base64. "
                 "Generate one with: python -c "
                 "'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
-            )
+            ) from exc
         if len(decoded) != 32:
             raise ValueError(
                 f"token_encryption_key must decode to 32 bytes, got {len(decoded)}. "

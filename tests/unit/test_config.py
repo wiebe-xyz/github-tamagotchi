@@ -133,17 +133,17 @@ class TestTokenEncryptionKeyValidation:
             assert settings.token_encryption_key == key
 
     def test_invalid_base64_rejected(self) -> None:
-        with patch.dict(os.environ, {"TOKEN_ENCRYPTION_KEY": "not-valid-base64!!!"}):
-            with pytest.raises(Exception, match="32 bytes"):
-                Settings()
+        env = {"TOKEN_ENCRYPTION_KEY": "not-valid-base64!!!"}
+        with patch.dict(os.environ, env), pytest.raises(Exception, match="32 bytes"):
+            Settings()
 
     def test_wrong_length_rejected(self) -> None:
         import base64
 
         short_key = base64.urlsafe_b64encode(b"tooshort").decode()
-        with patch.dict(os.environ, {"TOKEN_ENCRYPTION_KEY": short_key}):
-            with pytest.raises(Exception, match="32 bytes"):
-                Settings()
+        env = {"TOKEN_ENCRYPTION_KEY": short_key}
+        with patch.dict(os.environ, env), pytest.raises(Exception, match="32 bytes"):
+            Settings()
 
     def test_none_key_accepted(self) -> None:
         settings = Settings()

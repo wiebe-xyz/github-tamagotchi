@@ -15,6 +15,7 @@ from github_tamagotchi.services.image_generation import (
     NEGATIVE_PROMPT,
     STYLES,
     GenerationResult,
+    OpenRouterInsufficientCreditsError,
     build_prompt,
     get_pet_appearance,
 )
@@ -28,10 +29,6 @@ from github_tamagotchi.services.sprite_sheet import (
 )
 
 logger = structlog.get_logger()
-
-
-class OpenRouterInsufficientCreditsError(Exception):
-    """Raised when the OpenRouter account has insufficient credits (HTTP 402)."""
 _tracer = get_tracer(__name__)
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
