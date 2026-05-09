@@ -109,7 +109,24 @@ class Settings(BaseSettings):
     def validate_token_encryption_key(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        return v.strip()
+        v = v.strip()
+        import base64
+
+        try:
+            decoded = base64.urlsafe_b64decode(v)
+        except Exception:
+            raise ValueError(
+                "token_encryption_key is not valid base64. "
+                "Generate one with: python -c "
+                "'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
+        if len(decoded) != 32:
+            raise ValueError(
+                f"token_encryption_key must decode to 32 bytes, got {len(decoded)}. "
+                "Generate one with: python -c "
+                "'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
+        return v
 
     @field_validator(
         "oauth_redirect_uri",

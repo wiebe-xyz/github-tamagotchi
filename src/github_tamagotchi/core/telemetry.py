@@ -47,8 +47,12 @@ def init_telemetry(app: FastAPI) -> None:
     sampler = TraceIdRatioBased(settings.otel_traces_sample_rate)
     _provider = TracerProvider(resource=resource, sampler=sampler)
 
-    exporter = OTLPSpanExporter()
-    _provider.add_span_processor(BatchSpanProcessor(exporter))
+    exporter = OTLPSpanExporter(timeout=5)
+    _provider.add_span_processor(BatchSpanProcessor(
+        exporter,
+        max_export_batch_size=128,
+        export_timeout_millis=5000,
+    ))
     trace.set_tracer_provider(_provider)
 
     FastAPIInstrumentor.instrument_app(app)
