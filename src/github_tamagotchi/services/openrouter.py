@@ -28,6 +28,10 @@ from github_tamagotchi.services.sprite_sheet import (
 )
 
 logger = structlog.get_logger()
+
+
+class OpenRouterInsufficientCreditsError(Exception):
+    """Raised when the OpenRouter account has insufficient credits (HTTP 402)."""
 _tracer = get_tracer(__name__)
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -167,6 +171,10 @@ class OpenRouterService:
                         headers=headers,
                         json=payload,
                     )
+                    if response.status_code == 402:
+                        raise OpenRouterInsufficientCreditsError(
+                            "OpenRouter account has insufficient credits"
+                        )
                     response.raise_for_status()
                     data = response.json()
 
