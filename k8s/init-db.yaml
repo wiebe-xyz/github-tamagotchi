@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: github-tamagotchi-init-db
-  namespace: nijmegen-testing
+  namespace: tama-test
 spec:
   ttlSecondsAfterFinished: 300
   template:
@@ -62,7 +62,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: github-tamagotchi-init-minio
-  namespace: nijmegen-testing
+  namespace: tama-test
 spec:
   ttlSecondsAfterFinished: 300
   template:
