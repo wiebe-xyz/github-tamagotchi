@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: github-tamagotchi-init-db
-  namespace: tama-prod
+  namespace: tama-staging
 spec:
   ttlSecondsAfterFinished: 300
   template:
@@ -13,7 +13,7 @@ spec:
           image: postgres:16-alpine
           env:
             - name: PGHOST
-              value: postgresql.tama-prod.svc.cluster.local
+              value: postgresql.tama-staging.svc.cluster.local
             - name: PGPORT
               value: "5432"
             - name: PGUSER

@@ -106,7 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Deploy to nijmegen-testing
+      - name: Deploy to tama-test
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
           BUGBARN_API_KEY: ${{ secrets.BUGBARN_API_KEY_PROD }}
@@ -119,7 +119,7 @@ jobs:
           chmod 600 ~/.kube/config
 
           IMAGE="ghcr.io/${{ github.repository }}:${{ github.sha }}"
-          NS="nijmegen-testing"
+          NS="tama-test"
 
           # Patch secrets
           kubectl patch secret github-tamagotchi-secrets -n $NS \

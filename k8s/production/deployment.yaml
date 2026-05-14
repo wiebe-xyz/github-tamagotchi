@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: github-tamagotchi-blue
-  namespace: tamagotchi-production
+  namespace: tama-prod
   labels:
     app: github-tamagotchi
     version: blue
@@ -179,7 +179,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: github-tamagotchi-green
-  namespace: tamagotchi-production
+  namespace: tama-prod
   labels:
     app: github-tamagotchi
     version: green
@@ -356,7 +356,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: github-tamagotchi
-  namespace: tamagotchi-production
+  namespace: tama-prod
 spec:
   selector:
     app: github-tamagotchi
