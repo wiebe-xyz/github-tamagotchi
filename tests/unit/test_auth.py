@@ -65,8 +65,8 @@ class TestOAuthStateCleanup:
 
     def test_cleanup_removes_expired_states(self) -> None:
         _oauth_states.clear()
-        _oauth_states["fresh"] = datetime.now(UTC)
-        _oauth_states["expired"] = datetime.now(UTC) - timedelta(minutes=15)
+        _oauth_states["fresh"] = (datetime.now(UTC), None)
+        _oauth_states["expired"] = (datetime.now(UTC) - timedelta(minutes=15), None)
         _cleanup_expired_states()
         assert "fresh" in _oauth_states
         assert "expired" not in _oauth_states
@@ -367,7 +367,7 @@ class TestOAuthCallbackErrors:
     async def test_503_when_oauth_not_configured(self, auth_client: AsyncClient) -> None:
         """Returns 503 when client_id/secret is missing after state validation."""
         _oauth_states.clear()
-        _oauth_states["validstate"] = datetime.now(UTC)
+        _oauth_states["validstate"] = (datetime.now(UTC), None)
 
         with patch("github_tamagotchi.api.auth.settings") as mock_settings:
             mock_settings.github_oauth_client_id = None
