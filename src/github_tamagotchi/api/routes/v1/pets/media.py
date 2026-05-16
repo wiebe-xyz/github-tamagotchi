@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
-from github_tamagotchi.api.dependencies import DbSession, get_pet_or_404
+from github_tamagotchi.api.dependencies import DbSession
 from github_tamagotchi.models.pet import Pet, PetStage
 from github_tamagotchi.schemas.pets import ImageGenerationResponse
 from github_tamagotchi.services import pet as pet_service
@@ -68,10 +68,18 @@ async def get_pet_badge(
     session: DbSession,
     style: str | None = Query(default=None, description="Badge style override"),
 ) -> Response:
-    """Return an SVG badge representing the current pet state."""
+    """Return an SVG badge representing the current pet state.
+
+    If no pet exists yet, lazy-create a placeholder and return a
+    "click to claim" seedling badge. This turns a README badge embed into
+    the entry point of a sign-up funnel.
+    """
     import base64
 
-    from github_tamagotchi.services.badge import generate_badge_svg
+    from github_tamagotchi.services.badge import (
+        generate_badge_svg,
+        generate_seedling_badge_svg,
+    )
 
     if style is not None and style not in BADGE_STYLES:
         valid = ", ".join(sorted(BADGE_STYLES))
@@ -80,7 +88,17 @@ async def get_pet_badge(
             detail=f"Invalid badge style '{style}'. Must be one of: {valid}",
         )
 
-    pet = await get_pet_or_404(repo_owner, repo_name, session)
+    pet, created = await pet_service.get_or_create_placeholder(
+        session, repo_owner, repo_name
+    )
+    if created:
+        logger.info(
+            "badge_placeholder_created",
+            repo=f"{repo_owner}/{repo_name}",
+        )
+    if pet.is_placeholder:
+        svg = generate_seedling_badge_svg(repo_owner, repo_name)
+        return Response(content=svg, media_type="image/svg+xml", headers=_SVG_HEADERS)
 
     pet_image_b64: str | None = None
     try:

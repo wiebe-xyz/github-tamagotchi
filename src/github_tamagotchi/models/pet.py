@@ -188,6 +188,16 @@ class Pet(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
 
+    # Placeholder pets are lazy-created on a badge fetch for a repo nobody has
+    # claimed yet. They have no owner, no scheduled polling, and no image
+    # generation until somebody claims them via the OAuth flow.
+    is_placeholder: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"
