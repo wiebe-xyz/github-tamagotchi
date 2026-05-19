@@ -23,6 +23,7 @@ async def create_pet(
     name: str,
     user_id: int | None = None,
     style: str = "kawaii",
+    is_placeholder: bool = False,
 ) -> Pet:
     """Create a new pet with generated personality traits."""
     personality = generate_personality(repo_owner, repo_name)
@@ -32,6 +33,7 @@ async def create_pet(
         name=name,
         user_id=user_id,
         style=style,
+        is_placeholder=is_placeholder,
         personality_activity=personality.activity,
         personality_sociability=personality.sociability,
         personality_bravery=personality.bravery,
@@ -39,6 +41,17 @@ async def create_pet(
         personality_appetite=personality.appetite,
     )
     db.add(pet)
+    await _commit_refresh(db, pet)
+    return pet
+
+
+async def claim_placeholder(
+    db: AsyncSession, pet: Pet, user_id: int
+) -> Pet:
+    """Bind a placeholder pet to an owning user. Idempotent on already-claimed pets."""
+    pet.user_id = user_id
+    pet.is_placeholder = False
+    pet.claimed_at = datetime.now(UTC)
     await _commit_refresh(db, pet)
     return pet
 
@@ -60,8 +73,9 @@ async def get_pets(
     """Get pets with pagination, optionally filtered by user."""
     offset = (page - 1) * per_page
 
-    base_query = select(Pet)
-    count_query = select(func.count()).select_from(Pet)
+    # Hide placeholders from listing — they're a sign-up artifact, not real pets
+    base_query = select(Pet).where(Pet.is_placeholder.is_(False))
+    count_query = select(func.count()).select_from(Pet).where(Pet.is_placeholder.is_(False))
     if user_id is not None:
         base_query = base_query.where(Pet.user_id == user_id)
         count_query = count_query.where(Pet.user_id == user_id)
@@ -269,9 +283,11 @@ async def update_canonical_appearance(
 
 
 async def get_all(db: AsyncSession, limit: int = 10000) -> list[Pet]:
-    """Return all pets up to the given limit."""
+    """Return all real pets up to the given limit. Placeholders are excluded."""
     try:
-        result = await db.execute(select(Pet).limit(limit))
+        result = await db.execute(
+            select(Pet).where(Pet.is_placeholder.is_(False)).limit(limit)
+        )
         return list(result.scalars().all())
     except SQLAlchemyError as exc:
         raise RepositoryError(str(exc)) from exc

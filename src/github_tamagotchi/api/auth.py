@@ -1,6 +1,7 @@
 """GitHub OAuth authentication routes."""
 
 import logging
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -26,8 +27,10 @@ auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
-# In-memory state store for CSRF protection during OAuth flow
-_oauth_states: dict[str, datetime] = {}
+# In-memory state store for CSRF protection during OAuth flow.
+# Values are (created_at, optional_claim_target). claim_target is "owner/repo"
+# when the OAuth flow was initiated from a badge "click to claim" link.
+_oauth_states: dict[str, tuple[datetime, str | None]] = {}
 _STATE_TTL_MINUTES = 10
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
@@ -65,9 +68,24 @@ def _cleanup_expired_states() -> None:
     """Remove expired OAuth states."""
     now = datetime.now(UTC)
     max_age = _STATE_TTL_MINUTES * 60
-    expired = [k for k, v in _oauth_states.items() if (now - v).total_seconds() > max_age]
+    expired = [
+        k for k, (created, _claim) in _oauth_states.items()
+        if (now - created).total_seconds() > max_age
+    ]
     for k in expired:
         del _oauth_states[k]
+
+
+_CLAIM_RE = re.compile(r"^[\w.-]{1,100}/[\w.-]{1,100}$")
+
+
+def _parse_claim(claim: str | None) -> str | None:
+    """Validate `owner/repo` shape; return normalised value or None."""
+    if not claim:
+        return None
+    if not _CLAIM_RE.match(claim):
+        return None
+    return claim
 
 
 async def get_current_user(
@@ -133,9 +151,82 @@ async def get_optional_user(
     return user
 
 
+class _ClaimError(Exception):
+    """Raised when an OAuth claim cannot be completed."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def _verify_github_repo_access(access_token: str, owner: str, repo: str) -> bool:
+    """Return True if the OAuth user can see this repo via GitHub's API.
+
+    A 200 from `GET /repos/{owner}/{repo}` is enough — for private repos this
+    requires the user have at least read access. We don't require push, on the
+    assumption that anyone who can see the repo has a legitimate interest in
+    its tamagotchi (and the API today allows anonymous pet creation anyway).
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{owner}/{repo}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+    return resp.status_code == 200
+
+
+async def _claim_placeholder_for_user(
+    *,
+    session: AsyncSession,
+    user: User,
+    access_token: str,
+    claim_target: str,
+) -> tuple[str, str]:
+    """Bind the placeholder pet for claim_target to `user`, queueing first image.
+
+    Returns (owner, repo) on success. Raises _ClaimError with a reason slug
+    that the caller can surface in a redirect query string.
+    """
+    from github_tamagotchi.models.pet import PetStage
+    from github_tamagotchi.services import image_queue
+    from github_tamagotchi.services import pet as pet_service
+
+    owner, repo = claim_target.split("/", 1)
+
+    pet = await pet_service.get_by_repo(session, owner, repo)
+    if pet is None:
+        raise _ClaimError("not_found")
+    if not pet.is_placeholder and pet.user_id is not None:
+        if pet.user_id == user.id:
+            return owner, repo  # idempotent: already mine
+        raise _ClaimError("already_claimed")
+
+    if not await _verify_github_repo_access(access_token, owner, repo):
+        raise _ClaimError("no_access")
+
+    await pet_service.claim_placeholder(session, pet, user_id=user.id)
+    try:
+        await image_queue.create_job(session, pet.id, PetStage.EGG.value)
+    except ValueError:
+        # Image generation not configured — leave pet unclaimed-image; user can regenerate later.
+        logger.info(
+            "claim_image_enqueue_skipped pet_id=%s reason=no_provider",
+            pet.id,
+        )
+    return owner, repo
+
+
 @auth_router.get("/github")
-async def login_github(response: Response) -> Response:
-    """Redirect to GitHub OAuth authorization page."""
+async def login_github(response: Response, claim: str | None = None) -> Response:
+    """Redirect to GitHub OAuth authorization page.
+
+    When `claim=owner/repo` is provided (from a badge "click to claim" link),
+    the value is bound to the OAuth state and consumed in /auth/callback to
+    finish binding the placeholder pet to the authenticated user.
+    """
     if not settings.github_oauth_client_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -144,7 +235,7 @@ async def login_github(response: Response) -> Response:
 
     _cleanup_expired_states()
     state = secrets.token_urlsafe(32)
-    _oauth_states[state] = datetime.now(UTC)
+    _oauth_states[state] = (datetime.now(UTC), _parse_claim(claim))
 
     params = {
         "client_id": settings.github_oauth_client_id,
@@ -176,6 +267,7 @@ async def oauth_callback(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired OAuth state",
         )
+    _state_created, claim_target = _oauth_states[state]
     del _oauth_states[state]
 
     if not settings.github_oauth_client_id or not settings.github_oauth_client_secret:
@@ -280,12 +372,35 @@ async def oauth_callback(
         span.set_attribute("auth.user_id", str(user.id))
         span.set_attribute("auth.is_admin", user.is_admin)
 
+        # If the OAuth flow was initiated from a "click to claim" badge,
+        # verify GitHub access and bind the placeholder pet to this user.
+        redirect_target = "/register"
+        if claim_target:
+            try:
+                bound = await _claim_placeholder_for_user(
+                    session=session,
+                    user=user,
+                    access_token=access_token,
+                    claim_target=claim_target,
+                )
+            except _ClaimError as claim_exc:
+                logger.warning(
+                    "oauth_claim_failed: %s — claim_target=%s user=%s",
+                    claim_exc.reason,
+                    claim_target,
+                    user.github_login,
+                )
+                redirect_target = f"/?claim_error={claim_exc.reason}&repo={claim_target}"
+            else:
+                owner, repo = bound
+                redirect_target = f"/pets/{owner}/{repo}"
+
         # Create JWT session token
         token = _create_jwt(user.id)
 
         response = Response(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"location": "/register"},
+            headers={"location": redirect_target},
         )
         response.set_cookie(
             key="session_token",

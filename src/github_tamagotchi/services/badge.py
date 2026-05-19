@@ -478,6 +478,53 @@ def _dependent_flair_text(dependent_count: int) -> str | None:
     return None
 
 
+def generate_seedling_badge_svg(repo_owner: str, repo_name: str) -> str:
+    """Badge served when no claimed pet exists yet for the repo.
+
+    A placeholder pet is created on first badge fetch (see badge route). This
+    SVG nudges the README reader / repo owner to click through and bind the
+    pet to their GitHub account via OAuth.
+
+    README authors typically wrap the badge image in a Markdown link, e.g.
+
+        [![tamagotchi](.../badge.svg)](https://tamagotchi.webwiebe.nl/?claim=owner/repo)
+
+    so the SVG itself only needs to make the call-to-action visible.
+    """
+    label = f"{repo_owner}/{repo_name}"
+    if len(label) > 22:
+        label = label[:21] + "…"
+    label_w = 90
+    value_w = 80
+    total_w = label_w + value_w
+    label_x = label_w // 2
+    value_x = label_w + value_w // 2
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="20"'
+        f' role="img" aria-label="tamagotchi: click to claim">',
+        f"  <title>{label} — click to claim your tamagotchi</title>",
+        "  <defs>",
+        '    <linearGradient id="s" x2="0" y2="100%">',
+        '      <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>',
+        '      <stop offset="1" stop-opacity=".1"/>',
+        "    </linearGradient>",
+        f'    <clipPath id="r"><rect width="{total_w}" height="20" rx="3"/></clipPath>',
+        "  </defs>",
+        '  <g clip-path="url(#r)">',
+        f'    <rect width="{label_w}" height="20" fill="#555"/>',
+        f'    <rect x="{label_w}" width="{value_w}" height="20" fill="#16a34a"/>',
+        f'    <rect width="{total_w}" height="20" fill="url(#s)"/>',
+        "  </g>",
+        f'  <text x="{label_x}" y="14" font-size="10" fill="#fff" text-anchor="middle"'
+        f' font-family="DejaVu Sans,Verdana,Geneva,sans-serif">🥚 tamagotchi</text>',
+        f'  <text x="{value_x}" y="14" font-size="10" fill="#fff" text-anchor="middle"'
+        f' font-family="DejaVu Sans,Verdana,Geneva,sans-serif">click to claim</text>',
+        "</svg>",
+    ]
+    return "\n".join(lines)
+
+
 def generate_badge_svg(
     name: str,
     stage: str,

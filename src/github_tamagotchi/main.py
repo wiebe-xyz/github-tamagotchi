@@ -319,8 +319,8 @@ async def _poll_repositories_inner(triggered_by: str, poll_span: Any) -> None:
 
     try:
         async with async_session_factory() as session:
-            # Query all pets
-            result = await session.execute(select(Pet))
+            # Query all real pets; placeholders are skipped until claimed.
+            result = await session.execute(select(Pet).where(Pet.is_placeholder.is_(False)))
             pets = result.scalars().all()
             total_pets = len(pets)
 

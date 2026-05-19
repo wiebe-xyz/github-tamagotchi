@@ -64,7 +64,12 @@ async def create(
     user_id: int | None,
     style: str,
 ) -> Pet:
-    """Create a pet, raising ConflictError if one already exists for the repo."""
+    """Create a pet, or claim a pre-existing placeholder for this repo.
+
+    Raises ConflictError if a real (claimed or anonymous) pet already exists.
+    A placeholder pet — auto-created by the badge endpoint — is upgraded to
+    a real pet bound to the given user_id.
+    """
     with _tracer.start_as_current_span(
         "service.pet.create",
         attributes={
@@ -75,11 +80,43 @@ async def create(
         },
     ):
         existing = await pet_repo.get_pet_by_repo(db, owner, repo)
+        if existing and existing.is_placeholder:
+            existing.name = name
+            existing.style = style
+            if user_id is not None:
+                return await pet_repo.claim_placeholder(db, existing, user_id)
+            return await pet_repo.save(db, existing)
         if existing:
             raise ConflictError(f"Pet already exists for {owner}/{repo}")
         return await pet_repo.create_pet(
             db, owner, repo, name, user_id=user_id, style=style
         )
+
+
+async def get_or_create_placeholder(
+    db: AsyncSession, owner: str, repo: str
+) -> tuple[Pet, bool]:
+    """Return the pet for owner/repo; if none exists, lazy-create a placeholder.
+
+    Returns (pet, created). Placeholders carry no user_id, no scheduled polling,
+    and trigger no image generation until claimed via the OAuth flow. Used by
+    the public badge endpoint so a README badge can act as a sign-up funnel.
+    """
+    from github_tamagotchi.services.naming import generate_name_from_repo
+
+    existing = await pet_repo.get_pet_by_repo(db, owner, repo)
+    if existing is not None:
+        return existing, False
+    name = generate_name_from_repo(owner, repo)
+    pet = await pet_repo.create_pet(
+        db, owner, repo, name, user_id=None, is_placeholder=True
+    )
+    return pet, True
+
+
+async def claim_placeholder(db: AsyncSession, pet: Pet, user_id: int) -> Pet:
+    """Bind a placeholder pet to a user. No-op-ish if the pet isn't a placeholder."""
+    return await pet_repo.claim_placeholder(db, pet, user_id)
 
 
 async def delete(db: AsyncSession, pet: Pet) -> None:

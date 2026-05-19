@@ -241,10 +241,18 @@ class TestBadgeEndpoint:
         assert "</svg>" in body
         assert "Buddy" in body
 
-    async def test_badge_not_found(self, async_client: AsyncClient) -> None:
-        """Badge endpoint returns 404 when pet does not exist."""
+    async def test_badge_unknown_repo_returns_seedling_placeholder(
+        self, async_client: AsyncClient
+    ) -> None:
+        """Unknown repo lazy-creates a placeholder and serves a "click to claim" badge.
+
+        See feat/badge-auto-signup: the badge endpoint is a sign-up funnel; a
+        404 here would defeat the whole flow. Placeholder creation is verified
+        in tests/test_badge_auto_signup.py.
+        """
         response = await async_client.get("/api/v1/pets/nobody/norepo/badge.svg")
-        assert response.status_code == 404
+        assert response.status_code == 200
+        assert "click to claim" in response.text
 
     async def test_badge_falls_back_to_emoji_when_no_image(self, async_client: AsyncClient) -> None:
         """Badge endpoint returns emoji-based SVG when no sprite is in storage."""
