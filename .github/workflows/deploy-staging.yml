@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Deploy to nijmegen-staging
+      - name: Deploy to tama-staging
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
@@ -76,13 +76,22 @@ jobs:
 
           TAG="${GITHUB_REF#refs/tags/}"
           IMAGE="ghcr.io/${{ github.repository }}:$TAG"
-          NS="nijmegen-staging"
+          NS="tama-staging"
 
           # Ensure namespace and resources exist
           kubectl apply -f k8s/staging/namespace.yaml
 
+          # Ensure bootstrap postgresql credentials exist (only created on first deploy)
+          kubectl get secret postgresql-secrets -n $NS >/dev/null 2>&1 || \
+            kubectl create secret generic postgresql-secrets -n $NS \
+              --from-literal=POSTGRES_USER=postgres \
+              --from-literal=POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=')" \
+              --from-literal=POSTGRES_DB=postgres
+
+          kubectl apply -f k8s/staging/postgres.yaml
+
           # Ensure deployments + service exist
-          sed 's/namespace: nijmegen-testing/namespace: nijmegen-staging/g; s|tamagotchi.nijmegen.wiebe.xyz|tamagotchi-staging.nijmegen.wiebe.xyz|g' \
+          sed 's/namespace: tama-test/namespace: tama-staging/g; s|tamagotchi.nijmegen.wiebe.xyz|tamagotchi-staging.nijmegen.wiebe.xyz|g' \
             k8s/deployment.yaml | kubectl apply -f -
 
           kubectl apply -f k8s/staging/ingress.yaml
@@ -126,6 +135,13 @@ jobs:
           ")
           kubectl patch secret github-tamagotchi-secrets -n $NS \
             --type='merge' -p="$PATCH_JSON"
+
+          # Wait for postgres, then bootstrap app role/database
+          kubectl rollout status statefulset/postgresql -n $NS --timeout=180s
+          kubectl delete job github-tamagotchi-init-db -n $NS --ignore-not-found
+          kubectl apply -f k8s/staging/init-db.yaml
+          kubectl wait --for=condition=complete --timeout=180s \
+            job/github-tamagotchi-init-db -n $NS
 
           # Blue-green deploy
           ACTIVE=$(kubectl get service github-tamagotchi -n $NS \

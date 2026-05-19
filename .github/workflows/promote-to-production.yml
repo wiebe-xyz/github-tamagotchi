@@ -25,9 +25,9 @@ jobs:
           chmod 600 "$KUBECFG"
           export KUBECONFIG="$KUBECFG"
 
-          SHA=$(kubectl get configmap deploy-state -n nijmegen-staging \
+          SHA=$(kubectl get configmap deploy-state -n tama-staging \
             -o jsonpath='{.data.sha}')
-          TAG=$(kubectl get configmap deploy-state -n nijmegen-staging \
+          TAG=$(kubectl get configmap deploy-state -n tama-staging \
             -o jsonpath='{.data.tag}')
 
           if [ -z "$SHA" ] || [ -z "$TAG" ]; then
@@ -87,7 +87,7 @@ jobs:
         with:
           ref: ${{ needs.read-staging-state.outputs.sha }}
 
-      - name: Deploy to tamagotchi-production on layer7
+      - name: Deploy to tama-prod on layer7
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_PROD }}
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
@@ -114,12 +114,21 @@ jobs:
           IMAGE="ghcr.io/${{ github.repository }}:${{ needs.promote-image.outputs.version }}"
           SHA="${{ needs.read-staging-state.outputs.sha }}"
           TAG="${{ needs.read-staging-state.outputs.tag }}"
-          NS="tamagotchi-production"
+          NS="tama-prod"
 
           echo "Deploying $IMAGE to $NS (from staging $TAG)"
 
           # Apply production manifests
           kubectl apply -f k8s/production/namespace.yaml
+
+          # Ensure bootstrap postgresql credentials exist (only created on first deploy)
+          kubectl get secret postgresql-secrets -n $NS >/dev/null 2>&1 || \
+            kubectl create secret generic postgresql-secrets -n $NS \
+              --from-literal=POSTGRES_USER=postgres \
+              --from-literal=POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=')" \
+              --from-literal=POSTGRES_DB=postgres
+
+          kubectl apply -f k8s/production/postgres.yaml
           kubectl apply -f k8s/production/middleware.yaml
           kubectl apply -f k8s/production/deployment.yaml
           kubectl apply -f k8s/production/ingress.yaml
@@ -164,6 +173,13 @@ jobs:
           ")
           kubectl patch secret github-tamagotchi-secrets -n $NS \
             --type='merge' -p="$PATCH_JSON"
+
+          # Wait for postgres, then bootstrap app role/database
+          kubectl rollout status statefulset/postgresql -n $NS --timeout=180s
+          kubectl delete job github-tamagotchi-init-db -n $NS --ignore-not-found
+          kubectl apply -f k8s/production/init-db.yaml
+          kubectl wait --for=condition=complete --timeout=180s \
+            job/github-tamagotchi-init-db -n $NS
 
           # Blue-green deploy
           ACTIVE=$(kubectl get service github-tamagotchi -n $NS \

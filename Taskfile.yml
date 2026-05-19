@@ -220,10 +220,9 @@ tasks:
   k8s:init:
     desc: Run init jobs for testing (database + MinIO)
     cmds:
-      - ssh deployer@k3s1 "kubectl delete job github-tamagotchi-init-db github-tamagotchi-init-minio -n nijmegen-testing --ignore-not-found"
+      - ssh deployer@k3s1 "kubectl delete job github-tamagotchi-init-db -n tama-test --ignore-not-found"
       - cat k8s/init-db.yaml | ssh deployer@k3s1 "kubectl apply -f -"
-      - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n nijmegen-testing --timeout=60s"
-      - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n nijmegen-testing --timeout=60s"
+      - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n tama-test --timeout=180s"
 
   k8s:deploy:
     desc: Apply all k8s manifests and scale up blue (testing, initial setup)
@@ -231,28 +230,27 @@ tasks:
       - task: k8s:secrets
       - task: k8s:init
       - cat k8s/deployment.yaml | ssh deployer@k3s1 "kubectl apply -f -"
-      - ssh deployer@k3s1 "kubectl scale deployment/github-tamagotchi-blue --replicas=1 -n nijmegen-testing"
-      - ssh deployer@k3s1 "kubectl rollout status deployment/github-tamagotchi-blue -n nijmegen-testing --timeout=120s"
+      - ssh deployer@k3s1 "kubectl scale deployment/github-tamagotchi-blue --replicas=1 -n tama-test"
+      - ssh deployer@k3s1 "kubectl rollout status deployment/github-tamagotchi-blue -n tama-test --timeout=120s"
 
   k8s:status:
     desc: Show pod status for github-tamagotchi (testing)
     cmds:
-      - ssh deployer@k3s1 "kubectl get pods -n nijmegen-testing -l app=github-tamagotchi -o wide"
+      - ssh deployer@k3s1 "kubectl get pods -n tama-test -l app=github-tamagotchi -o wide"
 
   k8s:logs:
     desc: Tail logs from the active testing pod
     cmds:
-      - ssh deployer@k3s1 "ACTIVE=\$(kubectl get service github-tamagotchi -n nijmegen-testing -o jsonpath='{.spec.selector.version}'); kubectl logs -n nijmegen-testing -l app=github-tamagotchi,version=\$ACTIVE --tail=50 -f"
+      - ssh deployer@k3s1 "ACTIVE=\$(kubectl get service github-tamagotchi -n tama-test -o jsonpath='{.spec.selector.version}'); kubectl logs -n tama-test -l app=github-tamagotchi,version=\$ACTIVE --tail=50 -f"
 
   # --- Kubernetes (production — layer7) ---
 
   k8s:prod:init:
     desc: Run init jobs for production on layer7
     cmds:
-      - ssh deployer@layer7.wiebe.xyz "kubectl delete job github-tamagotchi-init-db github-tamagotchi-init-minio -n tamagotchi-production --ignore-not-found"
+      - ssh deployer@layer7.wiebe.xyz "kubectl delete job github-tamagotchi-init-db -n tama-prod --ignore-not-found"
       - cat k8s/production/init-db.yaml | ssh deployer@layer7.wiebe.xyz "kubectl apply -f -"
-      - ssh deployer@layer7.wiebe.xyz "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n tamagotchi-production --timeout=60s"
-      - ssh deployer@layer7.wiebe.xyz "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n tamagotchi-production --timeout=60s"
+      - ssh deployer@layer7.wiebe.xyz "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n tama-prod --timeout=180s"
 
   k8s:prod:deploy:
     desc: Apply production manifests to layer7 (initial setup)
@@ -265,12 +263,12 @@ tasks:
   k8s:prod:status:
     desc: Show pod status for production on layer7
     cmds:
-      - ssh deployer@layer7.wiebe.xyz "kubectl get pods -n tamagotchi-production -l app=github-tamagotchi -o wide"
+      - ssh deployer@layer7.wiebe.xyz "kubectl get pods -n tama-prod -l app=github-tamagotchi -o wide"
 
   k8s:prod:logs:
     desc: Tail logs from the active production pod on layer7
     cmds:
-      - ssh deployer@layer7.wiebe.xyz "ACTIVE=\$(kubectl get service github-tamagotchi -n tamagotchi-production -o jsonpath='{.spec.selector.version}'); kubectl logs -n tamagotchi-production -l app=github-tamagotchi,version=\$ACTIVE --tail=50 -f"
+      - ssh deployer@layer7.wiebe.xyz "ACTIVE=\$(kubectl get service github-tamagotchi -n tama-prod -o jsonpath='{.spec.selector.version}'); kubectl logs -n tama-prod -l app=github-tamagotchi,version=\$ACTIVE --tail=50 -f"
 
   k8s:prod:secrets:
     desc: Push production secrets from SOPS to k8s on layer7
@@ -298,7 +296,7 @@ tasks:
         print(json.dumps({'stringData': data}))
         ")
         echo "$PATCH" | ssh deployer@layer7.wiebe.xyz \
-          "kubectl patch secret github-tamagotchi-secrets -n tamagotchi-production --type=merge -p=\"\$(cat)\""
+          "kubectl patch secret github-tamagotchi-secrets -n tama-prod --type=merge -p=\"\$(cat)\""
 
   # --- Cleanup ---
 
