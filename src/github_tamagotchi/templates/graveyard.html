@@ -3,7 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% if username %}{{ username }}'s Graveyard{% else %}The Graveyard{% endif %} — GitHub Tamagotchi</title>
+    {% if username %}
+    {% set seo_title = username ~ "'s Graveyard — GitHub Tamagotchi" %}
+    {% set seo_description = "Memorial pages for " ~ username ~ "'s GitHub Tamagotchi pets that died of neglect or abandonment." %}
+    {% set canonical_path = "/graveyard/" ~ username %}
+    {% else %}
+    {% set seo_title = "The Graveyard — GitHub Tamagotchi" %}
+    {% set seo_description = "Memorial pages for GitHub Tamagotchi pets that died of neglect or abandonment. A reminder to maintain your repositories." %}
+    {% set canonical_path = "/graveyard" %}
+    {% endif %}
+    {% set og_image = "/pwa/icon/512.png" %}
+    {% include "_seo.html" %}
     <link rel="stylesheet" href="/static/css/style.css">
     {% include "_pwa_head.html" %}
     <style>

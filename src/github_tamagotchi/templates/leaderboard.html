@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leaderboard — GitHub Tamagotchi</title>
+    {% set seo_title = "Leaderboard — GitHub Tamagotchi" %}
+    {% set seo_description = "Top GitHub repositories by Tamagotchi pet XP and longest commit streaks. See which projects are the healthiest and most active." %}
+    {% set canonical_path = "/leaderboard" %}
+    {% set og_image = "/pwa/icon/512.png" %}
+    {% include "_seo.html" %}
     <link rel="stylesheet" href="/static/css/style.css">
     {% include "_pwa_head.html" %}
 </head>

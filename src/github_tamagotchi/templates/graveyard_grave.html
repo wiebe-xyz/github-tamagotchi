@@ -3,19 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>In Memory of {{ pet.name }} — GitHub Tamagotchi</title>
+    {% set seo_title = "In Memory of " ~ pet.name ~ " — GitHub Tamagotchi" %}
+    {% set seo_description = cause_label ~ ". Lived " ~ age_days ~ " day" ~ ('s' if age_days != 1 else '') ~ " and reached " ~ (pet.stage | upper) ~ " stage." %}
+    {% set canonical_path = "/graveyard/" ~ pet.repo_owner ~ "/" ~ pet.repo_name %}
+    {% set og_type = "article" %}
+    {% set og_title = "In Memory of " ~ pet.name ~ " (" ~ pet.repo_owner ~ "/" ~ pet.repo_name ~ ")" %}
+    {% set og_image = "/api/v1/pets/" ~ pet.repo_owner ~ "/" ~ pet.repo_name ~ "/image/" ~ pet.stage %}
+    {% set og_image_width = 1024 %}
+    {% set og_image_height = 1024 %}
+    {% set twitter_card = "summary_large_image" %}
+    {% set json_ld = [
+        {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Graveyard", "item": site_base_url ~ "/graveyard"},
+            {"@type": "ListItem", "position": 2, "name": pet.name, "item": site_base_url ~ canonical_path}
+        ]}
+    ] %}
+    {% include "_seo.html" %}
     <link rel="stylesheet" href="/static/css/style.css">
     {% include "_pwa_head.html" %}
-
-    <!-- OG tags for social sharing -->
-    <meta property="og:type" content="article">
-    <meta property="og:title" content="In Memory of {{ pet.name }} ({{ pet.repo_owner }}/{{ pet.repo_name }})">
-    <meta property="og:description" content="{{ cause_label }}. Lived {{ age_days }} day{{ 's' if age_days != 1 else '' }} and reached {{ pet.stage | upper }} stage.">
-    <meta property="og:url" content="{{ base_url }}/graveyard/{{ pet.repo_owner }}/{{ pet.repo_name }}">
-    <meta property="og:image" content="{{ base_url }}/api/v1/pets/{{ pet.repo_owner }}/{{ pet.repo_name }}/image/{{ pet.stage }}">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="In Memory of {{ pet.name }}">
-    <meta name="twitter:description" content="{{ cause_label }}. Would have been {{ would_be_days }} days old today.">
 
     <style>
         .memorial {
