@@ -80,6 +80,8 @@ templates.env.globals["funnelbarn_api_key"] = settings.funnelbarn_api_key
 templates.env.globals["bugbarn_endpoint"] = settings.bugbarn_endpoint
 templates.env.globals["bugbarn_api_key"] = settings.bugbarn_api_key
 templates.env.globals["bugbarn_project"] = settings.bugbarn_project
+templates.env.globals["site_base_url"] = settings.base_url.rstrip("/")
+templates.env.globals["site_name"] = "GitHub Tamagotchi"
 
 logger = structlog.get_logger()
 
@@ -747,6 +749,125 @@ async def pet_manifest(
     )
 
 
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt() -> Response:
+    """Robots policy. Allow public pages, block auth/admin areas, point to sitemap."""
+    base = settings.base_url.rstrip("/")
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /admin\n"
+        "Disallow: /admin/\n"
+        "Disallow: /auth/\n"
+        "Disallow: /api/\n"
+        "Disallow: /dashboard\n"
+        "Disallow: /dashboard/\n"
+        "Disallow: /register\n"
+        "Disallow: /register/\n"
+        "Disallow: /pet/*/admin\n"
+        "Disallow: /mcp\n"
+        "Disallow: /mcp/\n"
+        "\n"
+        f"Sitemap: {base}/sitemap.xml\n"
+    )
+    return Response(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml(session: Annotated[AsyncSession, Depends(get_session)]) -> Response:
+    """Dynamic XML sitemap covering all public, indexable URLs."""
+    from xml.sax.saxutils import escape as xml_escape
+
+    base = settings.base_url.rstrip("/")
+    now_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    urls: list[dict[str, str]] = [
+        {"loc": f"{base}/", "changefreq": "daily", "priority": "1.0", "lastmod": now_iso},
+        {
+            "loc": f"{base}/leaderboard",
+            "changefreq": "hourly",
+            "priority": "0.8",
+            "lastmod": now_iso,
+        },
+        {
+            "loc": f"{base}/graveyard",
+            "changefreq": "daily",
+            "priority": "0.5",
+            "lastmod": now_iso,
+        },
+    ]
+
+    # Living pets: profile + insights
+    living = await session.execute(
+        select(Pet.repo_owner, Pet.repo_name, Pet.updated_at)
+        .where(Pet.is_dead.is_(False))
+        .order_by(Pet.updated_at.desc())
+        .limit(10000)
+    )
+    seen_orgs: set[str] = set()
+    for owner, repo, updated in living.all():
+        lastmod = (updated or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        urls.append({
+            "loc": f"{base}/pet/{owner}/{repo}",
+            "changefreq": "daily",
+            "priority": "0.7",
+            "lastmod": lastmod,
+        })
+        urls.append({
+            "loc": f"{base}/pet/{owner}/{repo}/insights",
+            "changefreq": "weekly",
+            "priority": "0.5",
+            "lastmod": lastmod,
+        })
+        seen_orgs.add(owner)
+
+    # Dead pets: memorial pages
+    dead = await session.execute(
+        select(Pet.repo_owner, Pet.repo_name, Pet.died_at)
+        .where(Pet.is_dead.is_(True))
+        .order_by(Pet.died_at.desc())
+        .limit(10000)
+    )
+    for owner, repo, died in dead.all():
+        lastmod = (died or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        urls.append({
+            "loc": f"{base}/graveyard/{owner}/{repo}",
+            "changefreq": "monthly",
+            "priority": "0.4",
+            "lastmod": lastmod,
+        })
+
+    # Org overview pages (one per owner that has a pet)
+    for org in sorted(seen_orgs):
+        urls.append({
+            "loc": f"{base}/org/{org}",
+            "changefreq": "daily",
+            "priority": "0.6",
+            "lastmod": now_iso,
+        })
+
+    parts = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for u in urls:
+        parts.append("<url>")
+        parts.append(f"<loc>{xml_escape(u['loc'])}</loc>")
+        parts.append(f"<lastmod>{u['lastmod']}</lastmod>")
+        parts.append(f"<changefreq>{u['changefreq']}</changefreq>")
+        parts.append(f"<priority>{u['priority']}</priority>")
+        parts.append("</url>")
+    parts.append("</urlset>")
+
+    return Response(
+        content="".join(parts),
+        media_type="application/xml; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.middleware("http")

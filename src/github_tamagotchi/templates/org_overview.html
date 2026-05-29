@@ -3,7 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ org_name }}'s Pets — GitHub Tamagotchi</title>
+    {% set seo_title = org_name ~ "'s Pets — GitHub Tamagotchi" %}
+    {% set seo_description = "Aggregate Tamagotchi health for " ~ org_name ~ ": " ~ total ~ " pets, average " ~ avg_health ~ "% health. Contributor leaderboard and per-repo status." %}
+    {% set canonical_path = "/org/" ~ org_name %}
+    {% set og_image = "/pwa/icon/512.png" %}
+    {% set json_ld = [
+        {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home", "item": site_base_url ~ "/"},
+            {"@type": "ListItem", "position": 2, "name": org_name, "item": site_base_url ~ canonical_path}
+        ]}
+    ] %}
+    {% include "_seo.html" %}
     <link rel="stylesheet" href="/static/css/style.css">
     {% include "_pwa_head.html" %}
 </head>

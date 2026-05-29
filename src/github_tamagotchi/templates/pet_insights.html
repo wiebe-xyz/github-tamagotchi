@@ -3,7 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ pet.name }} Insights — {{ repo_owner }}/{{ repo_name }} | GitHub Tamagotchi</title>
+    {% set seo_title = pet.name ~ " Insights — " ~ repo_owner ~ "/" ~ repo_name ~ " | GitHub Tamagotchi" %}
+    {% set seo_description = "Detailed health insights for " ~ pet.name ~ ", the Tamagotchi pet for " ~ repo_owner ~ "/" ~ repo_name ~ ": commits, CI, PR/issue activity and contributor stats." %}
+    {% set canonical_path = "/pet/" ~ repo_owner ~ "/" ~ repo_name ~ "/insights" %}
+    {% set og_image = "/api/v1/pets/" ~ repo_owner ~ "/" ~ repo_name ~ "/image/" ~ pet.stage %}
+    {% set og_image_width = 1024 %}
+    {% set og_image_height = 1024 %}
+    {% include "_seo.html" %}
     <link rel="stylesheet" href="/static/css/style.css">
     {% include "_pwa_head.html" %}
     <style>
