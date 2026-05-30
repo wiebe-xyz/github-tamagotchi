@@ -25,9 +25,9 @@ jobs:
           chmod 600 "$KUBECFG"
           export KUBECONFIG="$KUBECFG"
 
-          SHA=$(kubectl get configmap deploy-state -n nijmegen-staging \
+          SHA=$(kubectl get configmap deploy-state -n tama-staging \
             -o jsonpath='{.data.sha}')
-          TAG=$(kubectl get configmap deploy-state -n nijmegen-staging \
+          TAG=$(kubectl get configmap deploy-state -n tama-staging \
             -o jsonpath='{.data.tag}')
 
           if [ -z "$SHA" ] || [ -z "$TAG" ]; then

@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Deploy to nijmegen-staging
+      - name: Deploy to tama-staging
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
@@ -76,13 +76,13 @@ jobs:
 
           TAG="${GITHUB_REF#refs/tags/}"
           IMAGE="ghcr.io/${{ github.repository }}:$TAG"
-          NS="nijmegen-staging"
+          NS="tama-staging"
 
           # Ensure namespace and resources exist
           kubectl apply -f k8s/staging/namespace.yaml
 
           # Ensure deployments + service exist
-          sed 's/namespace: nijmegen-testing/namespace: nijmegen-staging/g; s|tamagotchi.nijmegen.wiebe.xyz|tamagotchi-staging.nijmegen.wiebe.xyz|g' \
+          sed 's/namespace: nijmegen-testing/namespace: tama-staging/g; s|tamagotchi.nijmegen.wiebe.xyz|tamagotchi-staging.nijmegen.wiebe.xyz|g' \
             k8s/deployment.yaml | kubectl apply -f -
 
           kubectl apply -f k8s/staging/ingress.yaml
