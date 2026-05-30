@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: github-tamagotchi-init-db
-  namespace: tamagotchi-production
+  namespace: tama-prod
 spec:
   ttlSecondsAfterFinished: 300
   template:
@@ -61,7 +61,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: github-tamagotchi-init-minio
-  namespace: tamagotchi-production
+  namespace: tama-prod
 spec:
   ttlSecondsAfterFinished: 300
   template:
@@ -88,8 +88,8 @@ spec:
               set -e
               mc alias set minio http://minio.nijmegen-prod.svc.cluster.local:9000 admin "$MINIO_ROOT_PASSWORD"
 
-              echo "Creating bucket 'tamagotchi-production' if not exists..."
-              mc mb --ignore-existing minio/tamagotchi-production
+              echo "Creating bucket 'tama-prod' if not exists..."
+              mc mb --ignore-existing minio/tama-prod
 
               echo "Ensuring access policy for service account..."
               cat > /tmp/policy.json <<'POLICY'
@@ -99,12 +99,12 @@ spec:
                   {
                     "Effect": "Allow",
                     "Action": ["s3:*"],
-                    "Resource": ["arn:aws:s3:::tamagotchi-production", "arn:aws:s3:::tamagotchi-production/*"]
+                    "Resource": ["arn:aws:s3:::tama-prod", "arn:aws:s3:::tama-prod/*"]
                   }
                 ]
               }
               POLICY
-              mc admin policy create minio tamagotchi-production-readwrite /tmp/policy.json 2>/dev/null || true
-              mc admin policy attach minio tamagotchi-production-readwrite --user "$MINIO_ACCESS_KEY" 2>/dev/null || true
+              mc admin policy create minio tama-prod-readwrite /tmp/policy.json 2>/dev/null || true
+              mc admin policy attach minio tama-prod-readwrite --user "$MINIO_ACCESS_KEY" 2>/dev/null || true
 
               echo "MinIO setup complete."

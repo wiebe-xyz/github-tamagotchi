@@ -87,7 +87,7 @@ jobs:
         with:
           ref: ${{ needs.read-staging-state.outputs.sha }}
 
-      - name: Deploy to tamagotchi-production on layer7
+      - name: Deploy to tama-prod on layer7
         env:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_PROD }}
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
@@ -114,7 +114,7 @@ jobs:
           IMAGE="ghcr.io/${{ github.repository }}:${{ needs.promote-image.outputs.version }}"
           SHA="${{ needs.read-staging-state.outputs.sha }}"
           TAG="${{ needs.read-staging-state.outputs.tag }}"
-          NS="tamagotchi-production"
+          NS="tama-prod"
 
           echo "Deploying $IMAGE to $NS (from staging $TAG)"
 
