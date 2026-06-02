@@ -393,7 +393,7 @@ async def oauth_callback(
                 redirect_target = f"/?claim_error={claim_exc.reason}&repo={claim_target}"
             else:
                 owner, repo = bound
-                redirect_target = f"/pets/{owner}/{repo}"
+                redirect_target = f"/pet/{owner}/{repo}"
 
         # Create JWT session token
         token = _create_jwt(user.id)

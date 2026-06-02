@@ -45,7 +45,7 @@
     <main class="profile-page">
         <div class="container">
 
-            {% if not user or not user_has_pets %}
+            {% if not pet.is_placeholder and (not user or not user_has_pets) %}
             <!-- Onboarding banner: shown once per browser for new visitors, hidden for pet owners -->
             <div id="onboarding-banner" style="display:none; margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12)); border: 1px solid rgba(139,92,246,0.45); position: relative;">
                 <button
@@ -73,6 +73,32 @@
                 fbTrack(FB_EVENTS.ONBOARDING_DISMISSED);
             }
             </script>
+            {% endif %}
+
+            {% if pet.is_placeholder %}
+            <!-- Unclaimed pet banner -->
+            <div style="margin-bottom: 1.25rem; padding: 1.1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.12)); border: 1px solid rgba(139,92,246,0.45);">
+                <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                    <span style="font-size: 1.4rem;">🥚</span>
+                    <div style="flex: 1; min-width: 200px;">
+                        <strong style="color: #a78bfa; font-size: 1rem;">This pet is waiting to be claimed!</strong>
+                        <span style="color: rgba(255,255,255,0.75); font-size: 0.9rem; display: block; margin-top: 0.2rem;">
+                            Are you a contributor to <strong>{{ repo_owner }}/{{ repo_name }}</strong>? Claim this creature and keep it alive with your commits.
+                        </span>
+                    </div>
+                    {% if user %}
+                    <form method="post" action="/pet/{{ repo_owner }}/{{ repo_name }}/claim" style="margin: 0;">
+                        <button type="submit" class="cta-button" style="padding: 0.55rem 1.3rem; font-size: 0.95rem; cursor: pointer; white-space: nowrap;">
+                            &#10024; Claim this pet
+                        </button>
+                    </form>
+                    {% else %}
+                    <a href="/auth/github?claim={{ repo_owner }}/{{ repo_name }}" class="cta-button" style="padding: 0.55rem 1.3rem; font-size: 0.95rem; text-decoration: none; white-space: nowrap;">
+                        Login to claim
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
             {% endif %}
 
             {% if days_until_death is not none %}
@@ -214,7 +240,7 @@
                         {% endif %}
                     </div>
 
-                    {% if user %}
+                    {% if user and not pet.is_placeholder %}
                     <!-- Feed button -->
                     <div class="feed-row" style="margin-bottom: 1rem;">
                         <button
@@ -367,7 +393,7 @@
                         <div>
                             <div style="font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">Markdown</div>
                             <div style="position: relative;">
-                                <pre id="badge-snippet-md" style="margin: 0; padding: 0.75rem 3rem 0.75rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.82rem; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-all; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">[![My Pet]({{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg)]({{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }})</pre>
+                                <pre id="badge-snippet-md" style="margin: 0; padding: 0.75rem 3rem 0.75rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.82rem; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-all; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">[![My Pet]({{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg)]({{ base_url }}/pet/{{ repo_owner }}/{{ repo_name }})</pre>
                                 <button
                                     class="badge-copy-btn"
                                     data-target="badge-snippet-md"
@@ -381,7 +407,7 @@
                         <div>
                             <div style="font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">HTML</div>
                             <div style="position: relative;">
-                                <pre id="badge-snippet-html" style="margin: 0; padding: 0.75rem 3rem 0.75rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.82rem; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-all; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">&lt;a href="{{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }}"&gt;&lt;img src="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg" alt="My Pet"/&gt;&lt;/a&gt;</pre>
+                                <pre id="badge-snippet-html" style="margin: 0; padding: 0.75rem 3rem 0.75rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.82rem; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-all; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">&lt;a href="{{ base_url }}/pet/{{ repo_owner }}/{{ repo_name }}"&gt;&lt;img src="{{ base_url }}/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg" alt="My Pet"/&gt;&lt;/a&gt;</pre>
                                 <button
                                     class="badge-copy-btn"
                                     data-target="badge-snippet-html"
@@ -394,7 +420,7 @@
                         <!-- Badge preview -->
                         <div>
                             <div style="font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">Preview</div>
-                            <a href="{{ base_url }}/pets/{{ repo_owner }}/{{ repo_name }}">
+                            <a href="{{ base_url }}/pet/{{ repo_owner }}/{{ repo_name }}">
                                 <img src="/api/v1/pets/{{ repo_owner }}/{{ repo_name }}/badge.svg" alt="{{ pet.name }} badge" style="max-width: 100%;">
                             </a>
                         </div>

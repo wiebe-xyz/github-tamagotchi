@@ -93,8 +93,8 @@ jobs:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           GITHUB_TOKEN_SECRET: ${{ secrets.PROD_GITHUB_TOKEN || secrets.APP_GITHUB_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.PROD_OPENROUTER_API_KEY || secrets.OPENROUTER_API_KEY }}
-          MINIO_ACCESS_KEY: ${{ secrets.PROD_MINIO_ACCESS_KEY }}
-          MINIO_SECRET_KEY: ${{ secrets.PROD_MINIO_SECRET_KEY }}
+          MINIO_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
           GITHUB_OAUTH_CLIENT_ID: ${{ secrets.PROD_GITHUB_OAUTH_CLIENT_ID }}
           GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.PROD_GITHUB_OAUTH_CLIENT_SECRET }}
           JWT_SECRET_KEY: ${{ secrets.PROD_JWT_SECRET_KEY }}

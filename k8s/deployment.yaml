@@ -78,7 +78,7 @@ spec:
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
             - name: MINIO_ENDPOINT
-              value: "minio:9000"
+              value: "354b481466ca4280c50f2fb8cf9e3d45.eu.r2.cloudflarestorage.com"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -90,9 +90,9 @@ spec:
                   name: github-tamagotchi-secrets
                   key: minio-secret-key
             - name: MINIO_BUCKET
-              value: "tamagotchi"
+              value: "github-tamagotchi"
             - name: MINIO_SECURE
-              value: "false"
+              value: "true"
             - name: GITHUB_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -256,7 +256,7 @@ spec:
             - name: OPENROUTER_MODEL
               value: "google/gemini-2.5-flash-image"
             - name: MINIO_ENDPOINT
-              value: "minio:9000"
+              value: "354b481466ca4280c50f2fb8cf9e3d45.eu.r2.cloudflarestorage.com"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -268,9 +268,9 @@ spec:
                   name: github-tamagotchi-secrets
                   key: minio-secret-key
             - name: MINIO_BUCKET
-              value: "tamagotchi"
+              value: "github-tamagotchi"
             - name: MINIO_SECURE
-              value: "false"
+              value: "true"
             - name: GITHUB_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
