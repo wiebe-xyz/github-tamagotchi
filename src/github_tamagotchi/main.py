@@ -1271,9 +1271,11 @@ async def pet_profile(
     session: DbSession,
 ) -> HTMLResponse:
     """Public pet profile page."""
+    from github_tamagotchi.services import pet as pet_service
+
     pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
     if not pet:
-        raise HTTPException(status_code=404, detail="Pet not found")
+        pet, _ = await pet_service.get_or_create_placeholder(session, repo_owner, repo_name)
 
     # Build evolution timeline
     stages = list(PetStage)
@@ -1349,8 +1351,61 @@ async def pet_profile(
             "contributor_relationships": contributor_relationships,
             "days_until_death": days_until_death,
         },
-        headers={"Cache-Control": "public, max-age=60"},
+        headers={
+            "Cache-Control": "no-store" if pet.is_placeholder else "public, max-age=60"
+        },
     )
+
+
+@app.post("/pet/{repo_owner}/{repo_name}/claim")
+async def claim_pet(
+    repo_owner: str,
+    repo_name: str,
+    user: OptionalUser,
+    session: DbSession,
+) -> Response:
+    """Claim a placeholder pet for the already-authenticated user.
+
+    Logged-in users reach this via the claim button on the pet profile page.
+    Their stored GitHub token is used to verify repo access, so no extra OAuth
+    round-trip is needed. Users without a stored token are bounced to OAuth.
+    """
+    from github_tamagotchi.api.auth import _verify_github_repo_access
+    from github_tamagotchi.models.pet import PetStage
+    from github_tamagotchi.services import image_queue
+    from github_tamagotchi.services import pet as pet_service
+    from github_tamagotchi.services.token_encryption import decrypt_token
+
+    if not user:
+        return RedirectResponse(
+            url=f"/auth/github?claim={repo_owner}/{repo_name}", status_code=302
+        )
+
+    if not user.encrypted_token:
+        return RedirectResponse(
+            url=f"/auth/github?claim={repo_owner}/{repo_name}", status_code=302
+        )
+
+    pet = await pet_crud.get_pet_by_repo(session, repo_owner, repo_name)
+    if pet is None:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    if not pet.is_placeholder:
+        if pet.user_id == user.id:
+            return RedirectResponse(url=f"/pet/{repo_owner}/{repo_name}", status_code=303)
+        raise HTTPException(status_code=409, detail="Pet already claimed by another user")
+
+    token = decrypt_token(user.encrypted_token)
+    if not await _verify_github_repo_access(token, repo_owner, repo_name):
+        raise HTTPException(status_code=403, detail="No access to this repository")
+
+    await pet_service.claim_placeholder(session, pet, user_id=user.id)
+    try:
+        await image_queue.create_job(session, pet.id, PetStage.EGG.value)
+    except ValueError:
+        pass
+
+    return RedirectResponse(url=f"/pet/{repo_owner}/{repo_name}", status_code=303)
 
 
 @app.get("/pet/{repo_owner}/{repo_name}/insights", response_class=HTMLResponse)

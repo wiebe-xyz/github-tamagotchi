@@ -487,7 +487,7 @@ def generate_seedling_badge_svg(repo_owner: str, repo_name: str) -> str:
 
     README authors typically wrap the badge image in a Markdown link, e.g.
 
-        [![tamagotchi](.../badge.svg)](https://tamagotchi.webwiebe.nl/?claim=owner/repo)
+        [![tamagotchi](.../badge.svg)](https://tamagotchi.webwiebe.nl/pet/owner/repo)
 
     so the SVG itself only needs to make the call-to-action visible.
     """
