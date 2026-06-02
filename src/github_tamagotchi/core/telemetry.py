@@ -64,7 +64,13 @@ def _make_resilient_exporter(base_cls: type) -> type:
 
     class _ResilientExporter(base_cls):  # type: ignore[misc]
         def export(self, spans: Any) -> Any:
-            result = super().export(spans)
+            try:
+                result = super().export(spans)
+            except Exception:
+                # OTel SDK can raise ValueError when the remaining export-timeout
+                # budget goes negative after retries (GT-24). Treat as FAILURE
+                # rather than letting it propagate and crash the worker.
+                result = SpanExportResult.FAILURE
             if result == SpanExportResult.FAILURE:
                 logger.warning(
                     "Span batch dropped to spanbarn",
