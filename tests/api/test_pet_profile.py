@@ -161,10 +161,10 @@ class TestPetProfilePage:
         )
         assert "http" in og_url_line
 
-    def test_not_found_returns_404(self, client: TestClient) -> None:
-        """Non-existent pet should return 404."""
+    def test_unknown_repo_auto_creates_placeholder(self, client: TestClient) -> None:
+        """Visiting a pet page for an unknown repo auto-creates a placeholder and returns 200."""
         response = client.get("/pet/nobody/nonexistent")
-        assert response.status_code == 404
+        assert response.status_code == 200
 
     def test_cache_control_header(self, client: TestClient) -> None:
         """Profile page should include cache control header."""

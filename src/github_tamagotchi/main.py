@@ -1370,6 +1370,8 @@ async def claim_pet(
     Their stored GitHub token is used to verify repo access, so no extra OAuth
     round-trip is needed. Users without a stored token are bounced to OAuth.
     """
+    import contextlib
+
     from github_tamagotchi.api.auth import _verify_github_repo_access
     from github_tamagotchi.models.pet import PetStage
     from github_tamagotchi.services import image_queue
@@ -1400,10 +1402,8 @@ async def claim_pet(
         raise HTTPException(status_code=403, detail="No access to this repository")
 
     await pet_service.claim_placeholder(session, pet, user_id=user.id)
-    try:
+    with contextlib.suppress(ValueError):
         await image_queue.create_job(session, pet.id, PetStage.EGG.value)
-    except ValueError:
-        pass
 
     return RedirectResponse(url=f"/pet/{repo_owner}/{repo_name}", status_code=303)
 
