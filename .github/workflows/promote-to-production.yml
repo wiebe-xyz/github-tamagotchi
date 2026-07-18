@@ -92,6 +92,7 @@ jobs:
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_PROD }}
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           GITHUB_TOKEN_SECRET: ${{ secrets.PROD_GITHUB_TOKEN || secrets.APP_GITHUB_TOKEN }}
+          GITHUB_WEBHOOK_SECRET: ${{ secrets.PROD_GITHUB_WEBHOOK_SECRET }}
           OPENROUTER_API_KEY: ${{ secrets.PROD_OPENROUTER_API_KEY || secrets.OPENROUTER_API_KEY }}
           MINIO_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
           MINIO_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
@@ -143,6 +144,7 @@ jobs:
           mappings = {
               'database-url': 'DATABASE_URL',
               'github-token': 'GITHUB_TOKEN_SECRET',
+              'github-webhook-secret': 'GITHUB_WEBHOOK_SECRET',
               'openrouter-api-key': 'OPENROUTER_API_KEY',
               'minio-access-key': 'MINIO_ACCESS_KEY',
               'minio-secret-key': 'MINIO_SECRET_KEY',
