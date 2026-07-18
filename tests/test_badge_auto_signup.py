@@ -44,6 +44,18 @@ async def test_badge_for_unknown_repo_creates_placeholder_and_serves_seedling(
 
 
 @pytest.mark.asyncio
+async def test_badge_rejects_malformed_repo_identifier(
+    async_client: AsyncClient,
+) -> None:
+    resp = await async_client.get("/api/v1/pets/owner/${ghUrl}/badge.svg")
+    assert resp.status_code == 422
+
+    from tests.conftest import test_session_factory
+    async with test_session_factory() as session:
+        assert await _count_pets(session, "owner", "${ghUrl}") == 0
+
+
+@pytest.mark.asyncio
 async def test_badge_fetch_is_idempotent(async_client: AsyncClient) -> None:
     """Repeated fetches for the same unknown repo must not create duplicates."""
     for _ in range(3):

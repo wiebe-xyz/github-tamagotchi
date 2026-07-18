@@ -50,6 +50,9 @@ _PROFANITY = {
 # Pattern that allows only alphanumeric chars and spaces
 _VALID_NAME_RE = re.compile(r"^[A-Za-z0-9 ]+$")
 
+# GitHub owner/repo segment: word chars, dots, hyphens, 1-100 chars.
+_REPO_SEGMENT_RE = re.compile(r"^[\w.-]{1,100}$")
+
 
 def generate_name_from_repo(repo_owner: str, repo_name: str) -> str:
     """Derive a cute default name from the repo name.
@@ -78,6 +81,11 @@ def generate_name_from_repo(repo_owner: str, repo_name: str) -> str:
     digest = hashlib.md5(f"{repo_owner}/{repo_name}".encode()).hexdigest()
     idx = int(digest, 16) % len(CUTE_NAMES)
     return CUTE_NAMES[idx]
+
+
+def is_valid_repo_identifier(owner: str, repo: str) -> bool:
+    """Return True if owner and repo look like real GitHub identifiers."""
+    return bool(_REPO_SEGMENT_RE.match(owner)) and bool(_REPO_SEGMENT_RE.match(repo))
 
 
 def is_valid_pet_name(name: str) -> bool:

@@ -14,6 +14,7 @@ from github_tamagotchi.schemas.pets import ImageGenerationResponse
 from github_tamagotchi.services import pet as pet_service
 from github_tamagotchi.services.badge import BADGE_STYLES
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE
+from github_tamagotchi.services.naming import is_valid_repo_identifier
 from github_tamagotchi.services.sprite_sheet import compose_animated_gif
 from github_tamagotchi.services.storage import StorageService
 
@@ -26,6 +27,18 @@ _SVG_HEADERS = {
     "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
     "Content-Type": "image/svg+xml; charset=utf-8",
 }
+
+def _validate_repo_identifier(repo_owner: str, repo_name: str) -> None:
+    """Raise 422 if repo_owner/repo_name don't look like real GitHub identifiers.
+
+    Guards the lazy placeholder-pet creation path below from being used to
+    stash arbitrary strings (e.g. unresolved template placeholders) in the DB.
+    """
+    if not is_valid_repo_identifier(repo_owner, repo_name):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="repo_owner/repo_name must be valid GitHub identifiers",
+        )
 
 
 def get_storage_service() -> StorageService:
@@ -87,6 +100,7 @@ async def get_pet_badge(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid badge style '{style}'. Must be one of: {valid}",
         )
+    _validate_repo_identifier(repo_owner, repo_name)
 
     pet, created = await pet_service.get_or_create_placeholder(
         session, repo_owner, repo_name
