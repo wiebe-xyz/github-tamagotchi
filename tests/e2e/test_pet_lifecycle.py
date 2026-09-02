@@ -42,6 +42,20 @@ class TestPetLifecycle:
         resp2 = await e2e_client.post("/api/v1/pets", json=payload)
         assert resp2.status_code == 409
 
+    async def test_create_pet_rejects_malformed_repo_identifier(
+        self, e2e_client: AsyncClient
+    ) -> None:
+        """Unresolved template placeholders (${ghUrl}, *, ...) must not be persisted."""
+        resp = await e2e_client.post(
+            "/api/v1/pets",
+            json={"repo_owner": "owner", "repo_name": "${ghUrl}", "name": "Buddy"},
+        )
+        assert resp.status_code == 422
+
+        list_resp = await e2e_client.get("/api/v1/pets")
+        repo_names = {p["repo_name"] for p in list_resp.json()["items"]}
+        assert "${ghUrl}" not in repo_names
+
     async def test_get_pet_via_api(self, e2e_client: AsyncClient) -> None:
         """Get a pet by repo owner/name after creating it."""
         await e2e_client.post(

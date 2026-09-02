@@ -81,6 +81,24 @@ class TestRegisterPet:
         assert "error" in result
         assert "already exists" in result["error"]
 
+    async def test_register_pet_rejects_malformed_repo_identifier(
+        self, test_db: AsyncSession
+    ) -> None:
+        """Should refuse unresolved template placeholders instead of persisting them."""
+        with patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _register_pet("owner", "${ghUrl}", "TestPet")
+
+        assert "error" in result
+        assert "valid GitHub identifiers" in result["error"]
+
+        from sqlalchemy import select
+
+        rows = await test_db.execute(select(Pet).where(Pet.repo_name == "${ghUrl}"))
+        assert rows.scalars().first() is None
+
 
 class TestCheckPetStatus:
     """Tests for the check_pet_status MCP tool."""

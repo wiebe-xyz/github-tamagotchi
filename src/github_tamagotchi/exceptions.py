@@ -23,3 +23,7 @@ class ConflictError(RepositoryError):
 
 class ConstraintError(RepositoryError):
     """A check or foreign-key constraint was violated."""
+
+
+class ValidationError(AppError):
+    """Caller-supplied input failed a domain-level validation rule."""

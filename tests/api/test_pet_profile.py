@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from github_tamagotchi.api.auth import _create_jwt
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
@@ -165,6 +166,20 @@ class TestPetProfilePage:
         """Visiting a pet page for an unknown repo auto-creates a placeholder and returns 200."""
         response = client.get("/pet/nobody/nonexistent")
         assert response.status_code == 200
+
+    def test_malformed_repo_identifier_rejected(self, client: TestClient) -> None:
+        """Unresolved template placeholders must not be persisted as placeholder pets."""
+        response = client.get("/pet/owner/${ghUrl}")
+        assert response.status_code == 422
+
+        async def _count() -> int:
+            async with test_session_factory() as session:
+                result = await session.execute(
+                    select(Pet).where(Pet.repo_owner == "owner", Pet.repo_name == "${ghUrl}")
+                )
+                return len(result.scalars().all())
+
+        assert asyncio.run(_count()) == 0
 
     def test_cache_control_header(self, client: TestClient) -> None:
         """Profile page should include cache control header."""

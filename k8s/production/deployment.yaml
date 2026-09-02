@@ -72,6 +72,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-webhook-secret
+            - name: ENVIRONMENT
+              value: "production"
             - name: IMAGE_GENERATION_PROVIDER
               value: "openrouter"
             - name: OPENROUTER_API_KEY
@@ -254,6 +256,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-webhook-secret
+            - name: ENVIRONMENT
+              value: "production"
             - name: IMAGE_GENERATION_PROVIDER
               value: "openrouter"
             - name: OPENROUTER_API_KEY

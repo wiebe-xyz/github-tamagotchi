@@ -68,6 +68,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-token
+            - name: ENVIRONMENT
+              value: "staging"
             - name: IMAGE_GENERATION_PROVIDER
               value: "openrouter"
             - name: OPENROUTER_API_KEY
@@ -246,6 +248,8 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-token
+            - name: ENVIRONMENT
+              value: "staging"
             - name: IMAGE_GENERATION_PROVIDER
               value: "openrouter"
             - name: OPENROUTER_API_KEY

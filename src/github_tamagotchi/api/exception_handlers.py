@@ -7,7 +7,12 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from github_tamagotchi.core import bugbarn as bb
-from github_tamagotchi.exceptions import ConflictError, NotFoundError, RepositoryError
+from github_tamagotchi.exceptions import (
+    ConflictError,
+    NotFoundError,
+    RepositoryError,
+    ValidationError,
+)
 
 logger = structlog.get_logger()
 
@@ -40,6 +45,12 @@ def register_exception_handlers(
         if _wants_html(request):
             return _error_html(request, templates, 404, str(exc))
         return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(ValidationError)
+    async def validation_error_handler(request: Request, exc: ValidationError) -> Response:
+        if _wants_html(request):
+            return _error_html(request, templates, 422, str(exc))
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     @app.exception_handler(ConflictError)
     async def conflict_handler(request: Request, exc: ConflictError) -> Response:
