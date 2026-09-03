@@ -32,6 +32,7 @@ from github_tamagotchi.api.auth import auth_router, get_admin_user, get_optional
 from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
+from github_tamagotchi.api.routes.v1.mcp_tokens import router as mcp_tokens_router
 from github_tamagotchi.api.routes.v1.push import router as push_router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
@@ -606,6 +607,7 @@ app.include_router(alert_router)
 app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(push_router)
+app.include_router(mcp_tokens_router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
