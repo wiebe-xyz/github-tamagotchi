@@ -1,0 +1,50 @@
+# GitHub Tamagotchi
+
+> A virtual pet whose life is entirely driven by a GitHub repository's real activity — commits, CI runs, PR age, security alerts. No manual feeding: the pet's health, mood, evolution stage, and eventual death are all computed from polled repo metrics. Built as a viral, badge-embeddable growth loop (README badge → public profile page → OAuth claim → registered user).
+
+This file is a blueprint for replicating the *pattern*, not just this app: "external signal source drives a deterministic, embeddable virtual creature." Swap "GitHub repo health" for any other polled metric (uptime, deploy frequency, npm downloads, Stripe MRR) and the same shape applies. Read the linked docs below for the parts worth copying; the "Lessons" section covers mistakes made building this one so a fresh implementation doesn't repeat them.
+
+## Core pattern
+
+- **Deterministic identity**: a creature's appearance and personality are derived from `SHA-256(owner/repo)`, not stored as arbitrary state — same input always regenerates the same creature, so a "reset" or first-view is indistinguishable from a returning one.
+- **Health as a pure function of polled signals**, clamped and capped per-signal so no single input dominates (see the formula in `.specify/memory/constitution.md`). Poll on a scheduler (APScheduler here), not on request — the web path never blocks on the external API.
+- **Layered architecture**: HTTP routers do only request parsing + one service call; business logic lives in domain-scoped services (`services/`); DB access is isolated in a repository layer (`repositories/`) that routes/services never bypass. See `specs/001-api-layered-architecture/spec.md` for the "why" and the rule-of-thumb test ("can you find any domain's logic in under 30 seconds").
+- **Growth loop via embeds, not accounts**: the primary entry point is a public, no-login SVG/GIF badge. First fetch for an unknown identity lazy-creates an unclaimed placeholder; a public profile page renders a "claim this" CTA that starts OAuth. This is the highest-leverage part of the pattern — and the highest-risk (see Lessons).
+- **Background jobs decoupled from the request path**: expensive work (AI image generation) goes through a queue table + worker, never inline in an HTTP handler.
+- **Storage via an S3-compatible client from day one**, even if the first deployment target is self-hosted MinIO — migrating to a managed provider (Cloudflare R2 here) later is then a config change, not a code change.
+- **Blue-green per-environment deploys**: each environment (staging, production) is its own k8s namespace with its own Postgres, two Deployments (`blue`/`green`) behind one Service, CI flips the selector after a health check on the *inactive* color passes — never deploys straight onto live traffic.
+
+## Lessons (read before copying the growth-loop pattern)
+
+- **Validate identity strings at every creation path, not just the obvious one.** The lazy-create-on-badge-view endpoint got validated first; an identically-shaped lazy-create on the public profile page didn't, and kept accepting unresolved template placeholders (`${ghUrl}`, `*`, ...) as real identities for weeks after the "fix" shipped. Put the check in the service layer, once, so every current and future caller — API route, HTML route, MCP tool — is covered by construction, not by remembering to add it per-route.
+- **A dynamic sitemap that lists unvalidated or unclaimed content is a self-feeding bug amplifier.** Junk placeholder rows got published to search engines via `sitemap.xml`, got indexed, and a crawler kept re-visiting (and thereby re-exposing) them independently of anything the app was doing — long after the original creation bug was fixed. Exclude anything not "real, claimed content" from anything crawlable.
+- **When you rename/move an environment, grep every CI workflow file for the old name, not just the deploy workflow you're thinking about.** A namespace rename left one workflow's own inline deploy job pointing at a namespace that no longer existed, breaking CI on main.
+- **Tag environment/tier explicitly in every deployment manifest; never rely on a code-level fallback default.** A `getenv("ENVIRONMENT", "production")` default meant a misconfigured non-production environment silently mislabeled its own errors as production incidents in error tracking.
+- **A leftover Ingress/DNS entry from a migration can silently shadow the new one.** After moving to new infra, the old namespace's ingress for the same hostname was never deleted; it had zero backing pods, so the *new* deployment stayed permanently unreachable externally while looking completely healthy internally. Always verify a deploy by hitting the real public URL, not just by trusting the pipeline's own success status.
+
+## Docs
+
+- [README.md](README.md): features, tech stack, local dev setup, MCP integration, cost reference
+- [.specify/memory/constitution.md](.specify/memory/constitution.md): the non-negotiable principles (health formula, deterministic identity, badge-first embeddability, minimal blast radius) — read this first if replicating the concept
+- [specs/pet-lifecycle.md](specs/pet-lifecycle.md): evolution stages, XP thresholds, health polling
+- [specs/pet-personalization.md](specs/pet-personalization.md): deterministic personality/appearance generation
+- [specs/death-and-resurrection.md](specs/death-and-resurrection.md): neglect/abandonment death rules, resurrection + generation counter
+- [specs/image-generation.md](specs/image-generation.md): AI sprite sheet generation, provider abstraction, storage
+- [specs/authentication.md](specs/authentication.md): GitHub OAuth, JWT-in-cookie sessions, no server-side session store
+- [specs/social-and-engagement.md](specs/social-and-engagement.md): leaderboard, blame/heroes board, opt-out transparency defaults
+- [specs/team-and-org.md](specs/team-and-org.md): org-level aggregation views
+- [specs/commit-streak.md](specs/commit-streak.md): calendar-day streak tracking
+- [specs/admin-system.md](specs/admin-system.md): runtime-computed admin permissions (not a stored role)
+- [specs/monitoring.md](specs/monitoring.md): Prometheus metrics, health/readiness probes, alerting
+- [specs/zero-downtime-deployments.md](specs/zero-downtime-deployments.md): blue-green deploy mechanics in detail
+- [specs/001-api-layered-architecture/spec.md](specs/001-api-layered-architecture/spec.md): why and how routes/services/repositories are split
+- [specs/002-api-shared-abstractions/spec.md](specs/002-api-shared-abstractions/spec.md): shared dependency/validation abstractions across routers
+- [specs/003-repository-pattern/spec.md](specs/003-repository-pattern/spec.md): the repository layer contract
+
+## Infrastructure
+
+- [.github/workflows/ci.yml](.github/workflows/ci.yml): lint, test, e2e, build on every push/PR to main
+- [.github/workflows/deploy-staging.yml](.github/workflows/deploy-staging.yml): version-tag push → staging blue-green deploy
+- [.github/workflows/promote-to-production.yml](.github/workflows/promote-to-production.yml): manual, confirm-gated production promotion from the already-verified staging image
+- [k8s/deployment.yaml](k8s/deployment.yaml) / [k8s/production/deployment.yaml](k8s/production/deployment.yaml): blue-green Deployment + Service pairs per environment
+- [Taskfile.yml](Taskfile.yml): local dev, db migrations, and manual k8s operational tasks
