@@ -218,12 +218,11 @@ tasks:
       - sops decrypt k8s/secrets.yaml | ssh deployer@k3s1 "kubectl apply -f -"
 
   k8s:init:
-    desc: Run init jobs for testing (database + MinIO)
+    desc: Run init jobs for testing (database)
     cmds:
-      - ssh deployer@k3s1 "kubectl delete job github-tamagotchi-init-db github-tamagotchi-init-minio -n nijmegen-testing --ignore-not-found"
+      - ssh deployer@k3s1 "kubectl delete job github-tamagotchi-init-db -n nijmegen-testing --ignore-not-found"
       - cat k8s/init-db.yaml | ssh deployer@k3s1 "kubectl apply -f -"
       - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n nijmegen-testing --timeout=60s"
-      - ssh deployer@k3s1 "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n nijmegen-testing --timeout=60s"
 
   k8s:deploy:
     desc: Apply all k8s manifests and scale up blue (testing, initial setup)
@@ -249,10 +248,9 @@ tasks:
   k8s:prod:init:
     desc: Run init jobs for production on layer7
     cmds:
-      - ssh deployer@layer7.wiebe.xyz "kubectl delete job github-tamagotchi-init-db github-tamagotchi-init-minio -n tamagotchi-production --ignore-not-found"
+      - ssh deployer@layer7.wiebe.xyz "kubectl delete job github-tamagotchi-init-db -n tamagotchi-production --ignore-not-found"
       - cat k8s/production/init-db.yaml | ssh deployer@layer7.wiebe.xyz "kubectl apply -f -"
       - ssh deployer@layer7.wiebe.xyz "kubectl wait --for=condition=complete job/github-tamagotchi-init-db -n tamagotchi-production --timeout=60s"
-      - ssh deployer@layer7.wiebe.xyz "kubectl wait --for=condition=complete job/github-tamagotchi-init-minio -n tamagotchi-production --timeout=60s"
 
   k8s:prod:deploy:
     desc: Apply production manifests to layer7 (initial setup)
