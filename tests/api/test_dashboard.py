@@ -82,7 +82,7 @@ class TestDashboardAuthenticated:
         token = _create_user(user_id=13)
         response = client.get("/dashboard", cookies={"session_token": token})
         assert "MCP Access" in response.text
-        assert "Generate token" in response.text
+        assert "claude mcp add" in response.text
 
     def test_shows_pet_card_when_pet_exists(self, client: TestClient) -> None:
         token = _create_user(user_id=13, github_login="petowner")

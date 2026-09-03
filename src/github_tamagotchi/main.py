@@ -32,7 +32,6 @@ from github_tamagotchi.api.auth import auth_router, get_admin_user, get_optional
 from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
-from github_tamagotchi.api.routes.v1.mcp_tokens import router as mcp_tokens_router
 from github_tamagotchi.api.routes.v1.push import router as push_router
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
@@ -607,7 +606,6 @@ app.include_router(alert_router)
 app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(push_router)
-app.include_router(mcp_tokens_router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -761,6 +759,42 @@ async def pet_manifest(
     )
 
 
+
+
+@app.get("/mcp/info", include_in_schema=False)
+async def mcp_info() -> Response:
+    """Unauthenticated landing point for the MCP server at /mcp.
+
+    /mcp itself requires a GitHub-authenticated MCP session for every
+    request (including the initial handshake), so a client or a curious
+    human with no session yet has nowhere to learn what this is or how to
+    connect — this route exists purely so that's discoverable without auth.
+    A spec-compliant MCP client (Claude Code, Claude Desktop, ...) doesn't
+    need this: pointing it at /mcp triggers Dynamic Client Registration and
+    an interactive GitHub login automatically.
+    """
+    base = settings.base_url.rstrip("/")
+    body = (
+        "GitHub Tamagotchi MCP server\n"
+        "\n"
+        f"Endpoint: {base}/mcp\n"
+        "\n"
+        "Add it to Claude Code:\n"
+        f'  claude mcp add --transport http tamagotchi {base}/mcp\n'
+        "\n"
+        "That's it — no manual token. Claude Code discovers this server needs\n"
+        "auth, registers itself automatically (Dynamic Client Registration),\n"
+        "and opens a GitHub login in your browser. Any other MCP client that\n"
+        "follows the same spec (OAuth 2.1 + DCR + PKCE) works the same way.\n"
+        "\n"
+        "Once connected, call the how_to_play tool for the full rules —\n"
+        "your own pets only, feed/weight mechanic, play_with_pet, ASCII art.\n"
+    )
+    return Response(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/llms.txt", include_in_schema=False)

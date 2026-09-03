@@ -80,21 +80,13 @@ ADMIN_GITHUB_LOGINS=your-github-username
 
 ## MCP Integration
 
-The GitHub Tamagotchi exposes an MCP (Model Context Protocol) server so an AI assistant can care for your pets directly. It's bearer-token authenticated and scoped to your own pets — generate a token from your dashboard's "MCP Access" section first, then configure your client with it:
+The GitHub Tamagotchi exposes an MCP (Model Context Protocol) server so an AI assistant can care for your pets directly. Auth is interactive GitHub OAuth — no token to generate or paste anywhere:
 
-```json
-{
-  "mcpServers": {
-    "github-tamagotchi": {
-      "type": "streamable-http",
-      "url": "http://localhost:8000/mcp",
-      "headers": {
-        "Authorization": "Bearer <your-token>"
-      }
-    }
-  }
-}
+```bash
+claude mcp add --transport http tamagotchi https://tamagotchi.webwiebe.nl/mcp
 ```
+
+That's it. Claude Code discovers the server needs auth, registers itself automatically (Dynamic Client Registration), and opens a GitHub login in your browser. Any other MCP client that follows the same spec (OAuth 2.1 + DCR + PKCE) works the same way — point it at the URL above. Opening `/mcp/info` in a browser shows the same instructions for humans (and clients that land there without a session yet).
 
 Every tool is scoped to your own pets — you can't read or change anyone else's, except `get_leaderboard`, which shows the same aggregate standings already public on the website. Call `how_to_play` any time for the full rules (also sent automatically to the client at connection time).
 

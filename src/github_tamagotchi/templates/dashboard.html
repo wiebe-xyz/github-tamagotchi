@@ -104,22 +104,12 @@
             {% endif %}
 
             <div class="feature" style="padding: 1.5rem; margin-top: 2rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <h2 style="font-size: 1.15rem; font-weight: 700;">MCP Access</h2>
-                    <button id="mcp-token-create-btn" class="secondary-btn" style="padding: 0.4rem 1rem; font-size: 0.85rem;" onclick="createMcpToken()">+ Generate token</button>
-                </div>
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
-                    Let an AI assistant care for your own pets over MCP. Generate a token below, then add it to your
-                    client's config — see the <a href="https://github.com/wiebe-xyz/github-tamagotchi#mcp-integration" target="_blank" rel="noopener">MCP Integration docs</a>.
+                <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.5rem;">MCP Access</h2>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                    Let an AI assistant care for your own pets over MCP — no token to generate, it's an interactive
+                    GitHub login the first time your client connects.
                 </p>
-                <div id="mcp-token-new" style="display:none; background: var(--surface-light); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.4rem;">Copy this now — it won't be shown again.</div>
-                    <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <code id="mcp-token-new-value" style="flex: 1; word-break: break-all; font-size: 0.85rem;"></code>
-                        <button id="mcp-token-copy-btn" class="secondary-btn" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; white-space: nowrap;" onclick="copyMcpToken()">Copy</button>
-                    </div>
-                </div>
-                <div id="mcp-token-list" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+                <pre style="background: var(--surface-light); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.85rem; overflow-x: auto; margin: 0;">claude mcp add --transport http tamagotchi {{ site_base_url }}/mcp</pre>
             </div>
         </div>
     </main>
@@ -272,67 +262,6 @@
                 alert('Failed to delete pet. Please try again.');
             }
         }
-
-        // --- MCP tokens ---
-        async function loadMcpTokens() {
-            const listEl = document.getElementById('mcp-token-list');
-            const resp = await fetch('/api/v1/mcp-tokens');
-            if (!resp.ok) { listEl.textContent = 'Failed to load tokens.'; return; }
-            const tokens = await resp.json();
-            if (tokens.length === 0) {
-                listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem;">No tokens yet.</div>';
-                return;
-            }
-            listEl.innerHTML = tokens.map(function (t) {
-                const created = new Date(t.created_at).toLocaleDateString();
-                const lastUsed = t.last_used_at ? new Date(t.last_used_at).toLocaleDateString() : 'never';
-                return `<div style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; background: var(--surface-light); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.85rem;">
-                    <span>${t.label ? t.label.replace(/</g, '&lt;') : '(unlabeled)'} <span style="color: var(--text-muted);">— created ${created}, last used ${lastUsed}</span></span>
-                    <button onclick="revokeMcpToken(${t.id})" style="background:none; border:1px solid #ef4444; color:#ef4444; border-radius:6px; padding:0.25rem 0.6rem; font-size:0.8rem; cursor:pointer; white-space:nowrap;">Revoke</button>
-                </div>`;
-            }).join('');
-        }
-
-        async function createMcpToken() {
-            const btn = document.getElementById('mcp-token-create-btn');
-            btn.disabled = true;
-            try {
-                const label = prompt('Label for this token (optional):', '');
-                const resp = await fetch('/api/v1/mcp-tokens', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ label: label || null })
-                });
-                if (!resp.ok) { alert('Failed to create token.'); return; }
-                const created = await resp.json();
-                document.getElementById('mcp-token-new-value').textContent = created.token;
-                document.getElementById('mcp-token-new').style.display = '';
-                await loadMcpTokens();
-            } finally {
-                btn.disabled = false;
-            }
-        }
-
-        function copyMcpToken() {
-            const value = document.getElementById('mcp-token-new-value').textContent;
-            navigator.clipboard.writeText(value).then(function () {
-                const btn = document.getElementById('mcp-token-copy-btn');
-                btn.textContent = 'Copied!';
-                setTimeout(function () { btn.textContent = 'Copy'; }, 2000);
-            });
-        }
-
-        async function revokeMcpToken(id) {
-            if (!confirm('Revoke this token? Any MCP client using it will stop working.')) return;
-            const resp = await fetch(`/api/v1/mcp-tokens/${id}`, { method: 'DELETE' });
-            if (resp.ok) {
-                await loadMcpTokens();
-            } else {
-                alert('Failed to revoke token.');
-            }
-        }
-
-        loadMcpTokens();
     </script>
 </body>
 </html>

@@ -50,12 +50,20 @@ _how_to_play = how_to_play.fn
 
 @contextmanager
 def _as_user(test_db: AsyncSession, user_id: int) -> Iterator[None]:
-    """Run the wrapped block as an authenticated MCP call from `user_id`."""
+    """Run the wrapped block as an authenticated MCP call from `user_id`.
+
+    Claims match what fastmcp's real GitHubTokenVerifier produces (sub =
+    GitHub user id, login = GitHub username) — see
+    fastmcp.server.auth.providers.github.GitHubTokenVerifier.verify_token.
+    Deterministic github_id (`user_id * 1000`) so this always resolves back
+    to the same User row a prior `_ensure_user`/`_make_pet` call created —
+    see that function's docstring for why the id has to line up exactly.
+    """
     token = AccessToken(
-        token="test-token",
-        client_id=str(user_id),
-        scopes=["pets:own"],
-        claims={"user_id": user_id, "github_login": f"user{user_id}"},
+        token="test-github-token",
+        client_id=str(user_id * 1000),
+        scopes=["repo", "read:user", "read:org"],
+        claims={"sub": str(user_id * 1000), "login": f"user{user_id}", "avatar_url": None},
     )
     with (
         patch("github_tamagotchi.mcp.server.async_session_factory") as mock_factory,
@@ -80,7 +88,24 @@ def mock_repo_health() -> RepoHealth:
     )
 
 
+async def _ensure_user(test_db: AsyncSession, user_id: int) -> User:
+    """Make sure a User row with exactly this id exists, keyed to the same
+    deterministic github_id (`user_id * 1000`) _as_user's claims carry — so
+    that _authenticated_user's create_or_update_user lookup (by github_id)
+    resolves to this exact row rather than auto-creating a new one with
+    whatever id the DB happens to hand out next. Idempotent."""
+    existing = await test_db.get(User, user_id)
+    if existing:
+        return existing
+    user = User(id=user_id, github_id=user_id * 1000, github_login=f"user{user_id}")
+    test_db.add(user)
+    await test_db.commit()
+    return user
+
+
 async def _make_pet(test_db: AsyncSession, user_id: int | None = 1, **overrides: object) -> Pet:
+    if user_id is not None:
+        await _ensure_user(test_db, user_id)
     defaults: dict[str, object] = {
         "repo_owner": "owner",
         "repo_name": "repo",
@@ -135,26 +160,19 @@ class TestAuth:
 
 
 class TestRegisterPet:
-    """Tests for the register_pet MCP tool."""
+    """Tests for the register_pet MCP tool.
 
-    async def _user_with_token(self, test_db: AsyncSession, user_id: int = 1) -> User:
-        user = User(
-            id=user_id,
-            github_id=user_id * 1000,
-            github_login=f"user{user_id}",
-            encrypted_token="encrypted-fake-token",
-        )
-        test_db.add(user)
-        await test_db.commit()
-        return user
+    Access verification now uses the live MCP session's own GitHub OAuth
+    token (via _github_access_token().token) rather than a stored
+    encrypted one — there's no separate "link your GitHub account first"
+    step anymore, since authenticating via MCP at all means GitHub access
+    is already live for that session.
+    """
 
     async def test_register_pet_creates_new_pet(self, test_db: AsyncSession) -> None:
-        await self._user_with_token(test_db)
+        await _ensure_user(test_db, 1)
         with (
             _as_user(test_db, user_id=1),
-            patch(
-                "github_tamagotchi.mcp.server.decrypt_token", return_value="real-gh-token"
-            ),
             patch(
                 "github_tamagotchi.mcp.server._verify_github_repo_access",
                 new=AsyncMock(return_value=True),
@@ -172,12 +190,9 @@ class TestRegisterPet:
         self, test_db: AsyncSession
     ) -> None:
         """Can't register a pet for a repo you don't actually have access to."""
-        await self._user_with_token(test_db)
+        await _ensure_user(test_db, 1)
         with (
             _as_user(test_db, user_id=1),
-            patch(
-                "github_tamagotchi.mcp.server.decrypt_token", return_value="real-gh-token"
-            ),
             patch(
                 "github_tamagotchi.mcp.server._verify_github_repo_access",
                 new=AsyncMock(return_value=False),
@@ -186,27 +201,11 @@ class TestRegisterPet:
         ):
             await _register_pet("someoneelse", "privaterepo", "TestPet")
 
-    async def test_register_pet_requires_linked_github_token(
-        self, test_db: AsyncSession
-    ) -> None:
-        user = User(id=1, github_id=1000, github_login="user1", encrypted_token=None)
-        test_db.add(user)
-        await test_db.commit()
-
-        with _as_user(test_db, user_id=1), pytest.raises(
-            ToolError, match="linked GitHub access token"
-        ):
-            await _register_pet("owner", "repo", "TestPet")
-
     async def test_register_pet_duplicate_fails(self, test_db: AsyncSession) -> None:
-        await self._user_with_token(test_db)
         await _make_pet(test_db, user_id=1, name="ExistingPet")
 
         with (
             _as_user(test_db, user_id=1),
-            patch(
-                "github_tamagotchi.mcp.server.decrypt_token", return_value="real-gh-token"
-            ),
             patch(
                 "github_tamagotchi.mcp.server._verify_github_repo_access",
                 new=AsyncMock(return_value=True),
@@ -220,7 +219,7 @@ class TestRegisterPet:
     async def test_register_pet_rejects_malformed_repo_identifier(
         self, test_db: AsyncSession
     ) -> None:
-        await self._user_with_token(test_db)
+        await _ensure_user(test_db, 1)
         with _as_user(test_db, user_id=1):
             result = await _register_pet("owner", "${ghUrl}", "TestPet")
 
