@@ -75,7 +75,12 @@ configure_logging()
 
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = BASE_DIR.parent.parent  # /app in the container image (see Dockerfile)
+# NOTE: can't derive this from __file__ — the container image pip-installs the
+# package into site-packages (see Dockerfile), so __file__ no longer lives
+# anywhere near the repo root there. WORKDIR is /app in the image and llms.txt
+# is copied there; Taskfile/pytest both run from the repo root locally. In every
+# case the process's cwd is where llms.txt actually lives.
+REPO_ROOT = Path.cwd()
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["funnelbarn_api_key"] = settings.funnelbarn_api_key
 templates.env.globals["bugbarn_endpoint"] = settings.bugbarn_endpoint
