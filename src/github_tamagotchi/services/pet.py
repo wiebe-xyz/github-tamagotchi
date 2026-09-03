@@ -10,11 +10,25 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.core.telemetry import get_tracer
-from github_tamagotchi.exceptions import ConflictError, NotFoundError
+from github_tamagotchi.exceptions import ConflictError, NotFoundError, ValidationError
 from github_tamagotchi.models.pet import Pet, PetSkin
 from github_tamagotchi.repositories import pet as pet_repo
+from github_tamagotchi.services.naming import is_valid_repo_identifier
 
 _tracer = get_tracer(__name__)
+
+
+def _require_valid_repo_identifier(owner: str, repo: str) -> None:
+    """Raise ValidationError if owner/repo don't look like real GitHub identifiers.
+
+    This is the single chokepoint every pet-creating path funnels through, so
+    unresolved template placeholders (``${ghUrl}``, ``*``, ``$``, ...) can't be
+    persisted as junk rows regardless of which route or tool triggers creation.
+    """
+    if not is_valid_repo_identifier(owner, repo):
+        raise ValidationError(
+            f"'{owner}/{repo}' is not a valid GitHub repo identifier"
+        )
 
 
 async def get_or_raise(db: AsyncSession, owner: str, repo: str) -> Pet:
@@ -67,9 +81,11 @@ async def create(
     """Create a pet, or claim a pre-existing placeholder for this repo.
 
     Raises ConflictError if a real (claimed or anonymous) pet already exists.
+    Raises ValidationError if owner/repo aren't valid GitHub identifiers.
     A placeholder pet — auto-created by the badge endpoint — is upgraded to
     a real pet bound to the given user_id.
     """
+    _require_valid_repo_identifier(owner, repo)
     with _tracer.start_as_current_span(
         "service.pet.create",
         attributes={
@@ -101,10 +117,14 @@ async def get_or_create_placeholder(
     Returns (pet, created). Placeholders carry no user_id, no scheduled polling,
     and trigger no image generation until claimed via the OAuth flow. Used by
     the public badge endpoint so a README badge can act as a sign-up funnel.
+
+    Raises ValidationError if owner/repo aren't valid GitHub identifiers.
     """
     from github_tamagotchi.services.naming import generate_name_from_repo
 
     existing = await pet_repo.get_pet_by_repo(db, owner, repo)
+    if existing is None:
+        _require_valid_repo_identifier(owner, repo)
     if existing is not None:
         return existing, False
     name = generate_name_from_repo(owner, repo)

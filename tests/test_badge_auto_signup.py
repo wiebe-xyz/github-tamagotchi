@@ -102,6 +102,19 @@ async def test_get_or_create_placeholder_creates_once(test_db: AsyncSession) -> 
     assert pet1.user_id is None
 
 
+@pytest.mark.asyncio
+async def test_get_or_create_placeholder_rejects_malformed_repo_identifier(
+    test_db: AsyncSession,
+) -> None:
+    """Every lazy-create path funnels through here, not just the badge endpoint."""
+    from github_tamagotchi.exceptions import ValidationError
+
+    with pytest.raises(ValidationError):
+        await pet_service.get_or_create_placeholder(test_db, "*", "${ghUrl}")
+
+    assert await _count_pets(test_db, "*", "${ghUrl}") == 0
+
+
 # ----- Scheduler skips placeholders -----
 
 

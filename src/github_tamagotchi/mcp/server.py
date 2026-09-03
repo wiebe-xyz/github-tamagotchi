@@ -11,6 +11,7 @@ from github_tamagotchi.core.database import async_session_factory
 from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import GitHubService
+from github_tamagotchi.services.naming import is_valid_repo_identifier
 from github_tamagotchi.services.pet_logic import (
     PetPersonality,
     calculate_experience,
@@ -90,6 +91,12 @@ async def register_pet(repo_owner: str, repo_name: str, name: str) -> dict[str, 
     Returns:
         The newly created pet details
     """
+    if not is_valid_repo_identifier(repo_owner, repo_name):
+        return {
+            "repo": f"{repo_owner}/{repo_name}",
+            "error": "repo_owner/repo_name must be valid GitHub identifiers.",
+        }
+
     async with async_session_factory() as session:
         personality = generate_personality(repo_owner, repo_name)
         pet = Pet(
