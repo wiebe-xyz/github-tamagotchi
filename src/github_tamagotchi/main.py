@@ -491,101 +491,108 @@ async def _run_alert_checks(
     await session.commit()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan manager."""
-    # Startup
-    logger.info("Starting GitHub Tamagotchi", version=__version__)
-
-    if settings.sentry_dsn:
-        sentry_sdk.init(
-            dsn=settings.sentry_dsn,
-            environment=os.getenv("ENVIRONMENT", "production"),
-            traces_sample_rate=0.1,
-            integrations=[
-                FastApiIntegration(),
-                SqlalchemyIntegration(),
-                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
-            ],
-            send_default_pii=False,
-        )
-        logger.info("Sentry initialized")
-
-    if settings.bugbarn_endpoint and settings.bugbarn_api_key:
-        environment = os.getenv("ENVIRONMENT", "production")
-        bb.init(
-            api_key=settings.bugbarn_api_key,
-            endpoint=settings.bugbarn_endpoint,
-            project_slug=settings.bugbarn_project,
-            environment=environment,
-            install_excepthook=True,
-        )
-        setup_log_transport(
-            logs_url=f"{settings.bugbarn_endpoint.rstrip('/')}/api/v1/logs",
-            api_key=settings.bugbarn_api_key,
-            project=settings.bugbarn_project,
-        )
-        logger.info("BugBarn initialized", project=settings.bugbarn_project, env=environment)
-
-    from github_tamagotchi.core.telemetry import init_telemetry
-
-    init_telemetry(app)
-
-    set_start_time()
-
-    # Log VAPID key status for push notifications
-    if settings.vapid_private_key:
-        logger.info("Push notifications enabled (VAPID configured)")
-    else:
-        logger.warning(
-            "Push notifications disabled — VAPID_PRIVATE_KEY not set. "
-            "Run: python -m github_tamagotchi.scripts.gen_vapid_keys"
-        )
-
-    # Start scheduler for periodic polling
-    scheduler.add_job(
-        poll_repositories,
-        "interval",
-        minutes=settings.github_poll_interval_minutes,
-        id="poll_repositories",
-    )
-    scheduler.start()
-    logger.info(
-        "Scheduler started",
-        poll_interval_minutes=settings.github_poll_interval_minutes,
-    )
-
-    # Start image generation queue worker
-    worker_stop_event = asyncio.Event()
-    worker_task = asyncio.create_task(
-        image_queue.run_worker(async_session_factory, worker_stop_event)
-    )
-    logger.info("Image generation queue worker started")
-
-    yield
-
-    # Shutdown
-    # Stop image queue worker
-    worker_stop_event.set()
-    worker_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await worker_task
-    logger.info("Image generation queue worker stopped")
-
-    scheduler.shutdown()
-    from github_tamagotchi.core.telemetry import shutdown_telemetry
-
-    shutdown_telemetry()
-    logger.info("Flushing error tracking and log transports")
-    bb.shutdown()
-    shutdown_log_transport()
-    await close_database()
-    logger.info("GitHub Tamagotchi shutdown complete")
-
-
 # Create the MCP server app
 mcp_server = get_mcp_server()
 mcp_app = mcp_server.http_app(path="/mcp")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Application lifespan manager."""
+    async with contextlib.AsyncExitStack() as stack:
+        # MCP's StreamableHTTPSessionManager needs its own lifespan entered
+        # inside ours, or every /mcp/mcp request 500s with "task group was
+        # not initialized" — mounting the sub-app alone is not enough.
+        await stack.enter_async_context(mcp_app.lifespan(app))
+
+        # Startup
+        logger.info("Starting GitHub Tamagotchi", version=__version__)
+
+        if settings.sentry_dsn:
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                environment=os.getenv("ENVIRONMENT", "production"),
+                traces_sample_rate=0.1,
+                integrations=[
+                    FastApiIntegration(),
+                    SqlalchemyIntegration(),
+                    LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+                ],
+                send_default_pii=False,
+            )
+            logger.info("Sentry initialized")
+
+        if settings.bugbarn_endpoint and settings.bugbarn_api_key:
+            environment = os.getenv("ENVIRONMENT", "production")
+            bb.init(
+                api_key=settings.bugbarn_api_key,
+                endpoint=settings.bugbarn_endpoint,
+                project_slug=settings.bugbarn_project,
+                environment=environment,
+                install_excepthook=True,
+            )
+            setup_log_transport(
+                logs_url=f"{settings.bugbarn_endpoint.rstrip('/')}/api/v1/logs",
+                api_key=settings.bugbarn_api_key,
+                project=settings.bugbarn_project,
+            )
+            logger.info("BugBarn initialized", project=settings.bugbarn_project, env=environment)
+
+        from github_tamagotchi.core.telemetry import init_telemetry
+
+        init_telemetry(app)
+
+        set_start_time()
+
+        # Log VAPID key status for push notifications
+        if settings.vapid_private_key:
+            logger.info("Push notifications enabled (VAPID configured)")
+        else:
+            logger.warning(
+                "Push notifications disabled — VAPID_PRIVATE_KEY not set. "
+                "Run: python -m github_tamagotchi.scripts.gen_vapid_keys"
+            )
+
+        # Start scheduler for periodic polling
+        scheduler.add_job(
+            poll_repositories,
+            "interval",
+            minutes=settings.github_poll_interval_minutes,
+            id="poll_repositories",
+        )
+        scheduler.start()
+        logger.info(
+            "Scheduler started",
+            poll_interval_minutes=settings.github_poll_interval_minutes,
+        )
+
+        # Start image generation queue worker
+        worker_stop_event = asyncio.Event()
+        worker_task = asyncio.create_task(
+            image_queue.run_worker(async_session_factory, worker_stop_event)
+        )
+        logger.info("Image generation queue worker started")
+
+        yield
+
+        # Shutdown
+        # Stop image queue worker
+        worker_stop_event.set()
+        worker_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker_task
+        logger.info("Image generation queue worker stopped")
+
+        scheduler.shutdown()
+        from github_tamagotchi.core.telemetry import shutdown_telemetry
+
+        shutdown_telemetry()
+        logger.info("Flushing error tracking and log transports")
+        bb.shutdown()
+        shutdown_log_transport()
+        await close_database()
+        logger.info("GitHub Tamagotchi shutdown complete")
+
 
 app = FastAPI(
     title=settings.app_name,
