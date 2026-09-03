@@ -326,7 +326,14 @@ async def play_with_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
         pet = await _get_owned_pet(session, repo_owner, repo_name)
 
         now = time.monotonic()
-        last = _last_played_at.get(pet.id, 0.0)
+        # time.monotonic()'s reference point is unspecified (often since boot
+        # or container start) — on a freshly started process it can itself be
+        # well under _PLAY_COOLDOWN, so a missing entry must default to
+        # "definitely not on cooldown" (-inf), not 0.0. Defaulting to 0.0
+        # would make `now - 0.0 < _PLAY_COOLDOWN` true for the first hour
+        # after every restart, incorrectly blocking every pet's first ever
+        # play_with_pet call.
+        last = _last_played_at.get(pet.id, float("-inf"))
         on_cooldown = (now - last) < _PLAY_COOLDOWN
 
         mood_changed = False

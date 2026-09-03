@@ -347,6 +347,26 @@ class TestPlayWithPet:
         assert second["cheered_up"] is False
         assert "note" in second
 
+    async def test_first_ever_play_is_not_blocked_on_a_freshly_started_process(
+        self, test_db: AsyncSession
+    ) -> None:
+        """Regression test: time.monotonic()'s reference point is unspecified
+        (often since boot/process start), so a process that's been up for
+        less than the cooldown window must not treat every pet's first-ever
+        play_with_pet call as already on cooldown. Caught in CI, where a
+        fresh runner has low monotonic time and this failed; passed locally
+        every time because a long-lived dev machine has high monotonic time,
+        which was masking the bug."""
+        await _make_pet(test_db, user_id=1, mood=PetMood.WORRIED.value)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("time.monotonic", return_value=10.0),
+        ):
+            result = await _play_with_pet("owner", "repo")
+
+        assert result["cheered_up"] is True
+
     async def test_play_with_pet_caps_below_dancing(self, test_db: AsyncSession) -> None:
         await _make_pet(test_db, user_id=1, mood=PetMood.HAPPY.value)
 
