@@ -188,6 +188,22 @@ async def cleanup_test_engine() -> AsyncIterator[None]:
     await test_engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _reset_mcp_play_cooldowns() -> Iterator[None]:
+    """play_with_pet's rate limit is in-process state keyed by pet id
+    (github_tamagotchi.mcp.server._last_played_at) — fine in production
+    (single active pod), but SQLite reuses rowids across tests that each
+    drop/recreate the pets table, so a pet in one test can spuriously
+    inherit another test's cooldown unless this is cleared globally,
+    not just within whichever test file happens to exercise play_with_pet.
+    """
+    from github_tamagotchi.mcp import server as mcp_server_module
+
+    mcp_server_module._last_played_at.clear()
+    yield
+    mcp_server_module._last_played_at.clear()
+
+
 # Mock data fixtures for testing
 
 

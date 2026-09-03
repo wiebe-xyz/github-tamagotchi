@@ -317,19 +317,12 @@ class TestFeedPet:
 
 
 class TestPlayWithPet:
-    """Tests for the play_with_pet MCP tool."""
+    """Tests for the play_with_pet MCP tool.
 
-    @pytest.fixture(autouse=True)
-    def _reset_cooldowns(self) -> Iterator[None]:
-        """play_with_pet's cooldown tracker is module-level, in-process state
-        keyed by pet id — SQLite reuses rowids across tests, so it must be
-        cleared or a pet in one test can spuriously inherit another's
-        cooldown."""
-        from github_tamagotchi.mcp import server as mcp_server_module
-
-        mcp_server_module._last_played_at.clear()
-        yield
-        mcp_server_module._last_played_at.clear()
+    play_with_pet's cooldown tracker is module-level, in-process state keyed
+    by pet id — see the global `_reset_mcp_play_cooldowns` autouse fixture in
+    conftest.py, which clears it before every test in the suite.
+    """
 
     async def test_play_with_pet_returns_ascii_and_cheers_up(
         self, test_db: AsyncSession
