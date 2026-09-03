@@ -803,10 +803,13 @@ async def sitemap_xml(session: Annotated[AsyncSession, Depends(get_session)]) ->
         },
     ]
 
-    # Living pets: profile + insights
+    # Living pets: profile + insights. Unclaimed placeholders are excluded —
+    # they're "click to claim" stubs with no real content, and publishing them
+    # is how crawlers ended up indexing (and endlessly re-crawling) junk rows
+    # created by the badge/profile lazy-create bug (see naming.is_valid_repo_identifier).
     living = await session.execute(
         select(Pet.repo_owner, Pet.repo_name, Pet.updated_at)
-        .where(Pet.is_dead.is_(False))
+        .where(Pet.is_dead.is_(False), Pet.is_placeholder.is_(False))
         .order_by(Pet.updated_at.desc())
         .limit(10000)
     )

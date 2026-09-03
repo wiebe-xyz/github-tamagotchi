@@ -13,6 +13,7 @@ def _add_pet(
     repo_name: str,
     is_dead: bool = False,
     stage: str = "baby",
+    is_placeholder: bool = False,
 ) -> None:
     async def _do() -> None:
         async with test_session_factory() as session:
@@ -24,6 +25,7 @@ def _add_pet(
                 health=80,
                 experience=0,
                 is_dead=is_dead,
+                is_placeholder=is_placeholder,
             )
             session.add(pet)
             await session.commit()
@@ -72,6 +74,16 @@ class TestSitemapXml:
         assert "/graveyard/bob/dead-repo" in r.text
         # Org page for owner of a living pet should appear too
         assert "/org/alice" in r.text
+
+    def test_excludes_unclaimed_placeholders(self, client: TestClient) -> None:
+        """Placeholder ("click to claim") pets are stubs with no real content —
+        publishing them is how crawlers found and kept re-visiting junk rows
+        created by the badge/profile lazy-create bug (see test_badge_auto_signup.py).
+        """
+        _add_pet("carol", "unclaimed-repo", is_dead=False, stage="egg", is_placeholder=True)
+        r = client.get("/sitemap.xml")
+        assert "/pet/carol/unclaimed-repo" not in r.text
+        assert "/org/carol" not in r.text
 
 
 class TestSeoMetaOnPublicPages:
