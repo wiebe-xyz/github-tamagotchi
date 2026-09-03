@@ -78,6 +78,12 @@ class TestDashboardAuthenticated:
         response = client.get("/dashboard", cookies={"session_token": token})
         assert "haven't registered any repos yet" in response.text
 
+    def test_shows_mcp_access_section(self, client: TestClient) -> None:
+        token = _create_user(user_id=13)
+        response = client.get("/dashboard", cookies={"session_token": token})
+        assert "MCP Access" in response.text
+        assert "Generate token" in response.text
+
     def test_shows_pet_card_when_pet_exists(self, client: TestClient) -> None:
         token = _create_user(user_id=13, github_login="petowner")
         _create_pet_for_user(user_id=13, repo_owner="petowner", repo_name="myrepo", name="Buddy")

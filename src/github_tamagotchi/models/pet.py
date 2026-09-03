@@ -198,6 +198,15 @@ class Pet(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Weight, from the MCP feed_pet tool. Feeding raises it (uncapped);
+    # real activity (MCP update_pet_from_repo) lowers it, floored at
+    # MIN_WEIGHT. Purely a feed-vs-exercise mechanic layered on top of the
+    # health/XP/evolution system, not a substitute for it — see
+    # services/pet_feeding.py. Baseline 50.0 = "trim".
+    weight: Mapped[float] = mapped_column(
+        Float, nullable=False, default=50.0, server_default="50.0"
+    )
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"

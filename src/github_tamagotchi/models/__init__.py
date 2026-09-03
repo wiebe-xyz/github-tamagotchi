@@ -11,6 +11,7 @@ from github_tamagotchi.models.excluded_contributor import ExcludedContributor
 from github_tamagotchi.models.grave_flower_ip import GraveFlowerIp
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.job_run import JobRun
+from github_tamagotchi.models.mcp_token import McpToken
 from github_tamagotchi.models.milestone import PetMilestone
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.push_subscription import PushSubscription
@@ -29,6 +30,7 @@ __all__ = [
     "ImageGenerationJob",
     "JobRun",
     "JobStatus",
+    "McpToken",
     "Pet",
     "PetAchievement",
     "PetComment",
