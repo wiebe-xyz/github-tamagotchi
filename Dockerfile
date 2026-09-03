@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 RUN pip install uv
 
 # Copy all source files needed for build
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md llms.txt ./
 COPY src/ ./src/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/

@@ -33,6 +33,23 @@ def _add_pet(
     asyncio.run(_do())
 
 
+class TestLlmsTxt:
+    def test_returns_200_and_plain_text(self, client: TestClient) -> None:
+        r = client.get("/llms.txt")
+        assert r.status_code == 200
+        assert "text/plain" in r.headers["content-type"]
+
+    def test_matches_repo_root_file(self, client: TestClient) -> None:
+        from github_tamagotchi.main import REPO_ROOT
+
+        r = client.get("/llms.txt")
+        assert r.text == (REPO_ROOT / "llms.txt").read_text(encoding="utf-8")
+
+    def test_starts_with_h1_title(self, client: TestClient) -> None:
+        r = client.get("/llms.txt")
+        assert r.text.startswith("# GitHub Tamagotchi")
+
+
 class TestRobotsTxt:
     def test_returns_200_and_plain_text(self, client: TestClient) -> None:
         r = client.get("/robots.txt")
