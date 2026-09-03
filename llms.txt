@@ -24,27 +24,27 @@ This file is a blueprint for replicating the *pattern*, not just this app: "exte
 
 ## Docs
 
-- [README.md](README.md): features, tech stack, local dev setup, MCP integration, cost reference
-- [.specify/memory/constitution.md](.specify/memory/constitution.md): the non-negotiable principles (health formula, deterministic identity, badge-first embeddability, minimal blast radius) — read this first if replicating the concept
-- [specs/pet-lifecycle.md](specs/pet-lifecycle.md): evolution stages, XP thresholds, health polling
-- [specs/pet-personalization.md](specs/pet-personalization.md): deterministic personality/appearance generation
-- [specs/death-and-resurrection.md](specs/death-and-resurrection.md): neglect/abandonment death rules, resurrection + generation counter
-- [specs/image-generation.md](specs/image-generation.md): AI sprite sheet generation, provider abstraction, storage
-- [specs/authentication.md](specs/authentication.md): GitHub OAuth, JWT-in-cookie sessions, no server-side session store
-- [specs/social-and-engagement.md](specs/social-and-engagement.md): leaderboard, blame/heroes board, opt-out transparency defaults
-- [specs/team-and-org.md](specs/team-and-org.md): org-level aggregation views
-- [specs/commit-streak.md](specs/commit-streak.md): calendar-day streak tracking
-- [specs/admin-system.md](specs/admin-system.md): runtime-computed admin permissions (not a stored role)
-- [specs/monitoring.md](specs/monitoring.md): Prometheus metrics, health/readiness probes, alerting
-- [specs/zero-downtime-deployments.md](specs/zero-downtime-deployments.md): blue-green deploy mechanics in detail
-- [specs/001-api-layered-architecture/spec.md](specs/001-api-layered-architecture/spec.md): why and how routes/services/repositories are split
-- [specs/002-api-shared-abstractions/spec.md](specs/002-api-shared-abstractions/spec.md): shared dependency/validation abstractions across routers
-- [specs/003-repository-pattern/spec.md](specs/003-repository-pattern/spec.md): the repository layer contract
+- [README.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/README.md): features, tech stack, local dev setup, MCP integration, cost reference
+- [.specify/memory/constitution.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/.specify/memory/constitution.md): the non-negotiable principles (health formula, deterministic identity, badge-first embeddability, minimal blast radius) — read this first if replicating the concept
+- [specs/pet-lifecycle.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/pet-lifecycle.md): evolution stages, XP thresholds, health polling
+- [specs/pet-personalization.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/pet-personalization.md): deterministic personality/appearance generation
+- [specs/death-and-resurrection.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/death-and-resurrection.md): neglect/abandonment death rules, resurrection + generation counter
+- [specs/image-generation.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/image-generation.md): AI sprite sheet generation, provider abstraction, storage
+- [specs/authentication.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/authentication.md): GitHub OAuth, JWT-in-cookie sessions, no server-side session store
+- [specs/social-and-engagement.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/social-and-engagement.md): leaderboard, blame/heroes board, opt-out transparency defaults
+- [specs/team-and-org.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/team-and-org.md): org-level aggregation views
+- [specs/commit-streak.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/commit-streak.md): calendar-day streak tracking
+- [specs/admin-system.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/admin-system.md): runtime-computed admin permissions (not a stored role)
+- [specs/monitoring.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/monitoring.md): Prometheus metrics, health/readiness probes, alerting
+- [specs/zero-downtime-deployments.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/zero-downtime-deployments.md): blue-green deploy mechanics in detail
+- [specs/001-api-layered-architecture/spec.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/001-api-layered-architecture/spec.md): why and how routes/services/repositories are split
+- [specs/002-api-shared-abstractions/spec.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/002-api-shared-abstractions/spec.md): shared dependency/validation abstractions across routers
+- [specs/003-repository-pattern/spec.md](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/specs/003-repository-pattern/spec.md): the repository layer contract
 
 ## Infrastructure
 
-- [.github/workflows/ci.yml](.github/workflows/ci.yml): lint, test, e2e, build on every push/PR to main
-- [.github/workflows/deploy-staging.yml](.github/workflows/deploy-staging.yml): version-tag push → staging blue-green deploy
-- [.github/workflows/promote-to-production.yml](.github/workflows/promote-to-production.yml): manual, confirm-gated production promotion from the already-verified staging image
-- [k8s/deployment.yaml](k8s/deployment.yaml) / [k8s/production/deployment.yaml](k8s/production/deployment.yaml): blue-green Deployment + Service pairs per environment
-- [Taskfile.yml](Taskfile.yml): local dev, db migrations, and manual k8s operational tasks
+- [.github/workflows/ci.yml](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/.github/workflows/ci.yml): lint, test, e2e, build on every push/PR to main
+- [.github/workflows/deploy-staging.yml](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/.github/workflows/deploy-staging.yml): version-tag push → staging blue-green deploy
+- [.github/workflows/promote-to-production.yml](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/.github/workflows/promote-to-production.yml): manual, confirm-gated production promotion from the already-verified staging image
+- [k8s/deployment.yaml](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/k8s/deployment.yaml) / [k8s/production/deployment.yaml](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/k8s/production/deployment.yaml): blue-green Deployment + Service pairs per environment
+- [Taskfile.yml](https://github.com/wiebe-xyz/github-tamagotchi/blob/main/Taskfile.yml): local dev, db migrations, and manual k8s operational tasks

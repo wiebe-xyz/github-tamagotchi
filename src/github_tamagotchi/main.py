@@ -75,6 +75,7 @@ configure_logging()
 
 # Set up paths for templates and static files
 BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parent.parent  # /app in the container image (see Dockerfile)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["funnelbarn_api_key"] = settings.funnelbarn_api_key
 templates.env.globals["bugbarn_endpoint"] = settings.bugbarn_endpoint
@@ -749,6 +750,19 @@ async def pet_manifest(
     )
 
 
+
+
+@app.get("/llms.txt", include_in_schema=False)
+async def llms_txt() -> Response:
+    """LLM-discovery file (llmstxt.org convention): served straight from the
+    repo-root llms.txt so there's one source of truth, not a duplicated copy.
+    """
+    body = (REPO_ROOT / "llms.txt").read_text(encoding="utf-8")
+    return Response(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/robots.txt", include_in_schema=False)
