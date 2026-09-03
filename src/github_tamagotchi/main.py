@@ -607,9 +607,6 @@ app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(push_router)
 
-# Mount the MCP server at /mcp
-app.mount("/mcp", mcp_app)
-
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -1834,3 +1831,13 @@ async def admin_sprites_regenerate(
             total_queued += 1
 
     return JSONResponse({"queued": total_queued, "stage": "all"})
+
+
+# Mount the MCP server at /mcp — must be registered last. mcp_app itself
+# already serves at "/mcp" (see mcp_app = mcp_server.http_app(path="/mcp")
+# above), so it's mounted at "/" rather than "/mcp" to avoid a doubled
+# /mcp/mcp path. A root mount matches every path Starlette's router hasn't
+# already resolved by the time it's reached, which is exactly why this has
+# to be the very last route added — anything registered after it here would
+# never be reached.
+app.mount("/", mcp_app)
