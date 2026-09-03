@@ -1,5 +1,17 @@
 """Test fixtures and configuration."""
 
+import os
+
+# MCP auth (mcp/server.py) builds its GitHubProvider once at import time from
+# these settings — real deployments always have them (the website's own
+# GitHub login already depends on them), but nothing in CI/local test runs
+# sets them, and a missing client_id/secret means mcp.server falls back to
+# no auth at all. Tests that exercise the real auth chain mock the actual
+# GitHub API verification call, so fake-but-present values are fine here —
+# must be set before any github_tamagotchi import triggers settings to load.
+os.environ.setdefault("GITHUB_OAUTH_CLIENT_ID", "test-github-oauth-client-id")
+os.environ.setdefault("GITHUB_OAUTH_CLIENT_SECRET", "test-github-oauth-client-secret")
+
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager

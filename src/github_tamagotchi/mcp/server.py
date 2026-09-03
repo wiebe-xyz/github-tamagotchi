@@ -1,9 +1,12 @@
 """FastMCP server for GitHub Tamagotchi.
 
-Bearer-token authenticated (generate a token from the dashboard first — see
-services/mcp_auth.py). Every tool here is scoped to the calling user: you
-can create, feed, play with, and check on your own pets, and see aggregate
-leaderboard standings, but you cannot read or mutate anyone else's pet.
+Authenticated via interactive GitHub OAuth (Dynamic Client Registration +
+authorization code + PKCE, per the MCP spec) — connecting a client is just
+`claude mcp add --transport http tamagotchi https://.../mcp`, which opens a
+GitHub login in your browser. No manual token generation. Every tool here is
+scoped to the calling user: you can create, feed, play with, and check on
+your own pets, and see aggregate leaderboard standings, but you cannot read
+or mutate anyone else's pet.
 """
 
 from datetime import UTC, datetime
@@ -11,6 +14,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.dependencies import get_access_token
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -18,13 +22,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import github_tamagotchi.api.routes as _api_routes
 from github_tamagotchi.api.auth import _verify_github_repo_access
+from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory
 from github_tamagotchi.crud.milestone import create_milestone
+from github_tamagotchi.crud.user import create_or_update_user
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.ascii_render import render_pet_ascii
 from github_tamagotchi.services.github import GitHubService
-from github_tamagotchi.services.mcp_auth import McpTokenVerifier
 from github_tamagotchi.services.naming import is_valid_repo_identifier
 from github_tamagotchi.services.pet_feeding import (
     apply_exercise_decay,
@@ -40,7 +45,11 @@ from github_tamagotchi.services.pet_logic import (
     get_next_stage,
     get_personality_message,
 )
-from github_tamagotchi.services.token_encryption import decrypt_token
+
+# Same repo/user scopes the website's own GitHub login already requests
+# (see api/auth.py) — register_pet needs "repo" to verify access to private
+# repos, matching the existing web claim flow's check exactly.
+_GITHUB_SCOPES = ["repo", "read:user", "read:org"]
 
 INSTRUCTIONS = """\
 GitHub Tamagotchi: a virtual pet whose life is driven by a real GitHub \
@@ -77,7 +86,29 @@ Call how_to_play() any time for this text again.\
 """
 
 
-mcp = FastMCP("GitHub Tamagotchi", instructions=INSTRUCTIONS, auth=McpTokenVerifier())
+def _build_auth() -> GitHubProvider | None:
+    """GitHub OAuth via FastMCP's proxy (handles Dynamic Client Registration,
+    PKCE, and the authorize/token dance on GitHub's behalf, since GitHub
+    itself doesn't support DCR). Falls back to no auth if the app's GitHub
+    OAuth credentials aren't configured — true in some local/test setups,
+    never in a real deployment (staging/production both have them, since
+    the website's own login already depends on them).
+    """
+    if not settings.github_oauth_client_id or not settings.github_oauth_client_secret:
+        return None
+    return GitHubProvider(
+        client_id=settings.github_oauth_client_id,
+        client_secret=settings.github_oauth_client_secret,
+        base_url=settings.base_url,
+        # Distinct from the website's own /auth/callback (api/auth.py) —
+        # this is a *second* callback URL registered on the same GitHub
+        # OAuth App, dedicated to MCP client logins.
+        redirect_path="/mcp/auth/callback",
+        required_scopes=_GITHUB_SCOPES,
+    )
+
+
+mcp = FastMCP("GitHub Tamagotchi", instructions=INSTRUCTIONS, auth=_build_auth())
 
 # Rate limit for play_with_pet's mood nudge, keyed by pet id. In-process only
 # (fine for a single-instance toy deployment) — resets on restart.
@@ -85,8 +116,8 @@ _PLAY_COOLDOWN = 3600  # seconds
 _last_played_at: dict[int, float] = {}
 
 
-def _current_user_id() -> int:
-    """Resolve the authenticated caller's user id, or raise.
+def _github_access_token() -> Any:
+    """Resolve the authenticated caller's AccessToken, or raise.
 
     FastMCP's auth layer already rejects requests with no/invalid bearer
     token before a tool body ever runs — this only fires if something calls
@@ -94,16 +125,38 @@ def _current_user_id() -> int:
     """
     access_token = get_access_token()
     if access_token is None:
-        raise ToolError("Not authenticated. Generate an MCP token from the dashboard first.")
-    user_id = access_token.claims.get("user_id")
-    if user_id is None:
+        raise ToolError(
+            "Not authenticated. Reconnect your MCP client — it should prompt a GitHub login."
+        )
+    return access_token
+
+
+async def _authenticated_user(session: AsyncSession) -> User:
+    """Resolve (creating if needed) the User row for the authenticated caller.
+
+    GitHubTokenVerifier's claims carry GitHub's own identity (see
+    fastmcp.server.auth.providers.github) — "sub" is the GitHub user id,
+    "login" the username. Reuses the same upsert the website's own OAuth
+    login already does, so an MCP login and a web login for the same GitHub
+    account resolve to the same User row.
+    """
+    claims = _github_access_token().claims
+    github_id = claims.get("sub")
+    github_login = claims.get("login")
+    if github_id is None or github_login is None:
         raise ToolError("Not authenticated.")
-    return int(user_id)
+    return await create_or_update_user(
+        session,
+        github_id=int(github_id),
+        github_login=github_login,
+        github_avatar_url=claims.get("avatar_url"),
+        encrypted_token=None,
+    )
 
 
 async def _get_owned_pet(session: AsyncSession, repo_owner: str, repo_name: str) -> Pet:
     """Fetch a pet, raising unless it belongs to the authenticated caller."""
-    user_id = _current_user_id()
+    user = await _authenticated_user(session)
     result = await session.execute(
         select(Pet).where(Pet.repo_owner == repo_owner, Pet.repo_name == repo_name)
     )
@@ -112,7 +165,7 @@ async def _get_owned_pet(session: AsyncSession, repo_owner: str, repo_name: str)
         raise ToolError(
             f"No pet found for {repo_owner}/{repo_name}. Use register_pet to create one."
         )
-    if pet.user_id != user_id:
+    if pet.user_id != user.id:
         raise ToolError("That pet doesn't belong to you.")
     return pet
 
@@ -176,7 +229,7 @@ async def register_pet(repo_owner: str, repo_name: str, name: str) -> dict[str, 
     """Register a new pet for a GitHub repository you have access to.
 
     Verifies you can actually see the repository on GitHub before creating
-    the pet, using the GitHub token from your dashboard login.
+    the pet, using your current MCP session's GitHub access.
 
     Args:
         repo_owner: Owner of the GitHub repository
@@ -192,28 +245,22 @@ async def register_pet(repo_owner: str, repo_name: str, name: str) -> dict[str, 
             "error": "repo_owner/repo_name must be valid GitHub identifiers.",
         }
 
-    user_id = _current_user_id()
+    github_token = _github_access_token().token
+    if not await _verify_github_repo_access(github_token, repo_owner, repo_name):
+        raise ToolError(
+            f"You don't have access to {repo_owner}/{repo_name} on GitHub, "
+            "or it doesn't exist."
+        )
 
     async with async_session_factory() as session:
-        user = await session.get(User, user_id)
-        if user is None or not user.encrypted_token:
-            raise ToolError(
-                "Your account has no linked GitHub access token — log in via the "
-                "website first (register_pet needs to verify repo access)."
-            )
-        access_token = decrypt_token(user.encrypted_token)
-        if not await _verify_github_repo_access(access_token, repo_owner, repo_name):
-            raise ToolError(
-                f"You don't have access to {repo_owner}/{repo_name} on GitHub, "
-                "or it doesn't exist."
-            )
+        user = await _authenticated_user(session)
 
         personality = generate_personality(repo_owner, repo_name)
         pet = Pet(
             repo_owner=repo_owner,
             repo_name=repo_name,
             name=name,
-            user_id=user_id,
+            user_id=user.id,
             stage=PetStage.EGG.value,
             mood=PetMood.CONTENT.value,
             health=100,
@@ -374,9 +421,9 @@ async def list_pets() -> dict[str, Any]:
     Returns:
         Your pets and their current status
     """
-    user_id = _current_user_id()
     async with async_session_factory() as session:
-        result = await session.execute(select(Pet).where(Pet.user_id == user_id))
+        user = await _authenticated_user(session)
+        result = await session.execute(select(Pet).where(Pet.user_id == user.id))
         pets = result.scalars().all()
 
         return {
