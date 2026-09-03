@@ -13,9 +13,9 @@ from fastapi.testclient import TestClient
 
 
 def test_mcp_endpoint_responds_to_initialize(client: TestClient) -> None:
-    """POSTing a real MCP initialize handshake to /mcp/mcp must not 500."""
+    """POSTing a real MCP initialize handshake to /mcp must not 500."""
     response = client.post(
-        "/mcp/mcp",
+        "/mcp",
         json={
             "jsonrpc": "2.0",
             "id": 1,
@@ -32,3 +32,22 @@ def test_mcp_endpoint_responds_to_initialize(client: TestClient) -> None:
     assert "mcp-session-id" in response.headers
     assert '"serverInfo"' in response.text
     assert "GitHub Tamagotchi" in response.text
+
+
+def test_mcp_endpoint_has_no_double_path(client: TestClient) -> None:
+    """/mcp must work directly with no redirect (previously /mcp/mcp)."""
+    response = client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+        headers={"Accept": "application/json, text/event-stream"},
+        follow_redirects=False,
+    )
+    assert response.status_code != 307
+    assert response.status_code != 308
+
+
+def test_root_mcp_mount_does_not_shadow_other_routes(client: TestClient) -> None:
+    """Mounting the MCP app at "/" must not swallow the app's other routes."""
+    assert client.get("/api/v1/health").status_code == 200
+    assert client.get("/leaderboard").status_code == 200
+    assert client.get("/this-route-does-not-exist").status_code == 404
