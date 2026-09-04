@@ -31,6 +31,7 @@ from github_tamagotchi.models.user import User
 from github_tamagotchi.services.ascii_render import render_pet_ascii
 from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.naming import is_valid_repo_identifier
+from github_tamagotchi.services.pet_care import mess, sleep
 from github_tamagotchi.services.pet_feeding import (
     apply_exercise_decay,
     apply_feed,
@@ -40,7 +41,7 @@ from github_tamagotchi.services.pet_logic import (
     PetPersonality,
     calculate_experience,
     calculate_health_delta,
-    calculate_mood,
+    calculate_mood_with_care,
     generate_personality,
     get_next_stage,
     get_personality_message,
@@ -72,6 +73,13 @@ you feed it.
 mood one step happier (capped below the special "dancing" mood, which is \
 reserved for a real health win) and is rate-limited to prevent spamming it \
 for infinite happiness.
+- Pets also have a mood/display-only care layer on top of all of the \
+above: feeding leaves a mess that builds up until you clean_pet, going too \
+long without play makes a pet lonely, going too long without feed_pet \
+makes it hungry (independent of repo activity), and pets sleep overnight \
+(22:00-07:00 UTC) — feed_pet and play_with_pet are gently declined while \
+asleep, but clean_pet always works. None of this affects health, XP, or \
+evolution, which stay driven only by real repo activity.
 - check_pet_status and play_with_pet both return an ASCII rendering of the \
 pet's current appearance so you can actually show the user how their pet \
 looks, not just report numbers.
@@ -207,6 +215,8 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
                 "health": pet.health,
                 "experience": pet.experience,
                 "weight": weight_label(pet.weight),
+                "mess": mess.mess_label(pet),
+                "is_asleep": sleep.is_asleep(datetime.now(UTC)),
                 "created_at": pet.created_at.isoformat() if pet.created_at else None,
                 "last_fed_at": pet.last_fed_at.isoformat() if pet.last_fed_at else None,
             },
@@ -317,10 +327,27 @@ async def feed_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
     async with async_session_factory() as session:
         pet = await _get_owned_pet(session, repo_owner, repo_name)
 
+        now = datetime.now(UTC)
+        if sleep.is_asleep(now):
+            return {
+                "repo": f"{repo_owner}/{repo_name}",
+                "action": "feed",
+                "asleep": True,
+                "pet": {
+                    "name": pet.name,
+                    "mood": pet.mood,
+                },
+                "message": (
+                    f"{pet.name} is fast asleep and can't be fed right now — "
+                    "check back after it wakes up."
+                ),
+            }
+
         old_stage = pet.stage
         result = apply_feed(pet)
+        mess.add_mess(pet)
 
-        pet.last_fed_at = datetime.now(UTC)
+        pet.last_fed_at = now
 
         new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
         evolved = new_stage.value != old_stage
@@ -372,6 +399,23 @@ async def play_with_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
     async with async_session_factory() as session:
         pet = await _get_owned_pet(session, repo_owner, repo_name)
 
+        wall_clock_now = datetime.now(UTC)
+        if sleep.is_asleep(wall_clock_now):
+            ascii_art = await render_pet_ascii(pet, _try_storage())
+            return {
+                "repo": f"{repo_owner}/{repo_name}",
+                "action": "play",
+                "asleep": True,
+                "ascii_art": ascii_art,
+                "pet": {
+                    "name": pet.name,
+                    "mood": pet.mood,
+                    "weight": weight_label(pet.weight),
+                },
+                "cheered_up": False,
+                "message": f"{pet.name} is fast asleep — let it rest.",
+            }
+
         now = time.monotonic()
         # time.monotonic()'s reference point is unspecified (often since boot
         # or container start) — on a freshly started process it can itself be
@@ -387,7 +431,12 @@ async def play_with_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
         if not on_cooldown:
             mood_changed = nudge_mood_happier(pet)
             _last_played_at[pet.id] = now
-            await session.commit()
+
+        # A visit counts against boredom even when the mood nudge itself is
+        # on cooldown — set unconditionally, not just in the not-on-cooldown
+        # branch above.
+        pet.last_played_at = wall_clock_now
+        await session.commit()
 
         ascii_art = await render_pet_ascii(pet, _try_storage())
         personality = _get_pet_personality(pet, repo_owner, repo_name)
@@ -412,6 +461,49 @@ async def play_with_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
         if message:
             response["message"] = message
         return response
+
+
+@mcp.tool()
+async def clean_pet(repo_owner: str, repo_name: str) -> dict[str, Any]:
+    """Clean up the mess one of your pets has built up from being fed.
+
+    Always allowed, even while the pet is asleep — cleaning doesn't disturb
+    it the way feeding or playing would.
+
+    Args:
+        repo_owner: Owner of the GitHub repository
+        repo_name: Name of the GitHub repository
+
+    Returns:
+        The amount of mess cleared, updated pet status, and an ASCII drawing
+    """
+    async with async_session_factory() as session:
+        pet = await _get_owned_pet(session, repo_owner, repo_name)
+
+        cleared = mess.clean_pet(pet, datetime.now(UTC))
+        if pet.mood == PetMood.DIRTY.value:
+            pet.mood = PetMood.CONTENT.value
+
+        await session.commit()
+
+        ascii_art = await render_pet_ascii(pet, _try_storage())
+
+        return {
+            "repo": f"{repo_owner}/{repo_name}",
+            "action": "clean",
+            "mess_cleared": cleared,
+            "ascii_art": ascii_art,
+            "pet": {
+                "name": pet.name,
+                "mood": pet.mood,
+                "mess": mess.mess_label(pet),
+            },
+            "message": (
+                f"{pet.name} is sparkling clean now!"
+                if cleared > 0
+                else f"{pet.name} was already clean."
+            ),
+        }
 
 
 @mcp.tool()
@@ -516,6 +608,8 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
 
         old_stage = pet.stage
         old_mood = pet.mood
+        now = datetime.now(UTC)
+        personality = _get_pet_personality(pet, repo_owner, repo_name)
 
         health_delta = calculate_health_delta(health)
         pet.health = max(0, min(100, pet.health + health_delta))
@@ -525,7 +619,7 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
 
         weight_lost = apply_exercise_decay(pet)
 
-        new_mood = calculate_mood(health, pet.health)
+        new_mood = calculate_mood_with_care(health, pet, personality, now)
         pet.mood = new_mood.value
 
         new_stage = get_next_stage(PetStage(pet.stage), pet.experience)
@@ -534,11 +628,10 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
             pet.stage = new_stage.value
             await create_milestone(session, pet, old_stage, new_stage.value, pet.experience)
 
-        pet.last_checked_at = datetime.now(UTC)
+        pet.last_checked_at = now
 
         await session.commit()
 
-        personality = _get_pet_personality(pet, repo_owner, repo_name)
         personality_msg = get_personality_message(pet.name, personality, new_mood)
 
         update_response: dict[str, Any] = {

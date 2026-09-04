@@ -216,6 +216,22 @@ def _reset_mcp_play_cooldowns() -> Iterator[None]:
     mcp_server_module._last_played_at.clear()
 
 
+@pytest.fixture(autouse=True)
+def _default_pets_awake() -> Iterator[None]:
+    """Default every pet to "awake" for tests that don't care about sleep.
+
+    `sleep.is_asleep` gates on the real wall-clock UTC hour, so leaving it
+    unmocked would make ~9/24 of any given day's CI runs spuriously exercise
+    the "asleep" branch of feed_pet/play_with_pet/calculate_mood_with_care.
+    `pet_logic.py` and `mcp/server.py` both do `from ... import sleep` and
+    call `sleep.is_asleep(...)`, so patching the attribute on the shared
+    `pet_care.sleep` module object here covers every caller. Tests that
+    specifically exercise sleep behavior override this with their own patch.
+    """
+    with patch("github_tamagotchi.services.pet_care.sleep.is_asleep", return_value=False):
+        yield
+
+
 # Mock data fixtures for testing
 
 

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from github_tamagotchi.models.pet import PetMood, PetSkin, PetStage
 from github_tamagotchi.services.github import RepoHealth
+from github_tamagotchi.services.pet_care import boredom, mess, neglect_hunger, sleep
 
 if TYPE_CHECKING:
     from github_tamagotchi.models.pet import Pet
@@ -85,6 +86,40 @@ def calculate_mood(health: RepoHealth, current_health: int) -> PetMood:
     if current_health >= 80:
         return PetMood.HAPPY
     return PetMood.CONTENT
+
+
+def calculate_mood_with_care(
+    health: RepoHealth, pet: "Pet", personality: "PetPersonality", now: datetime
+) -> PetMood:
+    """`calculate_mood` plus the mess/boredom/hunger/sleep care mechanics.
+
+    The base mood from `calculate_mood` still drives health-linked signals
+    (security, stale deps, PR/issue age, solo maintainer, CI). On top of
+    that, in order (first match wins, and SICK is never overridden — a sick
+    pet doesn't sleep peacefully or notice mess):
+      1. base mood is SICK -> SICK, unchanged
+      2. `sleep.is_asleep(now)` -> SLEEPING
+      3. `mess.is_dirty(pet)` -> DIRTY
+      4. `neglect_hunger.is_neglected_hungry(...)` -> HUNGRY
+      5. `boredom.is_bored(...)` -> LONELY
+      6. otherwise the base mood, unchanged
+
+    Health, XP, and evolution are untouched by any of this — it's a
+    mood/display layer only, same as the weight mechanic in
+    services/pet_feeding.py.
+    """
+    base_mood = calculate_mood(health, pet.health)
+    if base_mood == PetMood.SICK:
+        return PetMood.SICK
+    if sleep.is_asleep(now):
+        return PetMood.SLEEPING
+    if mess.is_dirty(pet):
+        return PetMood.DIRTY
+    if neglect_hunger.is_neglected_hungry(pet, personality.appetite, now):
+        return PetMood.HUNGRY
+    if boredom.is_bored(pet, personality.activity, now):
+        return PetMood.LONELY
+    return base_mood
 
 
 def calculate_health_delta(health: RepoHealth) -> int:
