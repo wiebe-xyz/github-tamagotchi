@@ -47,6 +47,8 @@ class PetMood(StrEnum):
     LONELY = "lonely"
     SICK = "sick"
     DANCING = "dancing"
+    SLEEPING = "sleeping"
+    DIRTY = "dirty"
 
 
 class PetSkin(StrEnum):
@@ -205,6 +207,18 @@ class Pet(Base):
     # services/pet_feeding.py. Baseline 50.0 = "trim".
     weight: Mapped[float] = mapped_column(
         Float, nullable=False, default=50.0, server_default="50.0"
+    )
+
+    # Care mechanics: mess (from feeding, cleared by clean_pet) and boredom
+    # (from lack of play_with_pet). Hunger-from-neglect reuses last_fed_at
+    # above; the sleep cycle is computed from wall-clock time, no column
+    # needed. See services/pet_care.py.
+    mess_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_cleaned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_played_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     # Relationships
