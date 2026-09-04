@@ -94,9 +94,11 @@ That's it. Claude Code discovers the server needs auth, registers itself automat
 
 Every tool is scoped to your own pets — you can't read or change anyone else's, except `get_leaderboard`, which shows the same aggregate standings already public on the website. Call `how_to_play` any time for the full rules (also sent automatically to the client at connection time).
 
-Available tools: `how_to_play`, `register_pet`, `check_pet_status`, `feed_pet`, `play_with_pet`, `list_pets`, `get_pet_history`, `update_pet_from_repo`, `get_leaderboard`.
+Available tools: `how_to_play`, `register_pet`, `check_pet_status`, `feed_pet`, `play_with_pet`, `clean_pet`, `list_pets`, `get_pet_history`, `update_pet_from_repo`, `get_leaderboard`.
 
 `check_pet_status` and `play_with_pet` both return an ASCII rendering of the pet's current appearance. `feed_pet` is freely callable but not a shortcut to progress — health, XP, and evolution only ever come from real repo activity via `update_pet_from_repo`; overfeeding just makes the pet chubby, then fat, until real activity (which also burns the weight back off) or time works it off.
+
+On top of all of that, pets carry a mood/display-only care layer: feeding leaves a mess that builds up until you `clean_pet`, going too long without `play_with_pet` makes a pet lonely, going too long without `feed_pet` makes it hungry (independent of repo activity), and pets sleep overnight (22:00-07:00 UTC) — `feed_pet` and `play_with_pet` are gently declined while asleep, but `clean_pet` always works. None of this touches health, XP, or evolution.
 
 ## Cost Reference
 
@@ -124,6 +126,7 @@ Retrospective specs covering everything built so far are in `specs/`:
 | Spec | What it covers |
 |------|----------------|
 | `pet-lifecycle.md` | Evolution, health formula, mood system |
+| `pet-care-mechanics.md` | Mess, boredom, neglect-hunger, sleep cycle |
 | `death-and-resurrection.md` | Grace period, abandonment, memorial, resurrection |
 | `commit-streak.md` | Calendar-day tracking, age cap, dedup |
 | `image-generation.md` | OpenRouter pipeline, sprite sheets, GIF composition |

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.mcp.server import (
     check_pet_status,
+    clean_pet,
     feed_pet,
     get_leaderboard,
     get_pet_history,
@@ -33,6 +34,7 @@ from github_tamagotchi.mcp.server import (
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.github import RepoHealth
+from github_tamagotchi.services.pet_care.mess import MESS_DIRTY_THRESHOLD
 from github_tamagotchi.services.pet_feeding import FAT_THRESHOLD
 
 # The @mcp.tool() decorator wraps functions in FunctionTool objects.
@@ -41,6 +43,7 @@ _register_pet = register_pet.fn
 _check_pet_status = check_pet_status.fn
 _feed_pet = feed_pet.fn
 _play_with_pet = play_with_pet.fn
+_clean_pet = clean_pet.fn
 _list_pets = list_pets.fn
 _get_pet_history = get_pet_history.fn
 _update_pet_from_repo = update_pet_from_repo.fn
@@ -260,10 +263,28 @@ class TestCheckPetStatus:
         assert result["pet"]["stage"] == PetStage.BABY.value
         assert result["health_metrics"]["ci_passing"] is True
         assert result["ascii_art"]  # non-empty fallback art, no storage configured in tests
+        assert result["pet"]["mess"] == "clean"
+        assert result["pet"]["is_asleep"] is False
 
     async def test_check_pet_status_no_pet(self, test_db: AsyncSession) -> None:
         with _as_user(test_db, user_id=1), pytest.raises(ToolError, match="No pet found"):
             await _check_pet_status("owner", "nonexistent")
+
+    async def test_check_pet_status_reports_mess_and_sleep(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        await _make_pet(test_db, user_id=1, mess_level=MESS_DIRTY_THRESHOLD)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+            patch("github_tamagotchi.mcp.server.sleep.is_asleep", return_value=True),
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
+            result = await _check_pet_status("owner", "repo")
+
+        assert result["pet"]["mess"] == "filthy"
+        assert result["pet"]["is_asleep"] is True
 
 
 class TestFeedPet:
@@ -313,6 +334,34 @@ class TestFeedPet:
     async def test_feed_pet_no_pet(self, test_db: AsyncSession) -> None:
         with _as_user(test_db, user_id=1), pytest.raises(ToolError, match="No pet found"):
             await _feed_pet("owner", "nonexistent")
+
+    async def test_feed_pet_adds_mess(self, test_db: AsyncSession) -> None:
+        pet = await _make_pet(test_db, user_id=1, health=50, mess_level=0)
+
+        with _as_user(test_db, user_id=1):
+            await _feed_pet("owner", "repo")
+
+        await test_db.refresh(pet)
+        assert pet.mess_level == 1
+
+    async def test_feed_pet_skipped_while_asleep(self, test_db: AsyncSession) -> None:
+        """No mutation at all while the pet is asleep -- no mess, no weight
+        change, no last_fed_at update."""
+        pet = await _make_pet(test_db, user_id=1, health=50, weight=50.0, mess_level=0)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.sleep.is_asleep", return_value=True),
+        ):
+            result = await _feed_pet("owner", "repo")
+
+        assert result["asleep"] is True
+        assert "sleep" in result["message"].lower() or "asleep" in result["message"].lower()
+
+        await test_db.refresh(pet)
+        assert pet.mess_level == 0
+        assert pet.weight == 50.0
+        assert pet.last_fed_at is None
 
 
 class TestPlayWithPet:
@@ -374,6 +423,113 @@ class TestPlayWithPet:
 
         assert result["pet"]["mood"] == PetMood.HAPPY.value
         assert result["cheered_up"] is False
+
+    async def test_play_with_pet_sets_last_played_at_even_on_mood_cooldown(
+        self, test_db: AsyncSession
+    ) -> None:
+        """A visit counts against boredom even when the mood nudge itself is
+        on cooldown."""
+        pet = await _make_pet(test_db, user_id=1, mood=PetMood.WORRIED.value)
+
+        with _as_user(test_db, user_id=1):
+            first = await _play_with_pet("owner", "repo")
+            second = await _play_with_pet("owner", "repo")
+
+        assert first["cheered_up"] is True
+        assert second["cheered_up"] is False
+
+        await test_db.refresh(pet)
+        assert pet.last_played_at is not None
+
+    async def test_play_with_pet_skipped_while_asleep(self, test_db: AsyncSession) -> None:
+        pet = await _make_pet(test_db, user_id=1, mood=PetMood.WORRIED.value)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.sleep.is_asleep", return_value=True),
+        ):
+            result = await _play_with_pet("owner", "repo")
+
+        assert result["asleep"] is True
+        assert result["cheered_up"] is False
+        assert result["pet"]["mood"] == PetMood.WORRIED.value
+        assert result["ascii_art"]
+
+        await test_db.refresh(pet)
+        assert pet.last_played_at is None
+        assert pet.mood == PetMood.WORRIED.value
+
+
+class TestCleanPet:
+    """Tests for the clean_pet MCP tool."""
+
+    async def test_clean_pet_clears_mess_and_reports_amount(
+        self, test_db: AsyncSession
+    ) -> None:
+        pet = await _make_pet(test_db, user_id=1, mess_level=5)
+
+        with _as_user(test_db, user_id=1):
+            result = await _clean_pet("owner", "repo")
+
+        assert result["mess_cleared"] == 5
+        assert result["pet"]["mess"] == "clean"
+        assert result["ascii_art"]
+
+        await test_db.refresh(pet)
+        assert pet.mess_level == 0
+        assert pet.last_cleaned_at is not None
+
+    async def test_clean_pet_resets_dirty_mood_to_content(self, test_db: AsyncSession) -> None:
+        pet = await _make_pet(
+            test_db, user_id=1, mess_level=MESS_DIRTY_THRESHOLD, mood=PetMood.DIRTY.value
+        )
+
+        with _as_user(test_db, user_id=1):
+            result = await _clean_pet("owner", "repo")
+
+        assert result["pet"]["mood"] == PetMood.CONTENT.value
+
+        await test_db.refresh(pet)
+        assert pet.mood == PetMood.CONTENT.value
+
+    async def test_clean_pet_leaves_non_dirty_mood_alone(self, test_db: AsyncSession) -> None:
+        await _make_pet(test_db, user_id=1, mess_level=1, mood=PetMood.HAPPY.value)
+
+        with _as_user(test_db, user_id=1):
+            result = await _clean_pet("owner", "repo")
+
+        assert result["pet"]["mood"] == PetMood.HAPPY.value
+
+    async def test_clean_pet_already_clean_returns_zero(self, test_db: AsyncSession) -> None:
+        await _make_pet(test_db, user_id=1, mess_level=0)
+
+        with _as_user(test_db, user_id=1):
+            result = await _clean_pet("owner", "repo")
+
+        assert result["mess_cleared"] == 0
+
+    async def test_clean_pet_works_while_asleep(self, test_db: AsyncSession) -> None:
+        """Cleaning is always allowed, even while asleep -- unlike feed/play."""
+        pet = await _make_pet(test_db, user_id=1, mess_level=3)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.sleep.is_asleep", return_value=True),
+        ):
+            result = await _clean_pet("owner", "repo")
+
+        assert result["mess_cleared"] == 3
+        await test_db.refresh(pet)
+        assert pet.mess_level == 0
+
+    async def test_clean_pet_no_pet(self, test_db: AsyncSession) -> None:
+        with _as_user(test_db, user_id=1), pytest.raises(ToolError, match="No pet found"):
+            await _clean_pet("owner", "nonexistent")
+
+    async def test_cannot_clean_someone_elses_pet(self, test_db: AsyncSession) -> None:
+        await _make_pet(test_db, user_id=1)
+        with _as_user(test_db, user_id=2), pytest.raises(ToolError, match="doesn't belong to you"):
+            await _clean_pet("owner", "repo")
 
 
 class TestListPets:
@@ -462,6 +618,45 @@ class TestUpdatePetFromRepo:
     async def test_update_pet_from_repo_no_pet(self, test_db: AsyncSession) -> None:
         with _as_user(test_db, user_id=1), pytest.raises(ToolError, match="No pet found"):
             await _update_pet_from_repo("owner", "nonexistent")
+
+    async def test_update_pet_from_repo_applies_care_mood_layer(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        """update_pet_from_repo now goes through calculate_mood_with_care, so
+        a dirty pet stays DIRTY even when the base repo signals would
+        otherwise make it DANCING."""
+        await _make_pet(
+            test_db,
+            user_id=1,
+            health=50,
+            experience=100,
+            weight=60.0,
+            mess_level=MESS_DIRTY_THRESHOLD,
+        )
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
+            result = await _update_pet_from_repo("owner", "repo")
+
+        assert result["pet"]["mood"] == PetMood.DIRTY.value
+
+    async def test_update_pet_from_repo_sleeping_overrides_dancing(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        await _make_pet(test_db, user_id=1, health=50, experience=100, weight=60.0)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+            patch("github_tamagotchi.services.pet_care.sleep.is_asleep", return_value=True),
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
+            result = await _update_pet_from_repo("owner", "repo")
+
+        assert result["pet"]["mood"] == PetMood.SLEEPING.value
 
 
 class TestGetLeaderboard:

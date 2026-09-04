@@ -1,10 +1,11 @@
 """Tests for pet logic."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 
-from github_tamagotchi.models.pet import PetMood, PetStage
+from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.github import RepoHealth
 from github_tamagotchi.services.pet_logic import (
     EVOLUTION_THRESHOLDS,
@@ -12,9 +13,11 @@ from github_tamagotchi.services.pet_logic import (
     LONELY_THRESHOLD_DAYS,
     SECURITY_HEALTH_PENALTY,
     WORRIED_THRESHOLD_HOURS,
+    PetPersonality,
     calculate_experience,
     calculate_health_delta,
     calculate_mood,
+    calculate_mood_with_care,
     get_next_stage,
 )
 
@@ -277,6 +280,118 @@ class TestCalculateMood:
         )
         assert calculate_mood(health, current_health=1) != PetMood.SICK
 
+
+def _neutral_health(**overrides: object) -> RepoHealth:
+    """RepoHealth with no signals set -- base calculate_mood falls through
+    to HAPPY/CONTENT, so tests can isolate the care-mechanics layering."""
+    defaults: dict[str, object] = {
+        "last_commit_at": None,
+        "open_prs_count": 0,
+        "oldest_pr_age_hours": None,
+        "open_issues_count": 0,
+        "oldest_issue_age_days": None,
+        "last_ci_success": False,
+        "has_stale_dependencies": False,
+    }
+    defaults.update(overrides)
+    return RepoHealth(**defaults)  # type: ignore[arg-type]
+
+
+_NOW = datetime(2026, 6, 15, 12, 0, tzinfo=UTC)  # midday UTC -- not asleep
+
+
+def _care_pet(**overrides: object) -> Pet:
+    defaults: dict[str, object] = {
+        "repo_owner": "o",
+        "repo_name": "r",
+        "name": "P",
+        "stage": PetStage.BABY.value,
+        "mood": PetMood.CONTENT.value,
+        "health": 100,
+        "experience": 0,
+        "mess_level": 0,
+        "created_at": _NOW - timedelta(days=30),
+        "last_played_at": _NOW,
+        "last_fed_at": _NOW,
+    }
+    defaults.update(overrides)
+    return Pet(**defaults)  # type: ignore[arg-type]
+
+
+_NEUTRAL_PERSONALITY = PetPersonality(
+    activity=0.5, sociability=0.5, bravery=0.5, tidiness=0.5, appetite=0.5
+)
+
+
+class TestCalculateMoodWithCare:
+    """Tests for calculate_mood_with_care -- layers mess/sleep/neglect-hunger/
+    boredom mood signals on top of the base calculate_mood, in priority order."""
+
+    def test_sick_is_never_overridden(self) -> None:
+        """A sick pet doesn't sleep peacefully or notice mess -- SICK wins
+        over every care signal, even when all of them would otherwise fire."""
+        health = _neutral_health(has_stale_dependencies=True)
+        pet = _care_pet(
+            health=100,
+            mess_level=99,
+            last_played_at=None,
+            created_at=_NOW - timedelta(days=365),
+            last_fed_at=None,
+        )
+        with patch("github_tamagotchi.services.pet_care.sleep.is_asleep", return_value=True):
+            mood = calculate_mood_with_care(health, pet, _NEUTRAL_PERSONALITY, _NOW)
+        assert mood == PetMood.SICK
+
+    def test_asleep_takes_priority_over_dirty_and_hungry(self) -> None:
+        health = _neutral_health()
+        pet = _care_pet(mess_level=99, last_fed_at=None, created_at=_NOW - timedelta(days=365))
+        with patch("github_tamagotchi.services.pet_care.sleep.is_asleep", return_value=True):
+            mood = calculate_mood_with_care(health, pet, _NEUTRAL_PERSONALITY, _NOW)
+        assert mood == PetMood.SLEEPING
+
+    def test_dirty_takes_priority_over_hungry_and_bored(self) -> None:
+        health = _neutral_health()
+        pet = _care_pet(
+            mess_level=99,
+            last_fed_at=None,
+            last_played_at=None,
+            created_at=_NOW - timedelta(days=365),
+        )
+        mood = calculate_mood_with_care(health, pet, _NEUTRAL_PERSONALITY, _NOW)
+        assert mood == PetMood.DIRTY
+
+    def test_neglect_hungry_takes_priority_over_bored(self) -> None:
+        health = _neutral_health()
+        pet = _care_pet(
+            mess_level=0,
+            last_fed_at=None,
+            last_played_at=None,
+            created_at=_NOW - timedelta(days=365),
+        )
+        mood = calculate_mood_with_care(health, pet, _NEUTRAL_PERSONALITY, _NOW)
+        assert mood == PetMood.HUNGRY
+
+    def test_bored_when_only_boredom_signal_fires(self) -> None:
+        health = _neutral_health()
+        pet = _care_pet(
+            mess_level=0,
+            last_fed_at=_NOW,
+            last_played_at=None,
+            created_at=_NOW - timedelta(days=365),
+        )
+        mood = calculate_mood_with_care(health, pet, _NEUTRAL_PERSONALITY, _NOW)
+        assert mood == PetMood.LONELY
+
+    def test_base_mood_unchanged_when_no_care_signal_fires(self) -> None:
+        health = _neutral_health()
+        pet = _care_pet(
+            health=100,
+            mess_level=0,
+            last_fed_at=_NOW,
+            last_played_at=_NOW,
+        )
+        mood = calculate_mood_with_care(health, pet, _NEUTRAL_PERSONALITY, _NOW)
+        assert mood == calculate_mood(health, pet.health) == PetMood.HAPPY
 
 
 class TestCalculateHealthDelta:

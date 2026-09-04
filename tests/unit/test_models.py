@@ -35,13 +35,23 @@ class TestPetMoodEnum:
 
     def test_all_moods_defined(self) -> None:
         """All expected moods should be defined."""
-        expected_moods = ["happy", "content", "hungry", "worried", "lonely", "sick", "dancing"]
+        expected_moods = [
+            "happy",
+            "content",
+            "hungry",
+            "worried",
+            "lonely",
+            "sick",
+            "dancing",
+            "sleeping",
+            "dirty",
+        ]
         actual_moods = [mood.value for mood in PetMood]
         assert actual_moods == expected_moods
 
     def test_mood_count(self) -> None:
-        """Should have exactly 7 mood types."""
-        assert len(PetMood) == 7
+        """Should have exactly 9 mood types."""
+        assert len(PetMood) == 9
 
     def test_moods_are_strings(self) -> None:
         """Mood values should be lowercase strings."""
