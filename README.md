@@ -92,6 +92,8 @@ claude mcp add --transport http tamagotchi https://tamagotchi.webwiebe.nl/mcp
 
 That's it. Claude Code discovers the server needs auth, registers itself automatically (Dynamic Client Registration), and opens a GitHub login in your browser. Any other MCP client that follows the same spec (OAuth 2.1 + DCR + PKCE) works the same way — point it at the URL above. Opening `/mcp/info` in a browser shows the same instructions for humans (and clients that land there without a session yet).
 
+Then hatch a pet for whatever repo you want your assistant to care for — just ask it, in plain language, e.g. *"register a pet for this repo"* (calls `register_pet`), and add the resulting badge to that repo's README (see `## Meet Ouroboros` above for the pattern this repo uses on itself).
+
 Every tool is scoped to your own pets — you can't read or change anyone else's, except `get_leaderboard`, which shows the same aggregate standings already public on the website. Call `how_to_play` any time for the full rules (also sent automatically to the client at connection time).
 
 Available tools: `how_to_play`, `register_pet`, `check_pet_status`, `feed_pet`, `play_with_pet`, `clean_pet`, `list_pets`, `get_pet_history`, `update_pet_from_repo`, `get_leaderboard`.
