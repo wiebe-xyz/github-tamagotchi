@@ -2,6 +2,10 @@
 
 A virtual pet that lives and dies by your GitHub repository's health. The creature evolves, develops a personality, and eventually dies if your project is neglected — all driven by real metrics.
 
+## Meet Ouroboros
+
+This repo dogfoods its own product — [![wiebe-xyz/github-tamagotchi](https://tamagotchi.webwiebe.nl/api/v1/pets/wiebe-xyz/github-tamagotchi/badge.svg)](https://tamagotchi.webwiebe.nl/pet/wiebe-xyz/github-tamagotchi)
+
 ## How It Works
 
 Each repository gets a unique, deterministically generated pet. The same repo always produces the same creature: same colours, same body shape, same personality traits. From there, the pet's life is entirely driven by what happens in the repo.
