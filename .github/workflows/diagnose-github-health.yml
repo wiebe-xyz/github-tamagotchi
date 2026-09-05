@@ -52,6 +52,8 @@ jobs:
               print("token configured:", bool(settings.github_token))
               print("token length:", len(settings.github_token) if settings.github_token else 0)
 
+              svc = GitHubService()
+
               async with httpx.AsyncClient() as client:
                   headers = {"Accept": "application/vnd.github.v3+json"}
                   if settings.github_token:
@@ -64,7 +66,29 @@ jobs:
                       body = resp.json()
                       print("rate limit core remaining:", body.get("resources", {}).get("core", {}))
 
-              svc = GitHubService()
+                  # Bypass the app's internal logger (may not be configured outside
+                  # full app startup) and catch the raw exception directly, plus
+                  # try the exact same request _get_last_commit makes, by hand.
+                  try:
+                      raw = await client.get(
+                          f"https://api.github.com/repos/$OWNER/$NAME/commits",
+                          headers=headers,
+                          params={"per_page": 1},
+                      )
+                      print("raw commits call status:", raw.status_code)
+                      if raw.status_code != 200:
+                          print("raw commits call body:", raw.text[:500])
+                  except Exception as e:
+                      print("raw commits call raised:", type(e).__name__, str(e))
+
+                  try:
+                      last_commit_direct = await svc._get_last_commit(client, "$OWNER", "$NAME")
+                      print("_get_last_commit() direct result:", last_commit_direct)
+                  except Exception as e:
+                      import traceback
+                      print("_get_last_commit() raised:", type(e).__name__, str(e))
+                      traceback.print_exc()
+
               health = await svc.get_repo_health("$OWNER", "$NAME")
               print("failed_checks:", health.failed_checks)
               print("last_commit_at:", health.last_commit_at)
