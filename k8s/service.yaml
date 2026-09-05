@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-tamagotchi
+  namespace: nijmegen-testing
+spec:
+  selector:
+    app: github-tamagotchi
+    version: blue
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

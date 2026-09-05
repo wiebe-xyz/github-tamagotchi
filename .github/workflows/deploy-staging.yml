@@ -81,9 +81,17 @@ jobs:
           # Ensure namespace and resources exist
           kubectl apply -f k8s/staging/namespace.yaml
 
-          # Ensure deployments + service exist
+          # Ensure deployments + ingress exist
           sed 's/namespace: nijmegen-testing/namespace: tama-staging/g; s|tamagotchi.nijmegen.wiebe.xyz|tamagotchi-staging.nijmegen.wiebe.xyz|g' \
             k8s/deployment.yaml | kubectl apply -f -
+
+          # Create the Service only if it doesn't already exist yet — this manifest
+          # only carries the initial selector, and a routine deploy must never
+          # re-apply it, since that would reset the active blue/green selector.
+          # Only the explicit "kubectl patch service" below may change it.
+          kubectl get service github-tamagotchi -n $NS >/dev/null 2>&1 || \
+            sed 's/namespace: nijmegen-testing/namespace: tama-staging/g' \
+              k8s/service.yaml | kubectl apply -f -
 
           kubectl apply -f k8s/staging/ingress.yaml
 

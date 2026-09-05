@@ -365,17 +365,3 @@ spec:
               port: 8000
             periodSeconds: 5
             failureThreshold: 3
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: github-tamagotchi
-  namespace: tama-prod
-spec:
-  selector:
-    app: github-tamagotchi
-    version: blue
-  ports:
-    - protocol: TCP
-      port: 8000
-      targetPort: 8000

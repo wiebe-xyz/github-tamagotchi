@@ -123,6 +123,14 @@ jobs:
           kubectl apply -f k8s/production/namespace.yaml
           kubectl apply -f k8s/production/middleware.yaml
           kubectl apply -f k8s/production/deployment.yaml
+
+          # Create the Service only if it doesn't already exist yet — this manifest
+          # only carries the initial selector, and a routine deploy must never
+          # re-apply it, since that would reset the active blue/green selector.
+          # Only the explicit "kubectl patch service" below may change it.
+          kubectl get service github-tamagotchi -n $NS >/dev/null 2>&1 || \
+            kubectl apply -f k8s/production/service.yaml
+
           kubectl apply -f k8s/production/ingress.yaml
 
           # Recreate ghcr-secret (prefer long-lived PAT over ephemeral workflow token)
