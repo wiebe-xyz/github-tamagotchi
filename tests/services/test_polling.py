@@ -113,6 +113,43 @@ class TestPollRepositories:
         assert pet.mood == PetMood.SICK.value
 
     @pytest.mark.asyncio
+    async def test_poll_skips_pet_with_invalid_repo_identifier(self, test_db):
+        """A legacy pet with a garbage repo identifier is skipped, not polled.
+
+        Rows like this predate ``is_valid_repo_identifier`` being enforced on
+        write; without this guard the poller would hit the GitHub API with
+        junk on every cycle forever.
+        """
+        pet = Pet(
+            repo_owner="owner",
+            repo_name="repo)",  # trailing paren: fails _REPO_SEGMENT_RE
+            name="TestPet",
+            health=50,
+            experience=0,
+            stage=PetStage.EGG.value,
+            mood=PetMood.CONTENT.value,
+        )
+        test_db.add(pet)
+        await test_db.commit()
+
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
+            mock_service = AsyncMock()
+            mock_service_class.return_value = mock_service
+
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await poll_repositories()
+
+        mock_service.get_repo_health.assert_not_called()
+        await test_db.refresh(pet)
+        assert pet.health == 50
+        assert pet.last_checked_at is None
+
+    @pytest.mark.asyncio
     async def test_poll_triggers_evolution(self, test_db):
         """Pet should evolve when experience threshold is met."""
         pet = Pet(

@@ -135,7 +135,15 @@ async def get_or_create_placeholder(
 
 
 async def claim_placeholder(db: AsyncSession, pet: Pet, user_id: int) -> Pet:
-    """Bind a placeholder pet to a user. No-op-ish if the pet isn't a placeholder."""
+    """Bind a placeholder pet to a user. No-op-ish if the pet isn't a placeholder.
+
+    Raises ValidationError if the pet's owner/repo aren't valid GitHub
+    identifiers. Placeholders created before ``is_valid_repo_identifier`` was
+    enforced can carry garbage (unsubstituted template placeholders, stray
+    punctuation, ...); re-checking here stops that from being promoted to a
+    real, polled pet.
+    """
+    _require_valid_repo_identifier(pet.repo_owner, pet.repo_name)
     return await pet_repo.claim_placeholder(db, pet, user_id)
 
 

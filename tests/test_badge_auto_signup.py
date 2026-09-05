@@ -266,6 +266,65 @@ async def test_claim_helper_not_found_raises(test_db: AsyncSession) -> None:
     assert excinfo.value.reason == "not_found"
 
 
+@pytest.mark.asyncio
+async def test_claim_helper_rejects_legacy_invalid_identifier(
+    test_db: AsyncSession,
+) -> None:
+    """A pre-guard placeholder with a garbage identifier can't be claimed.
+
+    ``pet_repo.create_pet`` (unlike the service-layer chokepoint) performs no
+    validation, so this stands in for a legacy row created before
+    ``is_valid_repo_identifier`` was enforced on the write path.
+    """
+    await pet_repo.create_pet(
+        test_db, "alice", "repo)", name="Seedling", is_placeholder=True
+    )
+
+    with (
+        patch.object(
+            auth_mod,
+            "_verify_github_repo_access",
+            new=AsyncMock(return_value=True),
+        ),
+        pytest.raises(auth_mod._ClaimError) as excinfo,
+    ):
+        await auth_mod._claim_placeholder_for_user(
+            session=test_db,
+            user=_fake_user(),
+            access_token="tok",
+            claim_target="alice/repo)",
+        )
+    assert excinfo.value.reason == "invalid_identifier"
+
+    pet = await pet_repo.get_pet_by_repo(test_db, "alice", "repo)")
+    assert pet is not None
+    assert pet.is_placeholder is True
+    assert pet.user_id is None
+
+
+@pytest.mark.asyncio
+async def test_service_claim_placeholder_rejects_invalid_identifier(
+    test_db: AsyncSession,
+) -> None:
+    """The shared services.pet.claim_placeholder chokepoint re-validates too.
+
+    Covers callers other than the OAuth helper, e.g. the logged-in-user
+    /pet/{owner}/{repo}/claim route in main.py, which calls this directly.
+    """
+    from github_tamagotchi.exceptions import ValidationError
+
+    pet = await pet_repo.create_pet(
+        test_db, "*", "admin", name="Seedling", is_placeholder=True
+    )
+
+    with pytest.raises(ValidationError):
+        await pet_service.claim_placeholder(test_db, pet, user_id=7)
+
+    await test_db.refresh(pet)
+    assert pet.is_placeholder is True
+    assert pet.user_id is None
+
+
 # ----- /auth/github accepts and validates claim param -----
 
 

@@ -17,6 +17,7 @@ from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import get_session
 from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.crud.user import create_or_update_user, get_user_by_id
+from github_tamagotchi.exceptions import ValidationError
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.token_encryption import encrypt_token
 
@@ -207,7 +208,16 @@ async def _claim_placeholder_for_user(
     if not await _verify_github_repo_access(access_token, owner, repo):
         raise _ClaimError("no_access")
 
-    await pet_service.claim_placeholder(session, pet, user_id=user.id)
+    try:
+        await pet_service.claim_placeholder(session, pet, user_id=user.id)
+    except ValidationError as exc:
+        logger.warning(
+            "claim_rejected_invalid_identifier: owner=%s repo=%s error=%s",
+            owner,
+            repo,
+            exc,
+        )
+        raise _ClaimError("invalid_identifier") from exc
     try:
         await image_queue.create_job(session, pet.id, PetStage.EGG.value)
     except ValueError:
