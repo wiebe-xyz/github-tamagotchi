@@ -81,10 +81,17 @@ The `replicas: 0` values in `k8s/deployment.yaml` are what the API server will e
 ### Migrations run on the new slot only
 The init container runs `alembic upgrade head` before the app starts. Schema changes are applied to the database while the old slot is still serving traffic. Migrations must therefore be backwards-compatible with the currently-running code (i.e. additive-only, no column drops or renames until the old slot is gone).
 
+### Service must never be re-applied on the routine deploy path
+The Service used to be checked into the same manifest as the Deployments (`k8s/deployment.yaml` / `k8s/production/deployment.yaml`), with a hardcoded `selector.version: blue`. Every `kubectl apply -f` of that manifest — which both `deploy-staging.yml` and `promote-to-production.yml` run on every deploy, before reading the currently active color — reset the Service selector back to the static `blue` value. That left a window (until the later `kubectl patch service` step) where the Service could point at zero live endpoints if `blue` happened to be the inactive/0-replica slot (see issue #244). The Service now lives in its own manifest (`k8s/service.yaml` / `k8s/production/service.yaml`) that the deploy workflows apply only if the Service doesn't already exist in the namespace — so the routine `kubectl apply` path never touches the live selector, and only the explicit `kubectl patch service ... selector.version=$INACTIVE` step (step 5 above) can change it.
+
 ## Files
 
 | File | Role |
 |------|------|
-| `k8s/deployment.yaml` | Defines both blue and green Deployments (replicas: 0 — managed by deploy process), the Service, and the Ingress |
-| `.github/workflows/ci.yml` | `deploy` job implements the blue-green swap logic |
+| `k8s/deployment.yaml` | Defines both blue and green Deployments (replicas: 0 — managed by deploy process) and the Ingress |
+| `k8s/service.yaml` | The Service (staging); applied only if it doesn't already exist, so a routine deploy can't reset the active-color selector |
+| `k8s/production/deployment.yaml` | Production blue/green Deployments |
+| `k8s/production/service.yaml` | Production Service; applied only if it doesn't already exist, same reasoning as above |
+| `.github/workflows/deploy-staging.yml` | Staging deploy job implements the blue-green swap logic |
+| `.github/workflows/promote-to-production.yml` | Production promotion job implements the blue-green swap logic |
 | `Taskfile.yml` | `k8s:deploy` task for manual deploys; `k8s:logs` queries the active color dynamically |
