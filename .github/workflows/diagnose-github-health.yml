@@ -40,38 +40,40 @@ jobs:
 
           echo "Testing GitHub health sync for $OWNER/$NAME in pod $POD ($NS, active=$ACTIVE)"
           echo "Note: this only prints derived results (failed check names, status codes,"
-          echo "booleans) — the token value itself is never printed."
+          echo "booleans) -- the token value itself is never printed."
 
-          kubectl exec -n "$NS" "$POD" -c github-tamagotchi -- python -c "
-import asyncio
-import httpx
-from github_tamagotchi.core.config import settings
-from github_tamagotchi.services.github import GitHubService
+          cat > /tmp/diagnose.py <<PYEOF
+          import asyncio
+          import httpx
+          from github_tamagotchi.core.config import settings
+          from github_tamagotchi.services.github import GitHubService
 
-async def main():
-    print('token configured:', bool(settings.github_token))
-    print('token length:', len(settings.github_token) if settings.github_token else 0)
+          async def main():
+              print("token configured:", bool(settings.github_token))
+              print("token length:", len(settings.github_token) if settings.github_token else 0)
 
-    # Direct minimal call, bypassing our own wrapper, to see the raw GitHub response
-    async with httpx.AsyncClient() as client:
-        headers = {'Accept': 'application/vnd.github.v3+json'}
-        if settings.github_token:
-            headers['Authorization'] = f'Bearer {settings.github_token}'
-        resp = await client.get('https://api.github.com/rate_limit', headers=headers)
-        print('raw /rate_limit status:', resp.status_code)
-        if resp.status_code != 200:
-            print('raw /rate_limit body:', resp.text[:500])
-        else:
-            body = resp.json()
-            print('rate limit core remaining:', body.get('resources', {}).get('core', {}))
+              async with httpx.AsyncClient() as client:
+                  headers = {"Accept": "application/vnd.github.v3+json"}
+                  if settings.github_token:
+                      headers["Authorization"] = f"Bearer {settings.github_token}"
+                  resp = await client.get("https://api.github.com/rate_limit", headers=headers)
+                  print("raw /rate_limit status:", resp.status_code)
+                  if resp.status_code != 200:
+                      print("raw /rate_limit body:", resp.text[:500])
+                  else:
+                      body = resp.json()
+                      print("rate limit core remaining:", body.get("resources", {}).get("core", {}))
 
-    svc = GitHubService()
-    health = await svc.get_repo_health('$OWNER', '$NAME')
-    print('failed_checks:', health.failed_checks)
-    print('last_commit_at:', health.last_commit_at)
-    print('open_prs_count:', health.open_prs_count)
-    print('open_issues_count:', health.open_issues_count)
-    print('last_ci_success:', health.last_ci_success)
+              svc = GitHubService()
+              health = await svc.get_repo_health("$OWNER", "$NAME")
+              print("failed_checks:", health.failed_checks)
+              print("last_commit_at:", health.last_commit_at)
+              print("open_prs_count:", health.open_prs_count)
+              print("open_issues_count:", health.open_issues_count)
+              print("last_ci_success:", health.last_ci_success)
 
-asyncio.run(main())
-"
+          asyncio.run(main())
+          PYEOF
+
+          kubectl cp /tmp/diagnose.py "$NS/$POD:/tmp/diagnose.py" -c github-tamagotchi
+          kubectl exec -n "$NS" "$POD" -c github-tamagotchi -- python /tmp/diagnose.py
