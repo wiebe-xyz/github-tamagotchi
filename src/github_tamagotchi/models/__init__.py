@@ -12,6 +12,7 @@ from github_tamagotchi.models.grave_flower_ip import GraveFlowerIp
 from github_tamagotchi.models.image_job import ImageGenerationJob, JobStatus
 from github_tamagotchi.models.job_run import JobRun
 from github_tamagotchi.models.milestone import PetMilestone
+from github_tamagotchi.models.oauth_kv_store import OAuthKVStore
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.push_subscription import PushSubscription
 from github_tamagotchi.models.user import User
@@ -29,6 +30,7 @@ __all__ = [
     "ImageGenerationJob",
     "JobRun",
     "JobStatus",
+    "OAuthKVStore",
     "Pet",
     "PetAchievement",
     "PetComment",

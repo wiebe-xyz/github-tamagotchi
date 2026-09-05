@@ -31,6 +31,7 @@ from github_tamagotchi.models.user import User
 from github_tamagotchi.services.ascii_render import render_pet_ascii
 from github_tamagotchi.services.github import GitHubService
 from github_tamagotchi.services.naming import is_valid_repo_identifier
+from github_tamagotchi.services.oauth_kv_store import DatabaseKeyValueStore
 from github_tamagotchi.services.pet_care import mess, sleep
 from github_tamagotchi.services.pet_feeding import (
     apply_exercise_decay,
@@ -113,6 +114,14 @@ def _build_auth() -> GitHubProvider | None:
         # OAuth App, dedicated to MCP client logins.
         redirect_path="/mcp/auth/callback",
         required_scopes=_GITHUB_SCOPES,
+        # Without this, OAuthProxy defaults to an encrypted on-disk store
+        # rooted in the pod's own local filesystem — wiped on every
+        # restart/redeploy and not shared across replicas, which silently
+        # broke every previously registered MCP client (issue #262).
+        # DatabaseKeyValueStore persists the same state (DCR client
+        # registrations, in-flight transactions, auth codes, refresh-token
+        # metadata) in this app's own database instead.
+        client_storage=DatabaseKeyValueStore(),
     )
 
 
