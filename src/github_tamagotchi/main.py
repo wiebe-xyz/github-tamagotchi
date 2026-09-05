@@ -54,6 +54,7 @@ from github_tamagotchi.services.achievements import check_and_unlock_achievement
 from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.contributor_relationships import build_contributor_updates
 from github_tamagotchi.services.github import GitHubService, RateLimitError, RepoInsights
+from github_tamagotchi.services.naming import is_valid_repo_identifier
 from github_tamagotchi.services.pet_logic import (
     DEATH_GRACE_PERIOD_DAYS,
     EVOLUTION_THRESHOLDS,
@@ -335,6 +336,17 @@ async def _poll_repositories_inner(triggered_by: str, poll_span: Any) -> None:
             logger.info("poll_pets_found", pet_count=total_pets)
 
             for pet in pets:
+                if not is_valid_repo_identifier(pet.repo_owner, pet.repo_name):
+                    logger.warning(
+                        "poll_skipped_invalid_identifier",
+                        pet_id=pet.id,
+                        repo=f"{pet.repo_owner}/{pet.repo_name}",
+                        message=(
+                            "Pet has an invalid repo identifier "
+                            "(legacy garbage row); skipping GitHub API call"
+                        ),
+                    )
+                    continue
                 try:
                     await _update_single_pet(pet, session, github_service)
                     updated_count += 1
