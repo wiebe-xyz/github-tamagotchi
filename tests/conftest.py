@@ -166,7 +166,21 @@ def client() -> Iterator[TestClient]:
     github_tamagotchi.services.image_queue.run_worker = mock_run_worker
 
     # Patch the scheduler
-    with patch("github_tamagotchi.core.scheduler.scheduler") as mock_scheduler:
+    with (
+        patch("github_tamagotchi.core.scheduler.scheduler") as mock_scheduler,
+        # mcp/server.py's _build_auth() wires a DatabaseKeyValueStore (see
+        # services/oauth_kv_store.py) into the module-level FastMCP `mcp`
+        # instance at import time, which real requests like POST /register
+        # go through directly (not via FastAPI's Depends(get_session), so
+        # the dependency_overrides swap below doesn't reach it). Patching
+        # the module-level name here works even though the store instance
+        # already exists, because it looks the factory up fresh on every
+        # call rather than capturing it at construction time.
+        patch(
+            "github_tamagotchi.services.oauth_kv_store.async_session_factory",
+            test_session_factory,
+        ),
+    ):
         mock_scheduler.start = lambda: None
         mock_scheduler.shutdown = lambda: None
         mock_scheduler.add_job = lambda *args, **kwargs: None
