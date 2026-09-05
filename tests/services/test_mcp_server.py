@@ -11,6 +11,7 @@ end-to-end tests that exercise the actual HTTP + token verification path.
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
@@ -285,6 +286,47 @@ class TestCheckPetStatus:
 
         assert result["pet"]["mess"] == "filthy"
         assert result["pet"]["is_asleep"] is True
+
+    async def test_check_pet_status_no_degraded_flag_when_all_checks_succeed(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        """mock_repo_health has an empty failed_checks — a normal, fully
+        successful sync must not claim to be degraded."""
+        await _make_pet(test_db, user_id=1)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
+            result = await _check_pet_status("owner", "repo")
+
+        assert "degraded" not in result
+        assert "sync_warnings" not in result
+
+    async def test_check_pet_status_surfaces_degraded_sync(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        """When GitHub calls failed, the caller must be able to see it
+        instead of getting an all-null result that reads as a genuinely
+        quiet repo (issue #263)."""
+        await _make_pet(test_db, user_id=1)
+        degraded_health = replace(
+            mock_repo_health,
+            last_commit_at=None,
+            open_prs_count=0,
+            failed_checks=["last_commit", "rate_limited:open_prs"],
+        )
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=degraded_health)
+            result = await _check_pet_status("owner", "repo")
+
+        assert result["degraded"] is True
+        assert result["sync_warnings"] == ["last_commit", "rate_limited:open_prs"]
 
 
 class TestFeedPet:
@@ -618,6 +660,52 @@ class TestUpdatePetFromRepo:
     async def test_update_pet_from_repo_no_pet(self, test_db: AsyncSession) -> None:
         with _as_user(test_db, user_id=1), pytest.raises(ToolError, match="No pet found"):
             await _update_pet_from_repo("owner", "nonexistent")
+
+    async def test_update_pet_from_repo_no_degraded_flag_when_all_checks_succeed(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        await _make_pet(test_db, user_id=1, health=50, experience=100, weight=60.0)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
+            result = await _update_pet_from_repo("owner", "repo")
+
+        assert "degraded" not in result
+        assert "sync_warnings" not in result
+
+    async def test_update_pet_from_repo_surfaces_degraded_sync(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        """A sync where every GitHub call failed must not be reported as an
+        ordinary, successful 'no activity' result (issue #263) — the caller
+        needs to see that the sync was degraded."""
+        await _make_pet(test_db, user_id=1, health=50, experience=100, weight=60.0)
+        degraded_health = replace(
+            mock_repo_health,
+            last_commit_at=None,
+            open_prs_count=0,
+            open_issues_count=0,
+            last_ci_success=None,
+            failed_checks=["last_commit", "open_prs", "open_issues", "ci_status"],
+        )
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=degraded_health)
+            result = await _update_pet_from_repo("owner", "repo")
+
+        assert result["degraded"] is True
+        assert result["sync_warnings"] == [
+            "last_commit",
+            "open_prs",
+            "open_issues",
+            "ci_status",
+        ]
 
     async def test_update_pet_from_repo_applies_care_mood_layer(
         self, test_db: AsyncSession, mock_repo_health: RepoHealth

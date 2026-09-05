@@ -229,6 +229,9 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
                 "ci_passing": health.last_ci_success,
             },
         }
+        if health.failed_checks:
+            response["degraded"] = True
+            response["sync_warnings"] = health.failed_checks
         if personality_msg:
             response["message"] = personality_msg
         return response
@@ -651,6 +654,10 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
                 "mood_changed": old_mood != pet.mood,
             },
         }
+
+        if health.failed_checks:
+            update_response["degraded"] = True
+            update_response["sync_warnings"] = health.failed_checks
 
         if personality_msg:
             update_response["message"] = personality_msg

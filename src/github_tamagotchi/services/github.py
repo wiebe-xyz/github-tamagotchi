@@ -44,6 +44,13 @@ class RepoHealth:
     dependent_count: int = 0
     star_count: int = 0
     fork_count: int = 0
+    # Names of the _get_* checks that failed to fetch (including
+    # "rate_limited:<name>" for ones aborted by a rate limit) during this
+    # health fetch. Empty means every check completed normally. This is the
+    # only way to tell "GitHub genuinely returned nothing" apart from
+    # "the field below is a default because its fetch failed" — every other
+    # field is indistinguishable between those two cases on its own.
+    failed_checks: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -180,37 +187,86 @@ class GitHubService:
             "github.get_repo_health",
             attributes={"github.repo": f"{owner}/{repo}"},
         ):
+            failed_checks: list[str] = []
+
             async with httpx.AsyncClient() as client:
                 # Get last commit
-                last_commit_at = await self._get_last_commit(client, owner, repo)
+                try:
+                    last_commit_at = await self._get_last_commit(
+                        client, owner, repo, failed_checks
+                    )
+                except RateLimitError:
+                    failed_checks.append("rate_limited:last_commit")
+                    last_commit_at = None
 
                 # Get open PRs
-                prs = await self._get_open_prs(client, owner, repo)
+                try:
+                    prs = await self._get_open_prs(client, owner, repo, failed_checks)
+                except RateLimitError:
+                    failed_checks.append("rate_limited:open_prs")
+                    prs = []
                 open_prs_count = len(prs)
                 oldest_pr_age = self._get_oldest_age_hours(prs) if prs else None
 
                 # Get open issues
-                issues = await self._get_open_issues(client, owner, repo)
+                try:
+                    issues = await self._get_open_issues(client, owner, repo, failed_checks)
+                except RateLimitError:
+                    failed_checks.append("rate_limited:open_issues")
+                    issues = []
                 open_issues_count = len(issues)
                 oldest_issue_age = self._get_oldest_age_days(issues) if issues else None
 
                 # Get CI status
-                last_ci_success = await self._get_ci_status(client, owner, repo)
+                try:
+                    last_ci_success = await self._get_ci_status(
+                        client, owner, repo, failed_checks
+                    )
+                except RateLimitError:
+                    failed_checks.append("rate_limited:ci_status")
+                    last_ci_success = None
 
                 # Get release frequency (last 30 days)
-                release_count_30d = await self._get_release_count_30d(client, owner, repo)
+                try:
+                    release_count_30d = await self._get_release_count_30d(
+                        client, owner, repo, failed_checks
+                    )
+                except RateLimitError:
+                    failed_checks.append("rate_limited:release_count")
+                    release_count_30d = 0
 
                 # Get contributor count (last 90 days)
-                contributor_count = await self._get_contributor_count_90d(client, owner, repo)
+                try:
+                    contributor_count = await self._get_contributor_count_90d(
+                        client, owner, repo, failed_checks
+                    )
+                except RateLimitError:
+                    failed_checks.append("rate_limited:contributor_count")
+                    contributor_count = 0
 
                 # Get security alerts
-                security_counts = await self._get_security_alerts(client, owner, repo)
+                try:
+                    security_counts = await self._get_security_alerts(
+                        client, owner, repo, failed_checks
+                    )
+                except RateLimitError:
+                    failed_checks.append("rate_limited:security_alerts")
+                    security_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
 
                 # Get dependent count (repos/packages that depend on this one)
-                dependent_count = await self._get_dependent_count(client, owner, repo)
+                # (never raises RateLimitError: it scrapes an unauthenticated HTML page)
+                dependent_count = await self._get_dependent_count(
+                    client, owner, repo, failed_checks
+                )
 
                 # Get star and fork counts
-                star_count, fork_count = await self._get_star_fork_counts(client, owner, repo)
+                try:
+                    star_count, fork_count = await self._get_star_fork_counts(
+                        client, owner, repo, failed_checks
+                    )
+                except RateLimitError:
+                    failed_checks.append("rate_limited:star_fork_counts")
+                    star_count, fork_count = 0, 0
 
                 return RepoHealth(
                     last_commit_at=last_commit_at,
@@ -229,10 +285,15 @@ class GitHubService:
                     dependent_count=dependent_count,
                     star_count=star_count,
                     fork_count=fork_count,
+                    failed_checks=failed_checks,
                 )
 
     async def _get_last_commit(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> datetime | None:
         """Get the timestamp of the last commit."""
         try:
@@ -257,10 +318,16 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get last commit", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("last_commit")
         return None
 
     async def _get_open_prs(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Get list of open pull requests."""
         try:
@@ -277,10 +344,16 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get open PRs", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("open_prs")
         return []
 
     async def _get_open_issues(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Get list of open issues (excluding PRs)."""
         try:
@@ -298,9 +371,17 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get open issues", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("open_issues")
         return []
 
-    async def _get_ci_status(self, client: httpx.AsyncClient, owner: str, repo: str) -> bool | None:
+    async def _get_ci_status(
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
+    ) -> bool | None:
         """Get the CI status of the default branch."""
         try:
             # Get default branch
@@ -326,10 +407,16 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get CI status", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("ci_status")
         return None
 
     async def _get_security_alerts(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> dict[str, int]:
         """Get open Dependabot security alert counts by severity."""
         counts: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
@@ -340,8 +427,14 @@ class GitHubService:
                 params={"state": "open", "per_page": 100},
             )
             self._check_rate_limit(resp)
-            if resp.status_code == 404:
-                # Dependabot not enabled or no access — treat as no alerts
+            if resp.status_code in (404, 403):
+                # 404: Dependabot not enabled on this repo.
+                # 403 here is not a rate limit (that already raised above) —
+                # it's a stable permission/scope denial (e.g. the token lacks
+                # security_events, or we lack admin/security access on this
+                # repo). Neither is transient or worth retrying, and both are
+                # expected for many repos, so treat them as "no alerts"
+                # without logging a warning or counting this as a failed check.
                 return counts
             resp.raise_for_status()
             alerts: list[dict[str, Any]] = resp.json()
@@ -353,10 +446,16 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get security alerts", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("security_alerts")
         return counts
 
     async def _get_star_fork_counts(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> tuple[int, int]:
         """Get the star and fork counts for the repository."""
         try:
@@ -372,6 +471,8 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get star/fork counts", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("star_fork_counts")
         return 0, 0
 
     def _get_oldest_age_hours(self, items: list[dict[str, Any]]) -> float:
@@ -385,7 +486,11 @@ class GitHubService:
         return self._get_oldest_age_hours(items) / 24
 
     async def _get_release_count_30d(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> int:
         """Get the number of releases published in the last 30 days (capped at 10)."""
         try:
@@ -411,10 +516,16 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get releases", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("release_count")
         return 0
 
     async def _get_contributor_count_90d(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> int:
         """Get the number of unique commit authors in the last 90 days (capped at 20)."""
         try:
@@ -437,10 +548,16 @@ class GitHubService:
             raise
         except Exception as e:
             logger.warning("Failed to get contributor count", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("contributor_count")
         return 0
 
     async def _get_dependent_count(
-        self, client: httpx.AsyncClient, owner: str, repo: str
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        repo: str,
+        failed_checks: list[str] | None = None,
     ) -> int:
         """Get the number of repositories that depend on this repo.
 
@@ -462,6 +579,8 @@ class GitHubService:
                 return int(match.group(1).replace(",", ""))
         except Exception as e:
             logger.warning("Failed to get dependent count", error=str(e))
+            if failed_checks is not None:
+                failed_checks.append("dependent_count")
         return 0
 
     async def get_contributor_stats(self, owner: str, repo: str, username: str) -> ContributorStats:

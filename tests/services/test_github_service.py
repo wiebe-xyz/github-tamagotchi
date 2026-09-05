@@ -439,6 +439,53 @@ class TestGetSecurityAlerts:
 
     @respx.mock
     @pytest.mark.asyncio
+    async def test_returns_zeros_on_permission_denied_403_without_marking_failed(
+        self,
+    ) -> None:
+        """A non-rate-limited 403 (missing security_events scope, or no
+        admin/security access on the repo) is a stable, expected condition
+        for many repos — not a transient failure. It should be treated the
+        same as a 404: zero counts, no warning log, and NOT recorded in
+        failed_checks (issue #246 — a permanent 403 must not be retried
+        forever or surfaced as a degraded sync)."""
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(
+                403, json={"message": "Resource not accessible by integration"}
+            )
+        )
+        service = GitHubService(token="test")
+        failed_checks: list[str] = []
+        async with httpx.AsyncClient() as client:
+            result = await service._get_security_alerts(
+                client, "owner", "repo", failed_checks
+            )
+
+        assert result == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        assert failed_checks == []
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_403_and_404_are_equivalent_for_dependabot_alerts(self) -> None:
+        """A permission-denied 403 and a not-enabled 404 must produce the
+        exact same outcome — neither is transient, both mean 'no alerts'."""
+        service = GitHubService(token="test")
+
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(403, json={"message": "Forbidden"})
+        )
+        async with httpx.AsyncClient() as client:
+            result_403 = await service._get_security_alerts(client, "owner", "repo")
+
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(404, json={"message": "Not Found"})
+        )
+        async with httpx.AsyncClient() as client:
+            result_404 = await service._get_security_alerts(client, "owner", "repo")
+
+        assert result_403 == result_404 == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+
+    @respx.mock
+    @pytest.mark.asyncio
     async def test_returns_zeros_on_error(self) -> None:
         """Should return zeros when API call fails."""
         respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
@@ -601,6 +648,115 @@ class TestGetRepoHealth:
         assert result.contributor_count == 0
         assert result.security_alerts_critical == 0
         assert result.security_alerts_high == 0
+        assert set(result.failed_checks) == {
+            "last_commit",
+            "open_prs",
+            "open_issues",
+            "ci_status",
+            "release_count",
+            "contributor_count",
+            "security_alerts",
+            "dependent_count",
+            "star_fork_counts",
+        }
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_single_failing_check_still_returns_usable_health(
+        self,
+        mock_commit_response: list[dict[str, Any]],
+        mock_prs_response: list[dict[str, Any]],
+        mock_issues_response: list[dict[str, Any]],
+        mock_repo_response: dict[str, Any],
+        mock_status_response_success: dict[str, Any],
+    ) -> None:
+        """A single failing check (security alerts) should not blank out the
+        other, successfully-fetched fields, and should be named in
+        failed_checks rather than looking identical to a genuinely quiet repo."""
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(200, json=mock_commit_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/pulls").mock(
+            return_value=httpx.Response(200, json=mock_prs_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/issues").mock(
+            return_value=httpx.Response(200, json=mock_issues_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo").mock(
+            return_value=httpx.Response(200, json=mock_repo_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/commits/main/status").mock(
+            return_value=httpx.Response(200, json=mock_status_response_success)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(500)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/releases").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        respx.get("https://github.com/owner/repo/network/dependents").mock(
+            return_value=httpx.Response(200, text="0 Repositories")
+        )
+
+        service = GitHubService(token="test")
+        result = await service.get_repo_health("owner", "repo")
+
+        assert result.failed_checks == ["security_alerts"]
+        assert result.security_alerts_critical == 0
+        # Everything else fetched fine and should not be blanked out.
+        assert result.last_commit_at is not None
+        assert result.open_prs_count == 2
+        assert result.open_issues_count == 2
+        assert result.last_ci_success is True
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_rate_limit_on_one_call_does_not_abort_the_others(
+        self,
+        mock_prs_response: list[dict[str, Any]],
+        mock_issues_response: list[dict[str, Any]],
+        mock_repo_response: dict[str, Any],
+        mock_status_response_success: dict[str, Any],
+        mock_security_alerts_empty: list[dict[str, Any]],
+    ) -> None:
+        """A RateLimitError on one endpoint (commits) must not abort the
+        whole health fetch — the remaining independent checks should still
+        run and populate their fields, with only the rate-limited one
+        recorded as failed."""
+        respx.get("https://api.github.com/repos/owner/repo/commits").mock(
+            return_value=httpx.Response(
+                403,
+                headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"},
+            )
+        )
+        respx.get("https://api.github.com/repos/owner/repo/pulls").mock(
+            return_value=httpx.Response(200, json=mock_prs_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/issues").mock(
+            return_value=httpx.Response(200, json=mock_issues_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo").mock(
+            return_value=httpx.Response(200, json=mock_repo_response)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/commits/main/status").mock(
+            return_value=httpx.Response(200, json=mock_status_response_success)
+        )
+        respx.get("https://api.github.com/repos/owner/repo/dependabot/alerts").mock(
+            return_value=httpx.Response(200, json=mock_security_alerts_empty)
+        )
+
+        service = GitHubService(token="test")
+        result = await service.get_repo_health("owner", "repo")
+
+        assert isinstance(result, RepoHealth)
+        assert result.last_commit_at is None
+        assert "rate_limited:last_commit" in result.failed_checks
+        # The rate limit was specific to the commits endpoint — the other,
+        # independent checks should have completed normally.
+        assert result.open_prs_count == 2
+        assert result.open_issues_count == 2
+        assert result.last_ci_success is True
+        assert result.security_alerts_critical == 0
 
 
 class TestGetReleaseCount30d:
