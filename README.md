@@ -28,7 +28,7 @@ Each repository gets a unique, deterministically generated pet. The same repo al
 
 **Death**: Health at 0% for 7 consecutive days triggers death. No activity for 90 days triggers abandonment death. A memorial page replaces the pet profile. Resurrection is possible — the generation counter increments each time.
 
-**Personality**: Five traits (activity, sociability, bravery, tidiness, appetite) are derived from the repo's SHA-256 hash and nudged by real health metrics over time. These influence status messages and flavour text.
+**Personality**: Five traits (activity, sociability, bravery, tidiness, appetite) are derived from the repo's SHA-256 hash and nudged by real health metrics over time. Each one scales a real mood threshold — how fast the pet gets bored, hungry, dirty, worried, or lonely — not just flavour text, though it still colours the status messages too.
 
 ## Features
 

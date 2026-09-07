@@ -14,8 +14,43 @@ if TYPE_CHECKING:
 
 # Thresholds for pet state changes
 HUNGRY_THRESHOLD_DAYS = 3  # No commits in 3 days = hungry
-WORRIED_THRESHOLD_HOURS = 48  # PR open > 48 hours = worried
+WORRIED_THRESHOLD_HOURS = 48  # PR open > 48 hours = worried (fallback when no personality given)
 LONELY_THRESHOLD_DAYS = 7  # Issue unanswered > 1 week = lonely
+
+# bravery-scaled variant of WORRIED_THRESHOLD_HOURS: a cautious pet (bravery=0.0)
+# worries about a stale PR much sooner; a brave pet (bravery=1.0) tolerates one
+# staying open much longer before it cares.
+WORRIED_THRESHOLD_HOURS_MIN = 24  # bravery=0.0 (cautious)
+WORRIED_THRESHOLD_HOURS_MAX = 72  # bravery=1.0 (brave) — midpoint lands on WORRIED_THRESHOLD_HOURS
+
+# sociability-scaled contributor-count threshold for the solo-maintainer check:
+# a shy pet (sociability=0.0) is content solo, same as today's fixed `== 1`
+# check; a social pet (sociability=1.0) wants more company and goes lonely
+# even with a couple of collaborators.
+SOLO_LONELY_THRESHOLD_MIN = 1  # sociability=0.0 (shy)
+SOLO_LONELY_THRESHOLD_MAX = 3  # sociability=1.0 (social)
+
+
+def worried_threshold_hours(bravery: float) -> float:
+    """Linear interpolation from WORRIED_THRESHOLD_HOURS_MIN (cautious) to
+    WORRIED_THRESHOLD_HOURS_MAX (brave). `bravery` is clamped to [0.0, 1.0].
+    """
+    clamped = min(1.0, max(0.0, bravery))
+    return WORRIED_THRESHOLD_HOURS_MIN + (
+        WORRIED_THRESHOLD_HOURS_MAX - WORRIED_THRESHOLD_HOURS_MIN
+    ) * clamped
+
+
+def solo_lonely_threshold(sociability: float) -> int:
+    """Linear interpolation from SOLO_LONELY_THRESHOLD_MIN (shy) to
+    SOLO_LONELY_THRESHOLD_MAX (social), rounded to the nearest contributor
+    count. `sociability` is clamped to [0.0, 1.0].
+    """
+    clamped = min(1.0, max(0.0, sociability))
+    raw = SOLO_LONELY_THRESHOLD_MIN + (
+        SOLO_LONELY_THRESHOLD_MAX - SOLO_LONELY_THRESHOLD_MIN
+    ) * clamped
+    return max(SOLO_LONELY_THRESHOLD_MIN, round(raw))
 
 # Security alert health penalties per poll cycle
 SECURITY_HEALTH_PENALTY = {
@@ -44,8 +79,19 @@ EVOLUTION_THRESHOLDS = {
 }
 
 
-def calculate_mood(health: RepoHealth, current_health: int) -> PetMood:
-    """Determine pet mood based on repository health metrics."""
+def calculate_mood(
+    health: RepoHealth,
+    current_health: int,
+    personality: "PetPersonality | None" = None,
+) -> PetMood:
+    """Determine pet mood based on repository health metrics.
+
+    `personality` is optional and defaults to None, which preserves the
+    original fixed-threshold behavior exactly (existing callers that don't
+    pass it see no change). When given, it scales two of the thresholds
+    below: `bravery` for the stale-PR "worried" check, and `sociability`
+    for the solo-maintainer "lonely" check.
+    """
     now = datetime.now(UTC)
 
     # Health floor: dying pet overrides all other mood signals
@@ -66,16 +112,31 @@ def calculate_mood(health: RepoHealth, current_health: int) -> PetMood:
         if days_since_commit > HUNGRY_THRESHOLD_DAYS:
             return PetMood.HUNGRY
 
-    # Check for worried (old PRs)
-    if health.oldest_pr_age_hours and health.oldest_pr_age_hours > WORRIED_THRESHOLD_HOURS:
+    # Check for worried (old PRs) — threshold scaled by bravery, if given
+    worried_threshold = (
+        worried_threshold_hours(personality.bravery)
+        if personality is not None
+        else WORRIED_THRESHOLD_HOURS
+    )
+    if health.oldest_pr_age_hours and health.oldest_pr_age_hours > worried_threshold:
         return PetMood.WORRIED
 
     # Check for lonely (old issues)
     if health.oldest_issue_age_days and health.oldest_issue_age_days > LONELY_THRESHOLD_DAYS:
         return PetMood.LONELY
 
-    # Solo maintainer (bus factor 1) — pet feels lonely without collaborators
-    if health.contributor_count == 1:
+    # Solo maintainer — pet feels lonely without enough collaborators.
+    # Threshold scaled by sociability, if given. `contributor_count == 0` is
+    # treated as "no data" (same idiom as the truthy-guarded fields above),
+    # not as an extreme-solo signal — it's usually a polling gap rather than
+    # a real zero, and letting it through would make every personality-aware
+    # call go LONELY regardless of sociability. Without personality, this is
+    # exactly the original fixed "bus factor 1" check (`== 1`, not `<= 1`)
+    # — preserved precisely so existing callers see no behavior change.
+    if personality is not None:
+        if 0 < health.contributor_count <= solo_lonely_threshold(personality.sociability):
+            return PetMood.LONELY
+    elif health.contributor_count == 1:
         return PetMood.LONELY
 
     # Check for dancing (successful CI)
@@ -94,12 +155,13 @@ def calculate_mood_with_care(
     """`calculate_mood` plus the mess/boredom/hunger/sleep care mechanics.
 
     The base mood from `calculate_mood` still drives health-linked signals
-    (security, stale deps, PR/issue age, solo maintainer, CI). On top of
-    that, in order (first match wins, and SICK is never overridden — a sick
-    pet doesn't sleep peacefully or notice mess):
+    (security, stale deps, PR/issue age, solo maintainer, CI) — now scaled
+    by `bravery` and `sociability` respectively, since `personality` is
+    passed through. On top of that, in order (first match wins, and SICK is
+    never overridden — a sick pet doesn't sleep peacefully or notice mess):
       1. base mood is SICK -> SICK, unchanged
       2. `sleep.is_asleep(now)` -> SLEEPING
-      3. `mess.is_dirty(pet)` -> DIRTY
+      3. `mess.is_dirty(pet, personality.tidiness)` -> DIRTY
       4. `neglect_hunger.is_neglected_hungry(...)` -> HUNGRY
       5. `boredom.is_bored(...)` -> LONELY
       6. otherwise the base mood, unchanged
@@ -108,12 +170,12 @@ def calculate_mood_with_care(
     mood/display layer only, same as the weight mechanic in
     services/pet_feeding.py.
     """
-    base_mood = calculate_mood(health, pet.health)
+    base_mood = calculate_mood(health, pet.health, personality)
     if base_mood == PetMood.SICK:
         return PetMood.SICK
     if sleep.is_asleep(now):
         return PetMood.SLEEPING
-    if mess.is_dirty(pet):
+    if mess.is_dirty(pet, personality.tidiness):
         return PetMood.DIRTY
     if neglect_hunger.is_neglected_hungry(pet, personality.appetite, now):
         return PetMood.HUNGRY

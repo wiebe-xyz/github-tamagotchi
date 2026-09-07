@@ -12,13 +12,19 @@ from github_tamagotchi.services.pet_logic import (
     HUNGRY_THRESHOLD_DAYS,
     LONELY_THRESHOLD_DAYS,
     SECURITY_HEALTH_PENALTY,
+    SOLO_LONELY_THRESHOLD_MAX,
+    SOLO_LONELY_THRESHOLD_MIN,
     WORRIED_THRESHOLD_HOURS,
+    WORRIED_THRESHOLD_HOURS_MAX,
+    WORRIED_THRESHOLD_HOURS_MIN,
     PetPersonality,
     calculate_experience,
     calculate_health_delta,
     calculate_mood,
     calculate_mood_with_care,
     get_next_stage,
+    solo_lonely_threshold,
+    worried_threshold_hours,
 )
 
 
@@ -279,6 +285,144 @@ class TestCalculateMood:
             has_stale_dependencies=False,
         )
         assert calculate_mood(health, current_health=1) != PetMood.SICK
+
+
+class TestWorriedThresholdHours:
+    def test_midpoint_matches_flat_threshold(self) -> None:
+        assert worried_threshold_hours(0.5) == WORRIED_THRESHOLD_HOURS
+
+    def test_cautious_worries_soonest(self) -> None:
+        assert worried_threshold_hours(0.0) == WORRIED_THRESHOLD_HOURS_MIN
+
+    def test_brave_tolerates_longest(self) -> None:
+        assert worried_threshold_hours(1.0) == WORRIED_THRESHOLD_HOURS_MAX
+
+    def test_clamps_out_of_range_values(self) -> None:
+        assert worried_threshold_hours(-1.0) == worried_threshold_hours(0.0)
+        assert worried_threshold_hours(2.0) == worried_threshold_hours(1.0)
+
+
+class TestSoloLonelyThreshold:
+    def test_shy_matches_original_bus_factor_one(self) -> None:
+        assert solo_lonely_threshold(0.0) == SOLO_LONELY_THRESHOLD_MIN == 1
+
+    def test_social_wants_more_company(self) -> None:
+        assert solo_lonely_threshold(1.0) == SOLO_LONELY_THRESHOLD_MAX
+
+    def test_clamps_out_of_range_values(self) -> None:
+        assert solo_lonely_threshold(-1.0) == solo_lonely_threshold(0.0)
+        assert solo_lonely_threshold(2.0) == solo_lonely_threshold(1.0)
+
+
+class TestCalculateMoodBraveryScaling:
+    """`calculate_mood`'s WORRIED check, scaled by bravery when personality is given."""
+
+    def test_no_personality_uses_fixed_threshold(self) -> None:
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=1,
+            oldest_pr_age_hours=WORRIED_THRESHOLD_HOURS + 1,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+        )
+        assert calculate_mood(health, current_health=100) == PetMood.WORRIED
+
+    def test_cautious_pet_worries_before_the_flat_threshold(self) -> None:
+        cautious = PetPersonality(
+            activity=0.5, sociability=0.5, bravery=0.0, tidiness=0.5, appetite=0.5
+        )
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=1,
+            oldest_pr_age_hours=WORRIED_THRESHOLD_HOURS_MIN + 1,  # under the flat 48h default
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=False,
+            has_stale_dependencies=False,
+        )
+        assert calculate_mood(health, current_health=100, personality=cautious) == PetMood.WORRIED
+
+    def test_brave_pet_tolerates_past_the_flat_threshold(self) -> None:
+        brave = PetPersonality(
+            activity=0.5, sociability=0.5, bravery=1.0, tidiness=0.5, appetite=0.5
+        )
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=1,
+            oldest_pr_age_hours=WORRIED_THRESHOLD_HOURS + 1,  # over the flat 48h default
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+        )
+        assert calculate_mood(health, current_health=100, personality=brave) == PetMood.DANCING
+
+
+class TestCalculateMoodSociabilityScaling:
+    """`calculate_mood`'s solo-maintainer LONELY check, scaled by sociability."""
+
+    def test_no_personality_preserves_bus_factor_one_exactly(self) -> None:
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            contributor_count=0,
+        )
+        # contributor_count=0 must NOT trigger the original fixed check
+        # (it was always `== 1`, never `<= 1`) -- falls through to DANCING.
+        assert calculate_mood(health, current_health=100) == PetMood.DANCING
+
+    def test_shy_pet_content_with_two_contributors(self) -> None:
+        shy = PetPersonality(activity=0.5, sociability=0.0, bravery=0.5, tidiness=0.5, appetite=0.5)
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            contributor_count=2,
+        )
+        assert calculate_mood(health, current_health=100, personality=shy) == PetMood.DANCING
+
+    def test_social_pet_lonely_with_two_contributors(self) -> None:
+        social = PetPersonality(
+            activity=0.5, sociability=1.0, bravery=0.5, tidiness=0.5, appetite=0.5
+        )
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            contributor_count=2,
+        )
+        assert calculate_mood(health, current_health=100, personality=social) == PetMood.LONELY
+
+    def test_zero_contributors_treated_as_no_data_not_extreme_solo(self) -> None:
+        social = PetPersonality(
+            activity=0.5, sociability=1.0, bravery=0.5, tidiness=0.5, appetite=0.5
+        )
+        health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            contributor_count=0,
+        )
+        assert calculate_mood(health, current_health=100, personality=social) == PetMood.DANCING
 
 
 def _neutral_health(**overrides: object) -> RepoHealth:
