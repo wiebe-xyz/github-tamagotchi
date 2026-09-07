@@ -5,9 +5,12 @@ from datetime import UTC, datetime
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.services.pet_care.mess import (
     MESS_DIRTY_THRESHOLD,
+    MESS_DIRTY_THRESHOLD_MAX,
+    MESS_DIRTY_THRESHOLD_MIN,
     add_mess,
     clean_pet,
     is_dirty,
+    mess_dirty_threshold,
     mess_label,
 )
 
@@ -44,15 +47,46 @@ class TestAddMess:
 class TestIsDirty:
     def test_just_under_threshold_is_not_dirty(self) -> None:
         pet = _pet(mess_level=MESS_DIRTY_THRESHOLD - 1)
-        assert is_dirty(pet) is False
+        assert is_dirty(pet, 0.5) is False
 
     def test_at_threshold_is_dirty(self) -> None:
         pet = _pet(mess_level=MESS_DIRTY_THRESHOLD)
-        assert is_dirty(pet) is True
+        assert is_dirty(pet, 0.5) is True
 
     def test_just_over_threshold_is_dirty(self) -> None:
         pet = _pet(mess_level=MESS_DIRTY_THRESHOLD + 1)
-        assert is_dirty(pet) is True
+        assert is_dirty(pet, 0.5) is True
+
+
+class TestMessDirtyThreshold:
+    def test_midpoint_matches_flat_threshold(self) -> None:
+        assert mess_dirty_threshold(0.5) == MESS_DIRTY_THRESHOLD
+
+    def test_messy_tolerates_the_most(self) -> None:
+        assert mess_dirty_threshold(0.0) == MESS_DIRTY_THRESHOLD_MAX
+
+    def test_neat_tolerates_the_least(self) -> None:
+        assert mess_dirty_threshold(1.0) == MESS_DIRTY_THRESHOLD_MIN
+
+    def test_clamps_out_of_range_values(self) -> None:
+        assert mess_dirty_threshold(-1.0) == mess_dirty_threshold(0.0)
+        assert mess_dirty_threshold(2.0) == mess_dirty_threshold(1.0)
+
+    def test_never_below_the_floor(self) -> None:
+        assert mess_dirty_threshold(1.0) >= MESS_DIRTY_THRESHOLD_MIN
+
+
+class TestIsDirtyScaling:
+    def test_neat_pet_dirty_at_lower_mess_level(self) -> None:
+        pet = _pet(mess_level=MESS_DIRTY_THRESHOLD_MIN)
+        assert is_dirty(pet, tidiness=1.0) is True
+        assert is_dirty(pet, tidiness=0.0) is False
+
+    def test_messy_pet_tolerates_up_to_its_own_threshold(self) -> None:
+        pet = _pet(mess_level=MESS_DIRTY_THRESHOLD_MAX - 1)
+        assert is_dirty(pet, tidiness=0.0) is False
+        pet = _pet(mess_level=MESS_DIRTY_THRESHOLD_MAX)
+        assert is_dirty(pet, tidiness=0.0) is True
 
 
 class TestMessLabel:

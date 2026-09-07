@@ -28,6 +28,18 @@ Five personality traits are derived from the repo identity hash, with nudges fro
 3. Given open_issues_count > 10, Then the tidiness trait is nudged toward 0.0
 4. Traits: activity, sociability, bravery, tidiness, appetite — all in range [0.0, 1.0]
 
+All five traits now have real mechanical effects, each scaling a threshold via linear interpolation clamped to [0.0, 1.0] (see `services/pet_logic.py` and `services/pet_care/`):
+
+| Trait | What it scales | Low (0.0) | High (1.0) |
+|---|---|---|---|
+| `activity` | `boredom.boredom_threshold_hours` — hours without `play_with_pet` before LONELY | 96h (lazy, patient) | 12h (active, bored fast) |
+| `appetite` | `neglect_hunger.neglect_hunger_threshold_hours` — hours without `feed_pet` before HUNGRY | 120h (light eater) | 24h (hungry trait) |
+| `tidiness` | `mess.mess_dirty_threshold` — mess_level before DIRTY | 5 (messy, tolerant) | 1 (neat, picky) |
+| `bravery` | `worried_threshold_hours` — stale-PR hours before WORRIED | 24h (cautious) | 72h (brave) |
+| `sociability` | `solo_lonely_threshold` — contributor count at/below which the solo-maintainer LONELY check fires | 1 (shy — original fixed "bus factor 1" behavior) | 3 (social, wants more company) |
+
+Each threshold's midpoint (trait = 0.5) matches that mechanic's original fixed constant, so a "neutral" pet behaves exactly like the pre-personality-scaling code. `calculate_mood(health, current_health, personality=None)` — the default — also preserves the original fixed thresholds exactly, including the `contributor_count == 1` solo check (not `<= 1`); `contributor_count == 0` is treated as "no data" rather than an extreme-solo signal, consistent with how other health fields already use truthy guards in that function.
+
 ### Visual style can be changed (Priority: P2)
 Owners can select from 5 visual styles that change the AI art direction.
 **Acceptance Scenarios**:
