@@ -48,6 +48,7 @@ class PetResponse(BaseModel):
     last_checked_at: datetime | None
     dependent_count: int
     grace_period_started: datetime | None
+    last_poll_error: str | None = None
 
 
 class PetListResponse(BaseModel):

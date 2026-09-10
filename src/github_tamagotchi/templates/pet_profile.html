@@ -111,6 +111,27 @@
             </div>
             {% endif %}
 
+            {% if pet.last_poll_error %}
+            {# GitHub data isn't flowing for this repo — most likely the shared #}
+            {# bot account can't read it (e.g. a private repo). Surfaced here so #}
+            {# this never looks like silent neglect. See #185. #}
+            <div style="margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 10px; background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.08)); border: 1px solid rgba(245,158,11,0.5); display: flex; align-items: flex-start; gap: 0.75rem;">
+                <span style="font-size: 1.4rem;">&#128268;</span>
+                <div>
+                    <strong style="color: #f59e0b; font-size: 1rem;">GitHub data isn't updating</strong>
+                    <div style="color: rgba(255,255,255,0.85); font-size: 0.95rem; margin-top: 0.25rem;">{{ pet.last_poll_error }}</div>
+                    <div style="color: rgba(255,255,255,0.55); font-size: 0.85rem; margin-top: 0.35rem;">
+                        {% if last_webhook_event %}
+                        Last webhook received {{ last_webhook_event.created_at.strftime('%Y-%m-%d %H:%M UTC') }}.
+                        {% else %}
+                        No webhook has been received for this repo yet.
+                        {% endif %}
+                    </div>
+                    <a href="#webhook-setup" style="color: #f59e0b; font-size: 0.9rem; font-weight: 600; display: inline-block; margin-top: 0.5rem;">Set up real-time updates &darr;</a>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Hero row: sprite + core stats -->
             <section class="profile-hero{% if pet.is_dead %} profile-hero--deceased{% endif %}">
                 <div class="profile-sprite-wrap">
@@ -426,6 +447,11 @@
                         </div>
                     </div>
                 </details>
+            </section>
+
+            <!-- Real-time updates: always visible, not just right after registration -->
+            <section class="profile-section" style="margin-top: 2rem;">
+                {% include "_webhook_setup.html" %}
             </section>
 
             <!-- Comments Section -->

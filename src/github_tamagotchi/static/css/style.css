@@ -1340,26 +1340,10 @@ footer {
     overflow: hidden;
 }
 
-.webhook-summary {
+.webhook-title {
     padding: 0.75rem 1rem;
-    cursor: pointer;
     font-size: 0.95rem;
     font-weight: 600;
-    list-style: none;
-    user-select: none;
-}
-
-.webhook-summary::-webkit-details-marker {
-    display: none;
-}
-
-.webhook-summary::before {
-    content: '▸ ';
-    font-size: 0.75rem;
-}
-
-details[open] .webhook-summary::before {
-    content: '▾ ';
 }
 
 .webhook-content {
