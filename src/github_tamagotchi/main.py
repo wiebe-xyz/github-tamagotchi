@@ -140,6 +140,25 @@ async def _update_single_pet_inner(
     # Fetch health metrics from GitHub
     health = await github_service.get_repo_health(pet.repo_owner, pet.repo_name)
 
+    # A core check failing (as opposed to a merely empty result) means
+    # GitHub didn't actually return data for this repo — most commonly
+    # because the shared bot account can't read a private repo. Treat that
+    # as "we don't know" rather than feeding empty/default data into the
+    # health calc, which would otherwise look identical to genuine neglect
+    # and silently starve the pet. See RepoHealth.failed_checks docstring
+    # in services/github.py and specs/github-app-webhooks.md.
+    if "last_commit" in health.failed_checks:
+        pet.last_poll_error = (
+            "GitHub didn't return data for this repository "
+            f"({', '.join(health.failed_checks)}) — the connected account may "
+            "not have access to it. Enable real-time updates via webhook "
+            "instead, which doesn't require polling access; see below."
+        )
+        pet.last_checked_at = now
+        return True
+
+    pet.last_poll_error = None
+
     # Calculate state changes
     health_delta = calculate_health_delta(health)
     experience_gained = calculate_experience(health)
@@ -1406,6 +1425,21 @@ async def pet_profile(
         )
         user_has_pets = (own_pets.scalar_one() or 0) > 0
 
+    # Most recent webhook delivery for this repo, if any — shown next to the
+    # poll-error banner so the user can tell whether real-time updates are
+    # already flowing (see #185 / specs/github-app-webhooks.md).
+    last_webhook_event = (
+        await session.execute(
+            select(WebhookEvent)
+            .where(
+                WebhookEvent.repo_owner == repo_owner,
+                WebhookEvent.repo_name == repo_name,
+            )
+            .order_by(WebhookEvent.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
     page_url = str(request.url)
     return templates.TemplateResponse(
         request,
@@ -1424,6 +1458,7 @@ async def pet_profile(
             "now_utc": now,
             "contributor_relationships": contributor_relationships,
             "days_until_death": days_until_death,
+            "last_webhook_event": last_webhook_event,
         },
         headers={
             "Cache-Control": "no-store" if pet.is_placeholder else "public, max-age=60"
@@ -1678,6 +1713,23 @@ async def admin_overview(request: Request, user: AdminUser, session: DbSession) 
         for row in recent_pets_result
     ]
 
+    # Pets whose most recent poll couldn't actually read GitHub data (see
+    # Pet.last_poll_error / main.py::_update_single_pet_inner) — surfaced
+    # here so an inaccessible private repo is visible instead of silently
+    # looking neglected. See #185 / specs/github-app-webhooks.md.
+    needs_attention_result = await session.execute(
+        select(func.count()).select_from(Pet).where(Pet.last_poll_error.is_not(None))
+    )
+    pets_needing_attention_count = needs_attention_result.scalar() or 0
+
+    pets_needing_attention_result = await session.execute(
+        select(Pet)
+        .where(Pet.last_poll_error.is_not(None))
+        .order_by(Pet.last_checked_at.desc())
+        .limit(10)
+    )
+    pets_needing_attention = pets_needing_attention_result.scalars().all()
+
     return templates.TemplateResponse(
         request,
         "admin_overview.html",
@@ -1690,6 +1742,8 @@ async def admin_overview(request: Request, user: AdminUser, session: DbSession) 
             "health_critical": health_critical,
             "stage_counts": stage_counts,
             "recent_pets": recent_pets,
+            "pets_needing_attention_count": pets_needing_attention_count,
+            "pets_needing_attention": pets_needing_attention,
         },
     )
 

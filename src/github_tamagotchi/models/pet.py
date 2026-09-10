@@ -221,6 +221,14 @@ class Pet(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Set when the most recent poll couldn't actually read the repo (GitHub
+    # returned nothing for a core check like last_commit — see
+    # RepoHealth.failed_checks in services/github.py) so the poll skipped
+    # applying a health/mood delta rather than treating "we can't see this
+    # repo" as "this repo is dead". Cleared on the next successful poll.
+    # See main.py::_update_single_pet_inner.
+    last_poll_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # Relationships
     image_jobs: Mapped[list["ImageGenerationJob"]] = relationship(
         "ImageGenerationJob", back_populates="pet", cascade="all, delete-orphan"

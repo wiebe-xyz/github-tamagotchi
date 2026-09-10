@@ -38,6 +38,7 @@ def _create_pet(
     experience: int = 150,
     grace_period_started: datetime | None = None,
     is_dead: bool = False,
+    last_poll_error: str | None = None,
 ) -> None:
     async def _setup() -> None:
         async with test_session_factory() as session:
@@ -52,6 +53,7 @@ def _create_pet(
                 created_at=datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC),
                 grace_period_started=grace_period_started,
                 is_dead=is_dead,
+                last_poll_error=last_poll_error,
             )
             session.add(pet)
             await session.commit()
@@ -231,6 +233,38 @@ class TestPetProfilePage:
         )
         response = client.get("/pet/countdownowner/countdownrepo")
         assert "3 days" in response.text
+
+    def test_webhook_setup_section_always_present(self, client: TestClient) -> None:
+        """Real-time updates instructions show on every pet page, not just at registration.
+
+        See #185 / specs/github-app-webhooks.md.
+        """
+        _create_pet(repo_owner="healthyowner2", repo_name="healthyrepo2", health=80)
+        response = client.get("/pet/healthyowner2/healthyrepo2")
+        assert "Enable real-time updates" in response.text
+        assert "/api/v1/webhooks/github" in response.text
+
+    def test_poll_error_banner_shown_when_set(self, client: TestClient) -> None:
+        """A pet with last_poll_error shows a banner, not silent neglect."""
+        _create_pet(
+            repo_owner="unreachableowner",
+            repo_name="unreachablerepo",
+            health=50,
+            last_poll_error=(
+                "GitHub didn't return data for this repository (last_commit) — "
+                "the connected account may not have access to it."
+            ),
+        )
+        response = client.get("/pet/unreachableowner/unreachablerepo")
+        assert response.status_code == 200
+        assert "GitHub data isn't updating" in response.text
+        assert "may not have access to it" in response.text
+
+    def test_poll_error_banner_not_shown_by_default(self, client: TestClient) -> None:
+        """No banner for a pet whose poll is working fine."""
+        _create_pet(repo_owner="finegoodowner", repo_name="finegoodrepo", health=80)
+        response = client.get("/pet/finegoodowner/finegoodrepo")
+        assert "GitHub data isn't updating" not in response.text
 
     def test_no_get_your_own_cta_when_authenticated(self, client: TestClient) -> None:
         """Authenticated users should not see the 'Get your own pet' CTA."""

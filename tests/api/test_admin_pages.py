@@ -47,6 +47,7 @@ def _create_pet(
     repo_name: str = "adminrepo",
     name: str = "AdminPet",
     user_id: int | None = None,
+    last_poll_error: str | None = None,
 ) -> None:
     async def _setup() -> None:
         async with test_session_factory() as session:
@@ -58,6 +59,7 @@ def _create_pet(
                 mood=PetMood.HAPPY.value,
                 health=80,
                 user_id=user_id,
+                last_poll_error=last_poll_error,
             )
             session.add(pet)
             await session.commit()
@@ -91,6 +93,29 @@ class TestAdminOverviewPage:
         assert "Admin" in response.text
         assert "Users" in response.text
         assert "Pets" in response.text
+
+    def test_admin_shows_pets_needing_attention(self, client: TestClient) -> None:
+        """See #185 / specs/github-app-webhooks.md — surfaces pets whose poll
+        couldn't read GitHub data, instead of that being invisible."""
+        _create_pet(
+            repo_owner="unreachableorg",
+            repo_name="unreachablerepo",
+            last_poll_error="GitHub didn't return data for this repository (last_commit)",
+        )
+        token = _create_user(user_id=302, github_login="adminlogin302")
+        with _as_admin("adminlogin302"):
+            response = client.get("/admin", cookies={"session_token": token})
+        assert "Needs attention" in response.text
+        assert "unreachableorg/unreachablerepo" in response.text
+
+    def test_admin_hides_needs_attention_section_when_clean(self, client: TestClient) -> None:
+        _create_pet(repo_owner="cleanorg", repo_name="cleanrepo")
+        token = _create_user(user_id=303, github_login="adminlogin303")
+        with _as_admin("adminlogin303"):
+            response = client.get("/admin", cookies={"session_token": token})
+        # The detail table (with a "Reason" column) only renders when at
+        # least one pet has a last_poll_error.
+        assert "Reason" not in response.text
 
 
 class TestAdminPetsPage:

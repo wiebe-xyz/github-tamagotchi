@@ -122,6 +122,10 @@ class TestPetsEndpointsAsync:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "Fluffy"
+        # See #185 / specs/github-app-webhooks.md — surfaces why the poll
+        # couldn't read this repo's data, mirroring the MCP tool's
+        # sync_warnings. Absent by default.
+        assert data["last_poll_error"] is None
 
     async def test_get_pet_not_found(self, async_client: AsyncClient) -> None:
         """GET /api/v1/pets/{owner}/{repo} returns 404."""

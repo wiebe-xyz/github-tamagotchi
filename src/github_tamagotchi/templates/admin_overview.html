@@ -38,7 +38,40 @@
                     <div style="font-size: 2.5rem; font-weight: 700; color: #ef4444;">{{ health_critical }}</div>
                     <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Critical (&lt;40%)</div>
                 </div>
+                <div class="feature" style="padding: 1.5rem; text-align: center;">
+                    <div style="font-size: 2.5rem; font-weight: 700; color: #f59e0b;">{{ pets_needing_attention_count }}</div>
+                    <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Needs attention (no GitHub data)</div>
+                </div>
             </div>
+
+            <!-- Pets whose most recent poll couldn't read GitHub data -->
+            {% if pets_needing_attention %}
+            <div class="feature" style="padding: 1.5rem; margin-bottom: 2.5rem;">
+                <h2 style="font-size: 1.1rem; margin-bottom: 1rem;">Needs attention ({{ pets_needing_attention_count }})</h2>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="text-align: left; color: var(--text-muted); font-size: 0.85rem;">
+                            <th style="padding: 0.4rem 0.5rem;">Repo</th>
+                            <th style="padding: 0.4rem 0.5rem;">Reason</th>
+                            <th style="padding: 0.4rem 0.5rem;">Last checked</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pet in pets_needing_attention %}
+                        <tr style="border-top: 1px solid var(--surface-light);">
+                            <td style="padding: 0.4rem 0.5rem;">
+                                <a href="/pet/{{ pet.repo_owner }}/{{ pet.repo_name }}">{{ pet.repo_owner }}/{{ pet.repo_name }}</a>
+                            </td>
+                            <td style="padding: 0.4rem 0.5rem; color: var(--text-muted); font-size: 0.85rem;">{{ pet.last_poll_error }}</td>
+                            <td style="padding: 0.4rem 0.5rem; color: var(--text-muted); font-size: 0.85rem;">
+                                {% if pet.last_checked_at %}{{ pet.last_checked_at.strftime('%Y-%m-%d %H:%M UTC') }}{% else %}never{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
 
             <!-- Stage distribution -->
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2.5rem;">

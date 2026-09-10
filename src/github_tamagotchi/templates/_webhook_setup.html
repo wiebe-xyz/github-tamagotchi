@@ -1,0 +1,28 @@
+<!--
+  Real-time updates (webhook) setup instructions.
+
+  Shared by register_complete.html (right after registration) and
+  pet_profile.html (permanently, so it's visible on an ongoing basis, not
+  just once) — see #185 / specs/github-app-webhooks.md. Always rendered
+  open (not collapsed) since polling silently missing a private repo is a
+  real failure mode, not an edge case worth burying.
+-->
+<div class="webhook-section" id="webhook-setup">
+    <div class="webhook-title">&#9889; Enable real-time updates</div>
+    <div class="webhook-content">
+        <p>By default your pet updates every few minutes via polling using a shared bot account. For instant updates on every push, PR, or issue — and so it works even for <strong>private repos the shared bot account can't read</strong> — set up a webhook:</p>
+        <ol>
+            <li>Go to your repo: <strong>Settings &rarr; Webhooks &rarr; Add webhook</strong></li>
+            <li>Set <strong>Payload URL</strong> to: <code class="webhook-url-target"></code></li>
+            <li>Set <strong>Content type</strong> to <code>application/json</code></li>
+            <li>Select <strong>Just the push event</strong> (or &ldquo;Let me select&rdquo; &rarr; push, pull_request, issues)</li>
+            <li>Click <strong>Add webhook</strong></li>
+        </ol>
+        <p class="webhook-note">No secret is required. Your pet will update within seconds of each event.</p>
+    </div>
+</div>
+<script>
+    document.querySelectorAll('.webhook-url-target').forEach(function (el) {
+        el.textContent = window.location.origin + '/api/v1/webhooks/github';
+    });
+</script>

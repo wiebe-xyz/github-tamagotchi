@@ -466,3 +466,147 @@ class TestPollRepositories:
 
         # GitHubService should not have been called
         mock_service.get_repo_health.assert_not_called()
+
+
+class TestPollFailedChecks:
+    """A repo the poll can't actually read shouldn't be treated as neglected.
+
+    See issue #185 / specs/github-app-webhooks.md: RepoHealth.failed_checks
+    distinguishes "GitHub returned nothing" from "the fetch failed" (e.g. the
+    shared bot account can't read a private repo) — main.py must not feed
+    that into the health/mood calc as if it were genuine inactivity.
+    """
+
+    @pytest.mark.asyncio
+    async def test_poll_skips_health_update_when_last_commit_check_failed(self, test_db):
+        """last_commit in failed_checks should leave health/mood/experience untouched."""
+        pet = Pet(
+            repo_owner="owner",
+            repo_name="private-repo",
+            name="TestPet",
+            health=50,
+            experience=10,
+            stage=PetStage.EGG.value,
+            mood=PetMood.CONTENT.value,
+        )
+        test_db.add(pet)
+        await test_db.commit()
+
+        unreadable_repo = RepoHealth(
+            last_commit_at=None,
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=None,
+            has_stale_dependencies=False,
+            failed_checks=["last_commit", "open_prs"],
+        )
+
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
+            mock_service = AsyncMock()
+            mock_service.get_repo_health.return_value = unreadable_repo
+            mock_service_class.return_value = mock_service
+
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await poll_repositories()
+
+        await test_db.refresh(pet)
+        assert pet.health == 50
+        assert pet.experience == 10
+        assert pet.mood == PetMood.CONTENT.value
+        assert pet.last_checked_at is not None
+        assert pet.last_poll_error is not None
+        assert "last_commit" in pet.last_poll_error
+
+    @pytest.mark.asyncio
+    async def test_poll_clears_last_poll_error_on_recovery(self, test_db):
+        """A previously-flagged pet should clear last_poll_error once the poll succeeds."""
+        pet = Pet(
+            repo_owner="owner",
+            repo_name="repo",
+            name="TestPet",
+            health=50,
+            experience=0,
+            stage=PetStage.EGG.value,
+            mood=PetMood.CONTENT.value,
+            last_poll_error="GitHub didn't return data for this repository (last_commit)",
+        )
+        test_db.add(pet)
+        await test_db.commit()
+
+        healthy_repo = RepoHealth(
+            last_commit_at=datetime.now(UTC) - timedelta(hours=1),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+        )
+
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
+            mock_service = AsyncMock()
+            mock_service.get_repo_health.return_value = healthy_repo
+            mock_service_class.return_value = mock_service
+
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await poll_repositories()
+
+        await test_db.refresh(pet)
+        assert pet.last_poll_error is None
+
+    @pytest.mark.asyncio
+    async def test_poll_ignores_non_critical_failed_checks(self, test_db):
+        """A failed check that isn't last_commit shouldn't block the health update."""
+        pet = Pet(
+            repo_owner="owner",
+            repo_name="repo",
+            name="TestPet",
+            health=50,
+            experience=0,
+            stage=PetStage.EGG.value,
+            mood=PetMood.CONTENT.value,
+        )
+        test_db.add(pet)
+        await test_db.commit()
+
+        partially_degraded_repo = RepoHealth(
+            last_commit_at=datetime.now(UTC) - timedelta(hours=1),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+            failed_checks=["rate_limited:contributor_count"],
+        )
+
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
+            mock_service = AsyncMock()
+            mock_service.get_repo_health.return_value = partially_degraded_repo
+            mock_service_class.return_value = mock_service
+
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await poll_repositories()
+
+        await test_db.refresh(pet)
+        # +5 CI success + +10 recent commit = +15; failed_checks here doesn't
+        # block the update since "last_commit" itself succeeded.
+        assert pet.health == 65
+        assert pet.last_poll_error is None

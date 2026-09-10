@@ -43,22 +43,7 @@
                 </div>
 
                 <!-- Webhook instructions -->
-                <div class="webhook-section">
-                    <details>
-                        <summary class="webhook-summary">&#9889; Optional: Enable real-time updates</summary>
-                        <div class="webhook-content">
-                            <p>By default your pet updates every few minutes via polling. For instant updates on every push, PR, or issue, set up a webhook:</p>
-                            <ol>
-                                <li>Go to your repo: <strong>Settings &rarr; Webhooks &rarr; Add webhook</strong></li>
-                                <li>Set <strong>Payload URL</strong> to: <code id="webhook-url"></code></li>
-                                <li>Set <strong>Content type</strong> to <code>application/json</code></li>
-                                <li>Select <strong>Just the push event</strong> (or &ldquo;Let me select&rdquo; &rarr; push, pull_request, issues)</li>
-                                <li>Click <strong>Add webhook</strong></li>
-                            </ol>
-                            <p class="webhook-note">No secret is required. Your pet will update within seconds of each event.</p>
-                        </div>
-                    </details>
-                </div>
+                {% include "_webhook_setup.html" %}
 
                 <!-- Actions -->
                 <div class="complete-actions">
@@ -70,7 +55,6 @@
     </main>
 
     <script>
-        document.getElementById('webhook-url').textContent = window.location.origin + '/api/v1/webhooks/github';
         fbTrack(FB_EVENTS.REGISTRATION_COMPLETE, fbPetProps({{ owner | tojson }}, {{ repo | tojson }}, { pet_name: {{ pet_name | tojson }} }));
 
         function copyEmbed() {
