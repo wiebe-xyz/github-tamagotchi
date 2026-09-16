@@ -4,16 +4,21 @@ import hashlib
 import hmac
 from typing import Any
 
+import httpx
+import pytest
+import respx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from github_tamagotchi.crud import pet as pet_crud
 from github_tamagotchi.models.pet import PetMood, PetStage
+from github_tamagotchi.services import webhook as webhook_service
 from github_tamagotchi.services.webhook import (
     EVENT_HANDLERS,
     handle_check_run_event,
     handle_issues_event,
     handle_pull_request_event,
     handle_push_event,
+    is_github_webhook_source,
     verify_signature,
 )
 
@@ -37,6 +42,82 @@ class TestVerifySignature:
     def test_missing_sha256_prefix(self) -> None:
         """Signature without sha256= prefix should return False."""
         assert verify_signature(b"payload", "md5=abc123", "secret") is False
+
+
+_META_RESPONSE = {"hooks": ["192.30.252.0/22", "140.82.112.0/20", "2a0a:a440::/29"]}
+
+
+@pytest.fixture(autouse=True)
+def _reset_ip_range_cache():
+    """The GitHub webhook IP ranges are cached at module scope (see
+    services/webhook.py) so a real deployment doesn't refetch on every
+    delivery. Reset it around each test so tests don't leak cache state
+    into each other."""
+    webhook_service._cached_networks = []
+    webhook_service._cached_at = 0.0
+    yield
+    webhook_service._cached_networks = []
+    webhook_service._cached_at = 0.0
+
+
+class TestIsGithubWebhookSource:
+    """Tests for the source-IP verification gate (issues #278/#279)."""
+
+    @respx.mock
+    async def test_ip_within_a_published_range_is_trusted(self) -> None:
+        respx.get("https://api.github.com/meta").mock(
+            return_value=httpx.Response(200, json=_META_RESPONSE)
+        )
+        assert await is_github_webhook_source("140.82.112.3") is True
+
+    @respx.mock
+    async def test_ip_outside_every_published_range_is_rejected(self) -> None:
+        respx.get("https://api.github.com/meta").mock(
+            return_value=httpx.Response(200, json=_META_RESPONSE)
+        )
+        assert await is_github_webhook_source("8.8.8.8") is False
+
+    @respx.mock
+    async def test_ipv6_within_a_published_range_is_trusted(self) -> None:
+        respx.get("https://api.github.com/meta").mock(
+            return_value=httpx.Response(200, json=_META_RESPONSE)
+        )
+        assert await is_github_webhook_source("2a0a:a440::1") is True
+
+    async def test_missing_ip_is_rejected(self) -> None:
+        assert await is_github_webhook_source(None) is False
+        assert await is_github_webhook_source("") is False
+
+    async def test_unparseable_ip_is_rejected(self) -> None:
+        assert await is_github_webhook_source("not-an-ip") is False
+
+    @respx.mock
+    async def test_never_cached_ranges_fail_closed(self) -> None:
+        """If the /meta fetch itself fails and nothing has ever been cached,
+        treat it as unverified rather than as no restriction."""
+        respx.get("https://api.github.com/meta").mock(side_effect=httpx.ConnectError("boom"))
+        assert await is_github_webhook_source("140.82.112.3") is False
+
+    @respx.mock
+    async def test_fetch_failure_falls_back_to_stale_cache(self) -> None:
+        """A transient outage after a successful fetch shouldn't suddenly
+        reject every delivery -- keep serving the last good ranges."""
+        route = respx.get("https://api.github.com/meta")
+        route.mock(return_value=httpx.Response(200, json=_META_RESPONSE))
+        assert await is_github_webhook_source("140.82.112.3") is True
+
+        route.mock(side_effect=httpx.ConnectError("boom"))
+        webhook_service._cached_at = 0.0  # force a refresh attempt despite the cache
+        assert await is_github_webhook_source("140.82.112.3") is True
+
+    @respx.mock
+    async def test_cache_is_reused_within_ttl(self) -> None:
+        route = respx.get("https://api.github.com/meta").mock(
+            return_value=httpx.Response(200, json=_META_RESPONSE)
+        )
+        await is_github_webhook_source("140.82.112.3")
+        await is_github_webhook_source("140.82.112.3")
+        assert route.call_count == 1
 
     def test_empty_signature(self) -> None:
         """Empty signature should return False."""
