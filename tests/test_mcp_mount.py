@@ -6,16 +6,9 @@ the feed/weight mechanic, play cooldown, and leaderboard by patching auth
 resolution the way the real layer populates it, which is both faster and
 more thorough than driving those cases through raw HTTP).
 
-What's deliberately NOT covered here: a full "authenticated tool call"
-round-trip over raw HTTP. FastMCP's OAuthProxy mints and verifies its own
-JWT for the client-facing token rather than passing the upstream GitHub
-token straight through, so faithfully simulating that here would mean
-either reimplementing real JWT minting or walking the full
-register -> authorize -> (mocked) GitHub redirect -> callback -> token
-exchange sequence — fragile to write against a third-party library's
-internals and not where the real risk in this feature lives (that risk is
-ownership scoping, which test_mcp_server.py already covers thoroughly).
-What *is* covered here, and is exactly what regressed for the reported
+test_full_token_lifecycle_over_http walks register -> code exchange ->
+/mcp -> access token expiry -> refresh -> /mcp over raw HTTP, skipping only
+the GitHub redirect. Also covered here, and is exactly what regressed for the reported
 bug: the OAuth discovery/DCR endpoints a real client tries actually exist
 and respond, and a request with no/invalid credentials is rejected.
 """
@@ -115,3 +108,106 @@ def test_mcp_info_page_is_reachable_without_auth(client: TestClient) -> None:
     assert response.status_code == 200
     assert "claude mcp add" in response.text
     assert "/mcp" in response.text
+
+
+def test_full_token_lifecycle_over_http(client: TestClient) -> None:
+    """Register, exchange a code, call /mcp, let the access token expire,
+    refresh at /token, and call /mcp again, all through the mounted app.
+
+    Only the GitHub redirect is skipped: the authorization code GitHub's
+    callback would store is written straight into the provider's code
+    store. See tests/services/test_mcp_auth.py for the lifetime rules.
+    """
+    import base64
+    import hashlib
+    import time
+    from unittest.mock import patch
+
+    import httpx
+    import respx
+    from fastmcp.server.auth.oauth_proxy import ClientCode
+
+    from github_tamagotchi.mcp import server as mcp_server_module
+    from github_tamagotchi.mcp.auth import ACCESS_TOKEN_TTL_SECONDS
+
+    provider = mcp_server_module.mcp.auth
+    assert provider is not None
+
+    redirect_uri = "http://localhost:1234/callback"
+    reg = client.post(
+        "/register",
+        json={"redirect_uris": [redirect_uri], "token_endpoint_auth_method": "none"},
+    )
+    assert reg.status_code == 201
+    client_id = reg.json()["client_id"]
+
+    verifier = "v" * 64
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    )
+    scopes = ["repo", "read:user", "read:org"]
+
+    async def _seed_code() -> None:
+        await provider._code_store.put(  # type: ignore[attr-defined]
+            key="e2e-code",
+            value=ClientCode(
+                code="e2e-code",
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                code_challenge=challenge,
+                code_challenge_method="S256",
+                scopes=scopes,
+                idp_tokens={"access_token": "gho_e2e", "token_type": "bearer"},
+                expires_at=time.time() + 300,
+                created_at=time.time(),
+            ),
+            ttl=300,
+        )
+
+    assert client.portal is not None
+    client.portal.call(_seed_code)
+
+    github_user = {"id": 99, "login": "e2e-user", "avatar_url": None}
+    with respx.mock() as router:
+        router.get("https://api.github.com/user").mock(
+            return_value=httpx.Response(
+                200, json=github_user, headers={"X-OAuth-Scopes": "repo, read:user, read:org"}
+            )
+        )
+
+        token_resp = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": "e2e-code",
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": verifier,
+            },
+        )
+        assert token_resp.status_code == 200, token_resp.text
+        tokens = token_resp.json()
+        assert tokens["expires_in"] == ACCESS_TOKEN_TTL_SECONDS
+        assert tokens["refresh_token"]
+
+        bearer = {**_MCP_HEADERS, "Authorization": f"Bearer {tokens['access_token']}"}
+        assert _initialize(client, bearer) == 200
+
+        later = time.time() + ACCESS_TOKEN_TTL_SECONDS + 60
+        with patch("time.time", return_value=later):
+            assert _initialize(client, bearer) == 401
+
+            refresh_resp = client.post(
+                "/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": tokens["refresh_token"],
+                    "client_id": client_id,
+                },
+            )
+            assert refresh_resp.status_code == 200, refresh_resp.text
+            refreshed = refresh_resp.json()
+            assert refreshed["refresh_token"] != tokens["refresh_token"]
+
+            new_bearer = {**_MCP_HEADERS, "Authorization": f"Bearer {refreshed['access_token']}"}
+            assert _initialize(client, new_bearer) == 200
