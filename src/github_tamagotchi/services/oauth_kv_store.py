@@ -22,6 +22,7 @@ every other piece of this app's state.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, SupportsFloat
@@ -75,7 +76,7 @@ class DatabaseKeyValueStore:
         self, key: str, *, collection: str | None = None
     ) -> tuple[dict[str, Any] | None, float | None]:
         collection_name = collection or _DEFAULT_COLLECTION
-        now = datetime.now(UTC)
+        now = _now()
         async with self._open_session() as session:
             row = await session.get(OAuthKVStore, (collection_name, key))
             if row is None:
@@ -100,7 +101,7 @@ class DatabaseKeyValueStore:
     ) -> None:
         collection_name = collection or _DEFAULT_COLLECTION
         expires_at = (
-            datetime.now(UTC) + timedelta(seconds=float(ttl)) if ttl is not None else None
+            _now() + timedelta(seconds=float(ttl)) if ttl is not None else None
         )
         serialized = json.dumps(dict(value))
 
@@ -170,6 +171,12 @@ class DatabaseKeyValueStore:
             if await self.delete(key, collection=collection):
                 deleted += 1
         return deleted
+
+
+def _now() -> datetime:
+    """Current time from time.time(), the same clock FastMCP's JWT expiry
+    checks use, so row expiry and token expiry can never disagree."""
+    return datetime.fromtimestamp(time.time(), UTC)
 
 
 def _as_aware(value: datetime | None) -> datetime | None:

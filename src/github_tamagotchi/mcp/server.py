@@ -14,7 +14,6 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.dependencies import get_access_token
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +25,7 @@ from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory
 from github_tamagotchi.crud.milestone import create_milestone
 from github_tamagotchi.crud.user import create_or_update_user
+from github_tamagotchi.mcp.auth import LongLivedGitHubProvider
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
 from github_tamagotchi.models.user import User
 from github_tamagotchi.services.ascii_render import render_pet_ascii
@@ -95,17 +95,22 @@ Call how_to_play() any time for this text again.\
 """
 
 
-def _build_auth() -> GitHubProvider | None:
+def _build_auth() -> LongLivedGitHubProvider | None:
     """GitHub OAuth via FastMCP's proxy (handles Dynamic Client Registration,
     PKCE, and the authorize/token dance on GitHub's behalf, since GitHub
     itself doesn't support DCR). Falls back to no auth if the app's GitHub
     OAuth credentials aren't configured — true in some local/test setups,
     never in a real deployment (staging/production both have them, since
     the website's own login already depends on them).
+
+    LongLivedGitHubProvider (mcp/auth.py) replaces the stock token handling
+    so a connected client stays connected: 1-hour access tokens, refresh
+    tokens with a 365-day window that resets on every refresh, and no
+    dependency on the original GitHub token staying alive.
     """
     if not settings.github_oauth_client_id or not settings.github_oauth_client_secret:
         return None
-    return GitHubProvider(
+    return LongLivedGitHubProvider(
         client_id=settings.github_oauth_client_id,
         client_secret=settings.github_oauth_client_secret,
         base_url=settings.base_url,
