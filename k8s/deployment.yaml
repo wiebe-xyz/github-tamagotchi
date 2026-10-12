@@ -68,6 +68,18 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-token
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-app-id
+                  optional: true
+            - name: GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-app-private-key
+                  optional: true
             - name: ENVIRONMENT
               value: "staging"
             - name: IMAGE_GENERATION_PROVIDER
@@ -248,6 +260,18 @@ spec:
                 secretKeyRef:
                   name: github-tamagotchi-secrets
                   key: github-token
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-app-id
+                  optional: true
+            - name: GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: github-tamagotchi-secrets
+                  key: github-app-private-key
+                  optional: true
             - name: ENVIRONMENT
               value: "staging"
             - name: IMAGE_GENERATION_PROVIDER

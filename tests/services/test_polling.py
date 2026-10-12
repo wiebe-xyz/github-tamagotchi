@@ -610,3 +610,54 @@ class TestPollFailedChecks:
         # block the update since "last_commit" itself succeeded.
         assert pet.health == 65
         assert pet.last_poll_error is None
+
+
+class TestPollInstallationToken:
+    """The poller reads a repo with its GitHub App installation token when it has one."""
+
+    @pytest.mark.asyncio
+    async def test_poll_uses_installation_token_per_repo(self, test_db):
+        for owner in ("priv", "pub"):
+            test_db.add(
+                Pet(
+                    repo_owner=owner,
+                    repo_name="repo",
+                    name=owner,
+                    health=50,
+                    experience=0,
+                    stage=PetStage.EGG.value,
+                    mood=PetMood.CONTENT.value,
+                )
+            )
+        await test_db.commit()
+
+        repo_health = RepoHealth(
+            last_commit_at=datetime.now(UTC),
+            open_prs_count=0,
+            oldest_pr_age_hours=None,
+            open_issues_count=0,
+            oldest_issue_age_days=None,
+            last_ci_success=True,
+            has_stale_dependencies=False,
+        )
+
+        async def token_for(owner: str, repo: str) -> str | None:
+            return "ghs_installation" if owner == "priv" else None
+
+        with (
+            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
+            patch("github_tamagotchi.main.installation_token_for", side_effect=token_for),
+            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+        ):
+            mock_service = AsyncMock()
+            mock_service.get_repo_health.return_value = repo_health
+            mock_service_class.return_value = mock_service
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await poll_repositories()
+
+        tokens = [c.kwargs.get("token") for c in mock_service_class.call_args_list]
+        # One shared app-wide client, plus one client for the installed repo only.
+        assert tokens.count("ghs_installation") == 1
+        assert tokens.count(None) == 1
