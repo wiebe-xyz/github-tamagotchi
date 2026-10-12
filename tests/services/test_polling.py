@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from github_tamagotchi.models.pet import Pet, PetMood, PetStage
+from github_tamagotchi.models.user import User
 from github_tamagotchi.services.github import RateLimitError, RepoHealth
 
 
@@ -612,52 +613,104 @@ class TestPollFailedChecks:
         assert pet.last_poll_error is None
 
 
-class TestPollInstallationToken:
-    """The poller reads a repo with its GitHub App installation token when it has one."""
+class TestPollCredentials:
+    """The poller reads each repo with a credential that can see it."""
 
-    @pytest.mark.asyncio
-    async def test_poll_uses_installation_token_per_repo(self, test_db):
-        for owner in ("priv", "pub"):
-            test_db.add(
-                Pet(
-                    repo_owner=owner,
-                    repo_name="repo",
-                    name=owner,
-                    health=50,
-                    experience=0,
-                    stage=PetStage.EGG.value,
-                    mood=PetMood.CONTENT.value,
-                )
-            )
-        await test_db.commit()
-
-        repo_health = RepoHealth(
-            last_commit_at=datetime.now(UTC),
+    @staticmethod
+    def _health(commit: bool = True) -> RepoHealth:
+        return RepoHealth(
+            last_commit_at=datetime.now(UTC) if commit else None,
             open_prs_count=0,
             oldest_pr_age_hours=None,
             open_issues_count=0,
             oldest_issue_age_days=None,
             last_ci_success=True,
             has_stale_dependencies=False,
+            failed_checks=[] if commit else ["last_commit"],
         )
 
-        async def token_for(owner: str, repo: str) -> str | None:
-            return "ghs_installation" if owner == "priv" else None
+    @staticmethod
+    async def _user(test_db, github_id: int, token: str | None) -> User:
+        user = User(
+            github_id=github_id,
+            github_login=f"user{github_id}",
+            encrypted_token=token,
+        )
+        test_db.add(user)
+        await test_db.flush()
+        return user
+
+    @staticmethod
+    def _pet(owner: str, user: User) -> Pet:
+        return Pet(
+            repo_owner=owner,
+            repo_name="repo",
+            name=owner,
+            user_id=user.id,
+            health=50,
+            experience=0,
+            stage=PetStage.EGG.value,
+            mood=PetMood.CONTENT.value,
+        )
+
+    async def _poll(self, test_db, health_for_token) -> dict[str, list[str | None]]:
+        """Run a poll; `health_for_token(token, owner)` returns each client's RepoHealth."""
+        calls: dict[str, list[str | None]] = {}
+
+        def make_service(token: str | None = None):
+            service = AsyncMock()
+
+            async def get_repo_health(owner: str, repo: str) -> RepoHealth:
+                calls.setdefault(owner, []).append(token)
+                return health_for_token(token, owner)
+
+            service.get_repo_health = get_repo_health
+            return service
 
         with (
-            patch("github_tamagotchi.main.GitHubService") as mock_service_class,
-            patch("github_tamagotchi.main.installation_token_for", side_effect=token_for),
-            patch("github_tamagotchi.main.async_session_factory") as mock_session_factory,
+            patch("github_tamagotchi.main.GitHubService", side_effect=make_service),
+            patch("github_tamagotchi.main.installation_token_for", return_value=None),
+            patch(
+                "github_tamagotchi.services.token_encryption.decrypt_token",
+                side_effect=lambda t: f"plain-{t}",
+            ),
+            patch("github_tamagotchi.main.async_session_factory") as factory,
         ):
-            mock_service = AsyncMock()
-            mock_service.get_repo_health.return_value = repo_health
-            mock_service_class.return_value = mock_service
-            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
-            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
-
+            factory.return_value.__aenter__ = AsyncMock(return_value=test_db)
+            factory.return_value.__aexit__ = AsyncMock(return_value=None)
             await poll_repositories()
+        return calls
 
-        tokens = [c.kwargs.get("token") for c in mock_service_class.call_args_list]
-        # One shared app-wide client, plus one client for the installed repo only.
-        assert tokens.count("ghs_installation") == 1
-        assert tokens.count(None) == 1
+    @pytest.mark.asyncio
+    async def test_each_pet_uses_only_its_owners_token(self, test_db):
+        a = await self._user(test_db, 1, "enc-a")
+        b = await self._user(test_db, 2, "enc-b")
+        test_db.add_all([self._pet("repo-a", a), self._pet("repo-b", b)])
+        await test_db.commit()
+
+        calls = await self._poll(test_db, lambda token, owner: self._health())
+
+        assert calls == {"repo-a": ["plain-enc-a"], "repo-b": ["plain-enc-b"]}
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_shared_token_when_owner_token_is_revoked(self, test_db):
+        a = await self._user(test_db, 1, "enc-a")
+        test_db.add(self._pet("repo-a", a))
+        await test_db.commit()
+
+        def health_for(token, owner):
+            return self._health(commit=token is None)
+
+        calls = await self._poll(test_db, health_for)
+
+        assert calls == {"repo-a": ["plain-enc-a", None]}
+
+    @pytest.mark.asyncio
+    async def test_owner_without_stored_token_uses_shared_token(self, test_db):
+        a = await self._user(test_db, 1, None)
+        test_db.add(self._pet("repo-a", a))
+        await test_db.commit()
+
+        calls = await self._poll(test_db, lambda token, owner: self._health())
+
+        assert calls == {"repo-a": [None]}

@@ -101,6 +101,50 @@ _tracer = get_tracer(__name__)
 _consecutive_poll_failures = 0
 
 
+async def _owner_token(pet: Pet, session: AsyncSession) -> str | None:
+    """The pet owner's stored GitHub token, or None if absent or undecryptable.
+
+    Only the pet's own owner is consulted, so one user's token never reads
+    another user's repo.
+    """
+    if pet.user_id is None:
+        return None
+    user = await session.get(User, pet.user_id)
+    if user is None or not user.encrypted_token:
+        return None
+    try:
+        from github_tamagotchi.services.token_encryption import decrypt_token
+
+        return decrypt_token(user.encrypted_token)
+    except Exception:
+        logger.warning("poll_owner_token_undecryptable", pet_id=pet.id, user_id=pet.user_id)
+        return None
+
+
+async def _update_pet_with_best_token(
+    pet: Pet, session: AsyncSession, shared: GitHubService
+) -> None:
+    """Update a pet, trying the credentials that can see its repo, best first.
+
+    Order: the GitHub App installation token, the owner's stored token, then
+    the shared app-wide token. A credential that returns no data (revoked,
+    expired, no access) leaves `last_poll_error` set, and the next one is tried.
+    """
+    services: list[GitHubService] = []
+    app_token = await installation_token_for(pet.repo_owner, pet.repo_name)
+    if app_token:
+        services.append(GitHubService(token=app_token))
+    owner_token = await _owner_token(pet, session)
+    if owner_token:
+        services.append(GitHubService(token=owner_token))
+    services.append(shared)
+
+    for service in services:
+        await _update_single_pet(pet, session, service)
+        if pet.last_poll_error is None:
+            return
+
+
 async def _update_single_pet(
     pet: Pet,
     session: AsyncSession,
@@ -368,9 +412,7 @@ async def _poll_repositories_inner(triggered_by: str, poll_span: Any) -> None:
                     )
                     continue
                 try:
-                    app_token = await installation_token_for(pet.repo_owner, pet.repo_name)
-                    pet_github = GitHubService(token=app_token) if app_token else github_service
-                    await _update_single_pet(pet, session, pet_github)
+                    await _update_pet_with_best_token(pet, session, github_service)
                     updated_count += 1
                 except RateLimitError as e:
                     rate_limited = True
