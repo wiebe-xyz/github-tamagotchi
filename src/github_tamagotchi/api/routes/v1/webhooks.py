@@ -29,26 +29,36 @@ class WebhookResponse(BaseModel):
 def _client_ip(request: Request) -> str | None:
     """The real origin IP behind our own proxy chain (Cloudflare, then Traefik).
 
-    Each trusted hop appends the address it saw to X-Forwarded-For, so we walk
-    the header from the right and skip hops that are Cloudflare edge addresses.
-    The first remaining entry is the address Cloudflare (or Traefik, when
-    reached directly) observed on its connection. Entries further left were
-    supplied by the client and are never read.
+    Traefik sets the last X-Forwarded-For entry to the peer that connected to
+    it. When that peer is a Cloudflare edge address, Cloudflare vouches for
+    the client address in Cf-Connecting-Ip, which it overwrites on every
+    request. A request that reaches Traefik directly has a non-Cloudflare
+    peer, so a forged Cf-Connecting-Ip from it is never read.
+
+    Without that header, the header is walked from the right, skipping
+    Cloudflare hops; entries further left are client-supplied and unused.
     """
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
-        for hop in reversed(hops):
-            if not is_cloudflare_address(hop):
-                return hop
-        return None
-    return request.client.host if request.client else None
+    if not forwarded:
+        return request.client.host if request.client else None
+
+    hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+    if hops and is_cloudflare_address(hops[-1]):
+        connecting = request.headers.get("cf-connecting-ip", "").strip()
+        if connecting:
+            return connecting
+    for hop in reversed(hops):
+        if not is_cloudflare_address(hop):
+            return hop
+    return None
 
 
 @router.post("/webhooks/github", response_model=WebhookResponse)
 async def github_webhook(request: Request, session: DbSession) -> WebhookResponse:
     """Receive GitHub webhook events and update pet state."""
-    if not await is_github_webhook_source(_client_ip(request)):
+    client_ip = _client_ip(request)
+    if not await is_github_webhook_source(client_ip):
+        logger.warning("webhook rejected: source %s is not a GitHub address", client_ip)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Request does not originate from GitHub",

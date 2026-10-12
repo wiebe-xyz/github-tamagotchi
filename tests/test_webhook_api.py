@@ -251,6 +251,40 @@ class TestWebhookSourceVerification:
             mock.assert_awaited_once_with(None)
             assert response.status_code == 403
 
+    async def test_cf_connecting_ip_used_when_peer_is_cloudflare(
+        self, async_client: AsyncClient
+    ) -> None:
+        """Traefik drops Cloudflare's forwarded chain, so the app only sees the
+        edge address in X-Forwarded-For; the client is in Cf-Connecting-Ip."""
+        with patch(_IS_GITHUB_SOURCE, return_value=True) as mock:
+            await async_client.post(
+                "/api/v1/webhooks/github",
+                content=b"{}",
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Forwarded-For": "162.158.159.13",
+                    "Cf-Connecting-Ip": "140.82.115.33",
+                },
+            )
+            mock.assert_awaited_once_with("140.82.115.33")
+
+    async def test_forged_cf_connecting_ip_ignored_when_peer_not_cloudflare(
+        self, async_client: AsyncClient
+    ) -> None:
+        """A request that bypasses Cloudflare cannot claim a GitHub address."""
+        with patch(_IS_GITHUB_SOURCE, return_value=False) as mock:
+            response = await async_client.post(
+                "/api/v1/webhooks/github",
+                content=b"{}",
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Forwarded-For": "203.0.113.7",
+                    "Cf-Connecting-Ip": "140.82.115.33",
+                },
+            )
+            mock.assert_awaited_once_with("203.0.113.7")
+            assert response.status_code == 403
+
     async def test_push_event_for_unknown_repo(self, async_client: AsyncClient) -> None:
         """Push for non-existent pet should return processed with message."""
         payload = {
