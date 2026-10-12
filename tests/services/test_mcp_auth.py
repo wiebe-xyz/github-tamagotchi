@@ -21,6 +21,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 import respx
+from cryptography.fernet import Fernet
 from fastmcp.server.auth.oauth_proxy import ClientCode
 from mcp.server.auth.provider import AuthorizationCode, TokenError
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -48,7 +49,7 @@ CLIENT = OAuthClientInformationFull(
     redirect_uris=[AnyUrl("http://localhost:33418/callback")],
     token_endpoint_auth_method="none",
 )
-TEST_FERNET_KEY = "2Jx9H0b6B1v0Yp8m3Hq8y4uQe1Xr3dZp7mN5kL0aB2c="
+TEST_FERNET_KEY = Fernet.generate_key().decode()
 
 
 class Clock:
