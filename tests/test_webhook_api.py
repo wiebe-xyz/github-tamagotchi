@@ -1,21 +1,21 @@
 """Tests for the webhook API endpoint."""
 
-import hashlib
-import hmac
-import json
 from unittest.mock import patch
 
+import pytest
 from httpx import AsyncClient
 
-
-def _sign_payload(payload: dict[str, object], secret: str) -> tuple[bytes, str]:
-    """Helper to create a signed payload and its signature."""
-    body = json.dumps(payload).encode()
-    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return body, f"sha256={digest}"
+_IS_GITHUB_SOURCE = "github_tamagotchi.api.routes.v1.webhooks.is_github_webhook_source"
 
 
-WEBHOOK_SECRET = "test-webhook-secret"
+@pytest.fixture(autouse=True)
+def _trusted_source():
+    """Most tests here exercise event-processing logic, not the source-IP
+    gate itself -- default every request to a verified GitHub source so
+    they don't each need their own patch. TestWebhookSourceVerification
+    overrides this per-test to exercise the gate directly."""
+    with patch(_IS_GITHUB_SOURCE, return_value=True) as mock:
+        yield mock
 
 
 class TestWebhookEndpoint:
@@ -161,74 +161,48 @@ class TestWebhookEndpoint:
         assert pet_response.json()["mood"] == "dancing"
 
 
-class TestWebhookSignatureValidation:
-    """Tests for webhook signature verification at the API level."""
+class TestWebhookSourceVerification:
+    """Tests for the GitHub-source-IP gate at the API level (issues #278/#279:
+    no shared secret required, but the request must actually come from GitHub)."""
 
-    async def test_valid_signature_accepted(self, async_client: AsyncClient) -> None:
-        """Request with valid signature should be accepted."""
-        payload = {"repository": {"name": "testrepo", "owner": {"login": "testuser"}}}
-        body, signature = _sign_payload(payload, WEBHOOK_SECRET)
-
-        with patch(
-            "github_tamagotchi.api.routes.settings"
-        ) as mock_settings:
-            mock_settings.github_webhook_secret = WEBHOOK_SECRET
-
+    async def test_untrusted_source_rejected(self, async_client: AsyncClient) -> None:
+        """A request that doesn't verify as coming from GitHub is rejected,
+        even for an otherwise-harmless event like ping."""
+        with patch(_IS_GITHUB_SOURCE, return_value=False):
             response = await async_client.post(
                 "/api/v1/webhooks/github",
-                content=body,
-                headers={
-                    "X-GitHub-Event": "ping",
-                    "X-Hub-Signature-256": signature,
-                    "Content-Type": "application/json",
-                },
+                content=b"{}",
+                headers={"X-GitHub-Event": "ping"},
+            )
+            assert response.status_code == 403
+            assert "does not originate from GitHub" in response.json()["detail"]
+
+    async def test_trusted_source_accepted(self, async_client: AsyncClient) -> None:
+        """A request verified as coming from GitHub is processed normally."""
+        with patch(_IS_GITHUB_SOURCE, return_value=True):
+            response = await async_client.post(
+                "/api/v1/webhooks/github",
+                content=b"{}",
+                headers={"X-GitHub-Event": "ping"},
             )
             assert response.status_code == 200
 
-    async def test_invalid_signature_rejected(self, async_client: AsyncClient) -> None:
-        """Request with invalid signature should return 401."""
-        with patch(
-            "github_tamagotchi.api.routes.settings"
-        ) as mock_settings:
-            mock_settings.github_webhook_secret = WEBHOOK_SECRET
-
-            response = await async_client.post(
+    async def test_source_check_receives_last_forwarded_hop(
+        self, async_client: AsyncClient
+    ) -> None:
+        """The gate is checked against the last X-Forwarded-For entry (the
+        one our own reverse proxy appended), not an earlier, client-supplied
+        one -- a client claiming to be some other IP shouldn't be trusted."""
+        with patch(_IS_GITHUB_SOURCE, return_value=True) as mock:
+            await async_client.post(
                 "/api/v1/webhooks/github",
-                content=b'{"test": true}',
+                content=b"{}",
                 headers={
-                    "X-GitHub-Event": "push",
-                    "X-Hub-Signature-256": "sha256=invalid",
-                    "Content-Type": "application/json",
+                    "X-GitHub-Event": "ping",
+                    "X-Forwarded-For": "1.2.3.4, 140.82.112.3",
                 },
             )
-            assert response.status_code == 401
-            assert "Invalid webhook signature" in response.json()["detail"]
-
-    async def test_missing_signature_rejected(self, async_client: AsyncClient) -> None:
-        """Request without signature when secret is set should return 401."""
-        with patch(
-            "github_tamagotchi.api.routes.settings"
-        ) as mock_settings:
-            mock_settings.github_webhook_secret = WEBHOOK_SECRET
-
-            response = await async_client.post(
-                "/api/v1/webhooks/github",
-                content=b'{"test": true}',
-                headers={
-                    "X-GitHub-Event": "push",
-                    "Content-Type": "application/json",
-                },
-            )
-            assert response.status_code == 401
-
-    async def test_no_secret_configured_accepts_all(self, async_client: AsyncClient) -> None:
-        """When no secret is configured, all requests should be accepted."""
-        response = await async_client.post(
-            "/api/v1/webhooks/github",
-            content=b"{}",
-            headers={"X-GitHub-Event": "ping"},
-        )
-        assert response.status_code == 200
+            mock.assert_awaited_once_with("140.82.112.3")
 
     async def test_push_event_for_unknown_repo(self, async_client: AsyncClient) -> None:
         """Push for non-existent pet should return processed with message."""

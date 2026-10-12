@@ -2,9 +2,12 @@
 
 import hashlib
 import hmac
+import ipaddress
+import time
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +19,82 @@ from github_tamagotchi.models.pet import PetMood, PetStage
 from github_tamagotchi.services.pet_logic import get_next_stage
 
 _tracer = get_tracer(__name__)
+
+_IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+# GitHub publishes the IP ranges it sends webhook deliveries from at this
+# public, unauthenticated endpoint (the "hooks" key). We trust source IP
+# instead of a shared secret: setting up your own webhook secret per repo
+# isn't practical here (there's one bot-wide secret, and handing it out
+# would let any repo forge deliveries for any other), and unlike a header a
+# client sends, the TCP source IP can't be forged by a random request over
+# the open internet -- completing our TLS handshake requires actually
+# holding that address. See issue #278/#279.
+_GITHUB_META_URL = "https://api.github.com/meta"
+_RANGES_CACHE_TTL_SECONDS = 3600
+
+_cached_networks: list[_IPNetwork] = []
+_cached_at: float = 0.0
+
+
+async def _fetch_github_hook_networks() -> list[_IPNetwork]:
+    """Fetch GitHub's currently published webhook-sending IP ranges."""
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(_GITHUB_META_URL)
+        resp.raise_for_status()
+        data = resp.json()
+
+    networks: list[_IPNetwork] = []
+    for cidr in data.get("hooks", []):
+        try:
+            networks.append(ipaddress.ip_network(cidr))
+        except ValueError:
+            continue
+    return networks
+
+
+async def _get_github_hook_networks() -> list[_IPNetwork]:
+    """Cached accessor for GitHub's webhook IP ranges, refreshed hourly.
+
+    A fetch failure keeps whatever was last cached (GitHub's ranges change
+    rarely; a transient outage shouldn't suddenly reject every delivery).
+    If nothing has ever been cached, returns empty -- callers should treat
+    that as "can't verify" and fail closed, not as "no restriction".
+    """
+    global _cached_networks, _cached_at
+    now = time.monotonic()
+    if _cached_networks and (now - _cached_at) < _RANGES_CACHE_TTL_SECONDS:
+        return _cached_networks
+
+    try:
+        fetched = await _fetch_github_hook_networks()
+    except Exception as e:
+        logger.warning("failed to refresh GitHub webhook IP ranges", error=str(e))
+        return _cached_networks
+
+    if fetched:
+        _cached_networks = fetched
+        _cached_at = now
+    return _cached_networks
+
+
+async def is_github_webhook_source(client_ip: str | None) -> bool:
+    """Whether `client_ip` is one of GitHub's published webhook-sending addresses.
+
+    Fails closed: an unparseable/missing IP, or ranges we've never
+    successfully fetched, is treated as "not verified" rather than "allow".
+    """
+    if not client_ip:
+        return False
+    try:
+        addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+
+    networks = await _get_github_hook_networks()
+    if not networks:
+        return False
+    return any(addr in net for net in networks)
 
 logger = structlog.get_logger()
 

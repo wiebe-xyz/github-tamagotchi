@@ -5,12 +5,11 @@ import logging
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
-import github_tamagotchi.api.routes as _api_routes  # for test-patch-compatible symbol lookup
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.dependencies import DbSession
 from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.webhook_event import WebhookEvent
-from github_tamagotchi.services.webhook import EVENT_HANDLERS, verify_signature
+from github_tamagotchi.services.webhook import EVENT_HANDLERS, is_github_webhook_source
 
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
@@ -23,19 +22,28 @@ class WebhookResponse(BaseModel):
     message: str
 
 
+def _client_ip(request: Request) -> str | None:
+    """The real origin IP, trusting only the last hop our own reverse proxy
+    (Traefik) appended to X-Forwarded-For -- not any earlier entry, which a
+    client could set to whatever it likes. Traefik is the sole ingress hop
+    in front of this app, so that last entry is the one it observed directly.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        if hops:
+            return hops[-1]
+    return request.client.host if request.client else None
+
+
 @router.post("/webhooks/github", response_model=WebhookResponse)
 async def github_webhook(request: Request, session: DbSession) -> WebhookResponse:
     """Receive GitHub webhook events and update pet state."""
-    body = await request.body()
-
-    if _api_routes.settings.github_webhook_secret:
-        signature = request.headers.get("X-Hub-Signature-256", "")
-        secret = _api_routes.settings.github_webhook_secret
-        if not signature or not verify_signature(body, signature, secret):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature",
-            )
+    if not await is_github_webhook_source(_client_ip(request)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Request does not originate from GitHub",
+        )
 
     event_type = request.headers.get("X-GitHub-Event", "")
     if not event_type:
