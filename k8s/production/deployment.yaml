@@ -1,3 +1,6 @@
+# No `replicas` field on purpose: the promote workflow owns replica counts with
+# `kubectl scale`. A `replicas: 0` here made every `kubectl apply` scale the live color
+# to zero for the whole rollout of the other color (webhooks got 503, 2026-10-12).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,7 +12,6 @@ metadata:
 spec:
   progressDeadlineSeconds: 900
   revisionHistoryLimit: 2
-  replicas: 0
   selector:
     matchLabels:
       app: github-tamagotchi
@@ -205,7 +207,6 @@ metadata:
 spec:
   progressDeadlineSeconds: 900
   revisionHistoryLimit: 2
-  replicas: 0
   selector:
     matchLabels:
       app: github-tamagotchi

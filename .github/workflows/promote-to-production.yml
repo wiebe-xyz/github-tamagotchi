@@ -224,11 +224,33 @@ jobs:
             exit 1
           fi
 
-          # Switch traffic (new pod is confirmed healthy)
+          # The new color must be Ready (readiness probe passing) before it gets traffic.
+          if ! kubectl wait --for=condition=Ready pod \
+               -l app=github-tamagotchi,version=$INACTIVE -n $NS --timeout=120s; then
+            echo "=== $INACTIVE IS NOT READY — aborting, traffic stays on $ACTIVE ==="
+            kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=0 -n $NS
+            exit 1
+          fi
+
+          # Switch traffic (new pod is confirmed Ready)
           kubectl patch service github-tamagotchi -n $NS \
             --type='json' \
             -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$INACTIVE\"}]"
           echo "Traffic switched to $INACTIVE"
+
+          # Drain: keep the old color running until the Service endpoints list only the
+          # new pods, then give the proxy time to drop the old address and finish
+          # in-flight requests before scaling the old color down.
+          NEW_IPS=$(kubectl get pod -n $NS -l app=github-tamagotchi,version=$INACTIVE \
+            -o jsonpath='{.items[*].status.podIP}')
+          for i in $(seq 1 30); do
+            ENDPOINT_IPS=$(kubectl get endpoints github-tamagotchi -n $NS \
+              -o jsonpath='{.subsets[*].addresses[*].ip}')
+            [ "$ENDPOINT_IPS" = "$NEW_IPS" ] && break
+            sleep 1
+          done
+          echo "Service endpoints: $ENDPOINT_IPS (new pods: $NEW_IPS)"
+          sleep 15
 
           kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
           echo "Scaled down $ACTIVE — production deploy complete"
