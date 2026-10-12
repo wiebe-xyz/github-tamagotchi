@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     github_token: str | None = None
     github_poll_interval_minutes: int = 30
     github_webhook_secret: str | None = None
+    # Optional GitHub App; lets the poller read private repos through installation tokens
+    github_app_id: str | None = None
+    github_app_private_key: str | None = None
 
     # GitHub OAuth
     github_oauth_client_id: str | None = None

@@ -54,6 +54,7 @@ from github_tamagotchi.services.achievements import check_and_unlock_achievement
 from github_tamagotchi.services.alerting import AlertChecker
 from github_tamagotchi.services.contributor_relationships import build_contributor_updates
 from github_tamagotchi.services.github import GitHubService, RateLimitError, RepoInsights
+from github_tamagotchi.services.github_app import installation_token_for
 from github_tamagotchi.services.naming import is_valid_repo_identifier
 from github_tamagotchi.services.pet_logic import (
     DEATH_GRACE_PERIOD_DAYS,
@@ -367,7 +368,9 @@ async def _poll_repositories_inner(triggered_by: str, poll_span: Any) -> None:
                     )
                     continue
                 try:
-                    await _update_single_pet(pet, session, github_service)
+                    app_token = await installation_token_for(pet.repo_owner, pet.repo_name)
+                    pet_github = GitHubService(token=app_token) if app_token else github_service
+                    await _update_single_pet(pet, session, pet_github)
                     updated_count += 1
                 except RateLimitError as e:
                     rate_limited = True
