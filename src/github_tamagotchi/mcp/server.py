@@ -138,6 +138,12 @@ _PLAY_COOLDOWN = 3600  # seconds
 _last_played_at: dict[int, float] = {}
 
 
+_DEGRADED_MESSAGE = (
+    "{name} couldn't look at the repository (see sync_warnings), "
+    "so this reading is incomplete. It says nothing about how active the repo is."
+)
+
+
 def _github_access_token() -> Any:
     """Resolve the authenticated caller's AccessToken, or raise.
 
@@ -212,7 +218,7 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
     async with async_session_factory() as session:
         pet = await _get_owned_pet(session, repo_owner, repo_name)
 
-        github = GitHubService()
+        github = GitHubService(token=_github_access_token().token)
         health = await github.get_repo_health(repo_owner, repo_name)
 
         personality = _get_pet_personality(pet, repo_owner, repo_name)
@@ -246,7 +252,8 @@ async def check_pet_status(repo_owner: str, repo_name: str) -> dict[str, Any]:
         if health.failed_checks:
             response["degraded"] = True
             response["sync_warnings"] = health.failed_checks
-        if personality_msg:
+            response["message"] = _DEGRADED_MESSAGE.format(name=pet.name)
+        elif personality_msg:
             response["message"] = personality_msg
         return response
 
@@ -620,7 +627,7 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
     async with async_session_factory() as session:
         pet = await _get_owned_pet(session, repo_owner, repo_name)
 
-        github = GitHubService()
+        github = GitHubService(token=_github_access_token().token)
         health = await github.get_repo_health(repo_owner, repo_name)
 
         old_stage = pet.stage
@@ -672,8 +679,8 @@ async def update_pet_from_repo(repo_owner: str, repo_name: str) -> dict[str, Any
         if health.failed_checks:
             update_response["degraded"] = True
             update_response["sync_warnings"] = health.failed_checks
-
-        if personality_msg:
+            update_response["message"] = _DEGRADED_MESSAGE.format(name=pet.name)
+        elif personality_msg:
             update_response["message"] = personality_msg
 
         if evolved:

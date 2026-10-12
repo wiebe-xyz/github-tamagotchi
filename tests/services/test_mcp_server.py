@@ -329,6 +329,69 @@ class TestCheckPetStatus:
         assert result["sync_warnings"] == ["last_commit", "rate_limited:open_prs"]
 
 
+class TestCallerTokenForMetrics:
+    """Metrics collection must use the caller's GitHub token, or private repos read as empty."""
+
+    async def test_check_pet_status_uses_callers_token(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        await _make_pet(test_db, user_id=1)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
+            await _check_pet_status("owner", "repo")
+
+        mock_github.assert_called_once_with(token="test-github-token")
+
+    async def test_update_pet_from_repo_uses_callers_token(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        await _make_pet(test_db, user_id=1)
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=mock_repo_health)
+            await _update_pet_from_repo("owner", "repo")
+
+        mock_github.assert_called_once_with(token="test-github-token")
+
+    async def test_other_users_pet_never_reaches_github(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        """One user's token must not be used to fetch another user's repo."""
+        await _make_pet(test_db, user_id=1)
+
+        with (
+            _as_user(test_db, user_id=2),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            for tool in (_check_pet_status, _update_pet_from_repo):
+                with pytest.raises(ToolError):
+                    await tool("owner", "repo")
+
+        mock_github.assert_not_called()
+
+    async def test_degraded_message_does_not_claim_a_quiet_repo(
+        self, test_db: AsyncSession, mock_repo_health: RepoHealth
+    ) -> None:
+        await _make_pet(test_db, user_id=1)
+        degraded = replace(mock_repo_health, last_commit_at=None, failed_checks=["last_commit"])
+
+        with (
+            _as_user(test_db, user_id=1),
+            patch("github_tamagotchi.mcp.server.GitHubService") as mock_github,
+        ):
+            mock_github.return_value.get_repo_health = AsyncMock(return_value=degraded)
+            result = await _update_pet_from_repo("owner", "repo")
+
+        assert "couldn't look at the repository" in result["message"]
+
+
 class TestFeedPet:
     """Tests for the feed_pet MCP tool and the overfeeding mechanic."""
 
