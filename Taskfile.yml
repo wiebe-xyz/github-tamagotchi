@@ -296,7 +296,7 @@ tasks:
         print(json.dumps({'stringData': data}))
         ")
         echo "$PATCH" | ssh deployer@layer7.wiebe.xyz \
-          "kubectl patch secret github-tamagotchi-secrets -n tamagotchi-production --type=merge -p=\"\$(cat)\""
+          "kubectl patch secret github-tamagotchi-secrets -n tama-prod --type=merge -p=\"\$(cat)\""
 
   # --- Cleanup ---
 
