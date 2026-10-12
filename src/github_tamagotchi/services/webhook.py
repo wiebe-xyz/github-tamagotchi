@@ -1,9 +1,12 @@
 """GitHub webhook processing service."""
 
+import asyncio
 import hashlib
 import hmac
 import ipaddress
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -32,6 +35,31 @@ _IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 # holding that address. See issue #278/#279.
 _GITHUB_META_URL = "https://api.github.com/meta"
 _RANGES_CACHE_TTL_SECONDS = 3600
+
+# One CI run on a busy repo sends dozens of check_run/pull_request events within a
+# minute. Every handler updates the same pet row, so concurrent handlers wait on each
+# other's row locks while each holds a pool connection, and the pool (5 + 10 overflow)
+# runs dry (BugBarn GT-36). Handlers for one repo run one at a time, queued here before
+# they take a connection.
+_repo_locks: dict[str, tuple[asyncio.Lock, int]] = {}
+
+
+@asynccontextmanager
+async def serialize_repo_events(owner: str, name: str) -> AsyncIterator[None]:
+    """Run webhook handling for one repository one event at a time."""
+    key = f"{owner}/{name}".lower()
+    lock, waiters = _repo_locks.get(key, (asyncio.Lock(), 0))
+    _repo_locks[key] = (lock, waiters + 1)
+    try:
+        async with lock:
+            yield
+    finally:
+        lock, waiters = _repo_locks[key]
+        if waiters <= 1:
+            del _repo_locks[key]
+        else:
+            _repo_locks[key] = (lock, waiters - 1)
+
 
 _cached_networks: list[_IPNetwork] = []
 _cached_at: float = 0.0

@@ -13,6 +13,7 @@ from github_tamagotchi.services.webhook import (
     EVENT_HANDLERS,
     is_cloudflare_address,
     is_github_webhook_source,
+    serialize_repo_events,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,29 +124,30 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
         except Exception:
             pass
 
-        processed = False
-        try:
-            message = await handler(payload, session)
-            processed = True
-            metrics_service.webhooks_processed_total.inc()
-        except Exception:
-            metrics_service.webhooks_failed_total.inc()
-            raise
+        async with serialize_repo_events(repo_owner, repo_name):
+            processed = False
+            try:
+                message = await handler(payload, session)
+                processed = True
+                metrics_service.webhooks_processed_total.inc()
+            except Exception:
+                metrics_service.webhooks_failed_total.inc()
+                raise
 
-        span.set_attribute("webhook.processed", processed)
+            span.set_attribute("webhook.processed", processed)
 
-        try:
-            event_log = WebhookEvent(
-                repo_owner=repo_owner,
-                repo_name=repo_name,
-                event_type=event_type,
-                action=action,
-                payload_summary=payload_summary,
-                processed=processed,
-            )
-            session.add(event_log)
-            await session.commit()
-        except Exception:
-            logger.exception("Failed to log webhook event")
+            try:
+                event_log = WebhookEvent(
+                    repo_owner=repo_owner,
+                    repo_name=repo_name,
+                    event_type=event_type,
+                    action=action,
+                    payload_summary=payload_summary,
+                    processed=processed,
+                )
+                session.add(event_log)
+                await session.commit()
+            except Exception:
+                logger.exception("Failed to log webhook event")
 
-        return WebhookResponse(status="processed", message=message)
+            return WebhookResponse(status="processed", message=message)

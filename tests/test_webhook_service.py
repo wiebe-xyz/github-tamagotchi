@@ -1,5 +1,6 @@
 """Tests for the webhook service."""
 
+import asyncio
 import hashlib
 import hmac
 from typing import Any
@@ -473,3 +474,49 @@ class TestIsCloudflareAddress:
         assert not is_cloudflare_address("140.82.112.3")
         assert not is_cloudflare_address("203.0.113.7")
         assert not is_cloudflare_address("not-an-ip")
+
+
+class TestSerializeRepoEvents:
+    """Events for one repo are handled one at a time (BugBarn GT-36)."""
+
+    async def test_same_repo_events_never_overlap(self) -> None:
+        running = 0
+        peak = 0
+
+        async def handle() -> None:
+            nonlocal running, peak
+            async with webhook_service.serialize_repo_events("Owner", "repo"):
+                running += 1
+                peak = max(peak, running)
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
+                running -= 1
+
+        await asyncio.gather(*(handle() for _ in range(20)))
+
+        assert peak == 1
+
+    async def test_different_repos_run_concurrently(self) -> None:
+        inside = asyncio.Event()
+        release = asyncio.Event()
+
+        async def holder() -> None:
+            async with webhook_service.serialize_repo_events("a", "one"):
+                inside.set()
+                await release.wait()
+
+        task = asyncio.create_task(holder())
+        await inside.wait()
+        async with webhook_service.serialize_repo_events("a", "two"):
+            release.set()
+        await task
+
+    async def test_lock_table_is_empty_afterwards_even_after_errors(self) -> None:
+        async def fail() -> None:
+            async with webhook_service.serialize_repo_events("a", "boom"):
+                raise RuntimeError("handler failed")
+
+        results = await asyncio.gather(fail(), fail(), return_exceptions=True)
+
+        assert all(isinstance(r, RuntimeError) for r in results)
+        assert webhook_service._repo_locks == {}
