@@ -133,9 +133,7 @@ class TestIsGithubWebhookSource:
         assert verify_signature(payload, tampered, secret) is False
 
 
-def _make_payload(
-    owner: str = "testuser", repo: str = "testrepo", **extra: Any
-) -> dict[str, Any]:
+def _make_payload(owner: str = "testuser", repo: str = "testrepo", **extra: Any) -> dict[str, Any]:
     """Helper to create a webhook payload with repository info."""
     payload: dict[str, Any] = {
         "repository": {
@@ -459,3 +457,19 @@ class TestEventHandlers:
         """All registered handlers should be callable."""
         for handler in EVENT_HANDLERS.values():
             assert callable(handler)
+
+
+class TestIsCloudflareAddress:
+    def test_cloudflare_edge_addresses(self) -> None:
+        from github_tamagotchi.services.webhook import is_cloudflare_address
+
+        assert is_cloudflare_address("172.69.10.20")
+        assert is_cloudflare_address("188.114.96.0")
+        assert is_cloudflare_address("2606:4700::1")
+
+    def test_other_addresses_and_garbage(self) -> None:
+        from github_tamagotchi.services.webhook import is_cloudflare_address
+
+        assert not is_cloudflare_address("140.82.112.3")
+        assert not is_cloudflare_address("203.0.113.7")
+        assert not is_cloudflare_address("not-an-ip")

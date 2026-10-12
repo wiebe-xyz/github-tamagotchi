@@ -204,6 +204,53 @@ class TestWebhookSourceVerification:
             )
             mock.assert_awaited_once_with("140.82.112.3")
 
+    async def test_source_check_skips_cloudflare_edge_hop(self, async_client: AsyncClient) -> None:
+        """Behind Cloudflare then Traefik, the last hop is a Cloudflare edge
+        address. The gate must be checked against the entry before it, which
+        is the address Cloudflare saw."""
+        with patch(_IS_GITHUB_SOURCE, return_value=True) as mock:
+            await async_client.post(
+                "/api/v1/webhooks/github",
+                content=b"{}",
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Forwarded-For": "9.9.9.9, 140.82.112.3, 172.69.10.20",
+                },
+            )
+            mock.assert_awaited_once_with("140.82.112.3")
+
+    async def test_spoofed_github_ip_before_real_client_not_trusted(
+        self, async_client: AsyncClient
+    ) -> None:
+        """A client that prepends a GitHub address still gets checked as its
+        own address, which Cloudflare appended after the spoofed entry."""
+        with patch(_IS_GITHUB_SOURCE, return_value=False) as mock:
+            response = await async_client.post(
+                "/api/v1/webhooks/github",
+                content=b"{}",
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Forwarded-For": "140.82.112.3, 203.0.113.7, 172.69.10.20",
+                },
+            )
+            mock.assert_awaited_once_with("203.0.113.7")
+            assert response.status_code == 403
+
+    async def test_forwarded_chain_of_only_cloudflare_hops_rejected(
+        self, async_client: AsyncClient
+    ) -> None:
+        with patch(_IS_GITHUB_SOURCE, return_value=False) as mock:
+            response = await async_client.post(
+                "/api/v1/webhooks/github",
+                content=b"{}",
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Forwarded-For": "172.69.10.20, 104.16.1.1",
+                },
+            )
+            mock.assert_awaited_once_with(None)
+            assert response.status_code == 403
+
     async def test_push_event_for_unknown_repo(self, async_client: AsyncClient) -> None:
         """Push for non-existent pet should return processed with message."""
         payload = {

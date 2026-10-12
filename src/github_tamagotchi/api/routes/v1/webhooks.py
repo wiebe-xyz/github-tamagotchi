@@ -9,7 +9,11 @@ from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.dependencies import DbSession
 from github_tamagotchi.core.telemetry import get_tracer
 from github_tamagotchi.models.webhook_event import WebhookEvent
-from github_tamagotchi.services.webhook import EVENT_HANDLERS, is_github_webhook_source
+from github_tamagotchi.services.webhook import (
+    EVENT_HANDLERS,
+    is_cloudflare_address,
+    is_github_webhook_source,
+)
 
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
@@ -23,16 +27,21 @@ class WebhookResponse(BaseModel):
 
 
 def _client_ip(request: Request) -> str | None:
-    """The real origin IP, trusting only the last hop our own reverse proxy
-    (Traefik) appended to X-Forwarded-For -- not any earlier entry, which a
-    client could set to whatever it likes. Traefik is the sole ingress hop
-    in front of this app, so that last entry is the one it observed directly.
+    """The real origin IP behind our own proxy chain (Cloudflare, then Traefik).
+
+    Each trusted hop appends the address it saw to X-Forwarded-For, so we walk
+    the header from the right and skip hops that are Cloudflare edge addresses.
+    The first remaining entry is the address Cloudflare (or Traefik, when
+    reached directly) observed on its connection. Entries further left were
+    supplied by the client and are never read.
     """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
-        if hops:
-            return hops[-1]
+        for hop in reversed(hops):
+            if not is_cloudflare_address(hop):
+                return hop
+        return None
     return request.client.host if request.client else None
 
 
@@ -67,19 +76,9 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
     payload = await request.json()
 
     repo = payload.get("repository", {})
-    repo_owner = (
-        repo.get("owner", {}).get("login", "")
-        if isinstance(repo, dict)
-        else ""
-    )
-    repo_name = (
-        repo.get("name", "") if isinstance(repo, dict) else ""
-    )
-    action = (
-        payload.get("action")
-        if isinstance(payload, dict)
-        else None
-    )
+    repo_owner = repo.get("owner", {}).get("login", "") if isinstance(repo, dict) else ""
+    repo_name = repo.get("name", "") if isinstance(repo, dict) else ""
+    action = payload.get("action") if isinstance(payload, dict) else None
 
     with _tracer.start_as_current_span(
         "api.webhooks.process",
@@ -94,39 +93,23 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
         try:
             if event_type == "push":
                 commits = payload.get("commits", [])
-                branch = (
-                    payload.get("ref", "")
-                    .removeprefix("refs/heads/")
-                )
-                payload_summary = (
-                    f"pushed {len(commits)} commit(s)"
-                    f" to {branch}"
-                )
+                branch = payload.get("ref", "").removeprefix("refs/heads/")
+                payload_summary = f"pushed {len(commits)} commit(s) to {branch}"
             elif event_type == "pull_request":
                 pr = payload.get("pull_request", {})
                 pr_number = pr.get("number", "?")
                 pr_title = pr.get("title", "")
-                payload_summary = (
-                    f"{action} PR #{pr_number}: {pr_title}"
-                )
+                payload_summary = f"{action} PR #{pr_number}: {pr_title}"
             elif event_type == "issues":
                 issue = payload.get("issue", {})
                 issue_number = issue.get("number", "?")
                 issue_title = issue.get("title", "")
-                payload_summary = (
-                    f"{action} issue #{issue_number}:"
-                    f" {issue_title}"
-                )
+                payload_summary = f"{action} issue #{issue_number}: {issue_title}"
             elif event_type == "check_run":
                 check_run = payload.get("check_run", {})
                 name = check_run.get("name", "")
-                conclusion = (
-                    check_run.get("conclusion")
-                    or check_run.get("status", "")
-                )
-                payload_summary = (
-                    f"check run '{name}' {conclusion}"
-                )
+                conclusion = check_run.get("conclusion") or check_run.get("status", "")
+                payload_summary = f"check run '{name}' {conclusion}"
         except Exception:
             pass
 
@@ -155,6 +138,4 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
         except Exception:
             logger.exception("Failed to log webhook event")
 
-        return WebhookResponse(
-            status="processed", message=message
-        )
+        return WebhookResponse(status="processed", message=message)

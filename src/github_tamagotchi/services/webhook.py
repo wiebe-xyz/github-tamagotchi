@@ -78,6 +78,46 @@ async def _get_github_hook_networks() -> list[_IPNetwork]:
     return _cached_networks
 
 
+# Cloudflare's published edge ranges (https://www.cloudflare.com/ips/). They
+# change rarely, so they are listed here instead of fetched at request time.
+_CLOUDFLARE_NETWORKS: tuple[_IPNetwork, ...] = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22",
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32",
+    )
+)
+
+
+def is_cloudflare_address(ip: str) -> bool:
+    """Whether `ip` is a Cloudflare edge address."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in net for net in _CLOUDFLARE_NETWORKS)
+
+
 async def is_github_webhook_source(client_ip: str | None) -> bool:
     """Whether `client_ip` is one of GitHub's published webhook-sending addresses.
 
@@ -95,6 +135,7 @@ async def is_github_webhook_source(client_ip: str | None) -> bool:
     if not networks:
         return False
     return any(addr in net for net in networks)
+
 
 logger = structlog.get_logger()
 
@@ -145,9 +186,7 @@ def _extract_repo_from_payload(payload: dict[str, Any]) -> tuple[str, str] | Non
     return (owner, name)
 
 
-async def _apply_evolution(
-    pet: Any, db: AsyncSession
-) -> tuple[str, str] | None:
+async def _apply_evolution(pet: Any, db: AsyncSession) -> tuple[str, str] | None:
     """Check for evolution and apply stage change + milestone if needed.
 
     Returns (old_stage, new_stage) if evolution occurred, else None.
