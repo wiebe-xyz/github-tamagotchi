@@ -33,6 +33,7 @@ from github_tamagotchi.api.exception_handlers import register_exception_handlers
 from github_tamagotchi.api.health import health_router
 from github_tamagotchi.api.routes import router
 from github_tamagotchi.api.routes.v1.push import router as push_router
+from github_tamagotchi.api.routes.v1.telemetry import is_enabled as telemetry_is_enabled
 from github_tamagotchi.core.config import settings
 from github_tamagotchi.core.database import async_session_factory, close_database, get_session
 from github_tamagotchi.core.logging import (
@@ -88,6 +89,7 @@ templates.env.globals["funnelbarn_api_key"] = settings.funnelbarn_api_key
 templates.env.globals["bugbarn_endpoint"] = settings.bugbarn_endpoint
 templates.env.globals["bugbarn_api_key"] = settings.bugbarn_api_key
 templates.env.globals["bugbarn_project"] = settings.bugbarn_project
+templates.env.globals["spanbarn_web_enabled"] = telemetry_is_enabled()
 templates.env.globals["site_base_url"] = settings.base_url.rstrip("/")
 templates.env.globals["site_name"] = "GitHub Tamagotchi"
 

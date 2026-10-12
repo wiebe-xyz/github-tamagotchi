@@ -7,6 +7,10 @@ window.__bugbarn = {
 };
 </script>
 <script src="/static/js/analytics.js"></script>
+{% if spanbarn_web_enabled %}
+<script src="/static/js/spanbarn.iife.js" defer></script>
+<script src="/static/js/spanbarn-init.js" defer></script>
+{% endif %}
 {% if funnelbarn_api_key %}
 <script src="https://funnelbarn.wiebe.xyz/sdk.js" data-api-key="{{ funnelbarn_api_key }}" defer></script>
 {% if user %}
