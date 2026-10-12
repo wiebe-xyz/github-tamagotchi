@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
     otel_service_name: str = "github-tamagotchi"
     otel_traces_sample_rate: float = 1.0
+    otel_exporter_otlp_endpoint: str | None = None
+    # Server-side SpanBarn key; the browser SDK posts through /api/v1/telemetry instead
+    spanbarn_api_key: str | None = None
 
     # Sentry
     sentry_dsn: str | None = None

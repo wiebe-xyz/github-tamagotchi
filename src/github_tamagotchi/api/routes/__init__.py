@@ -46,6 +46,7 @@ from github_tamagotchi.api.routes.v1 import (
     graveyard,
     social,
     system,
+    telemetry,
     webhooks,
 )
 
@@ -61,4 +62,5 @@ router.include_router(admin.router)
 router.include_router(graveyard.router)
 router.include_router(social.router)
 router.include_router(system.router)
+router.include_router(telemetry.router)
 router.include_router(webhooks.router)
