@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import ssl
+import sys
 import urllib.error
 import urllib.request
 from typing import Any
@@ -34,10 +35,31 @@ class _ProjectTransport(_Transport):  # type: ignore[misc]
     """SDK transport that injects X-BugBarn-Project and uses unverified SSL."""
 
     def __init__(self, api_key: str, endpoint: str, project: str) -> None:
-        super().__init__(api_key=api_key, endpoint=endpoint)
         self._project = project
+        self._warned: set[str] = set()
+        super().__init__(api_key=api_key, endpoint=endpoint)
+
+    def _warn_once(self, reason: str) -> None:
+        if reason in self._warned:
+            return
+        self._warned.add(reason)
+        print(f"bugbarn: {reason}", file=sys.stderr)
+
+    def submit(self, event: Envelope) -> bool:
+        accepted = super().submit(event)
+        if not accepted:
+            self._warn_once("queue full, event not sent")
+        return accepted
 
     def _send(self, event: Envelope) -> None:
+        # Whatever goes wrong with one event must not end the transport thread:
+        # a dead thread lets the queue fill and every later event is dropped.
+        try:
+            self._post_event(event)
+        except Exception as err:  # noqa: BLE001
+            self._warn_once(f"ingest failed: {err!r}")
+
+    def _post_event(self, event: Envelope) -> None:
         payload = json.dumps(event.to_payload()).encode()
         req = urllib.request.Request(
             self.endpoint,
@@ -52,8 +74,8 @@ class _ProjectTransport(_Transport):  # type: ignore[misc]
         try:
             with urllib.request.urlopen(req, timeout=2, context=_SSL_CTX) as r:
                 r.read()
-        except urllib.error.URLError:
-            return
+        except urllib.error.URLError as err:
+            self._warn_once(f"ingest unreachable: {err.reason}")
 
 
 def init(
