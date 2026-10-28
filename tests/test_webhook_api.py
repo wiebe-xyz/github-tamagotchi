@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
+from starlette.requests import ClientDisconnect
 
 _IS_GITHUB_SOURCE = "github_tamagotchi.api.routes.v1.webhooks.is_github_webhook_source"
 
@@ -52,6 +53,26 @@ class TestWebhookEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ignored"
+
+    async def test_client_disconnect_while_reading_body(
+        self, async_client: AsyncClient, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A sender that hangs up mid-body gets a 400 and a warning, not a raised error."""
+        with patch(
+            "starlette.requests.Request.json",
+            side_effect=ClientDisconnect(),
+        ):
+            response = await async_client.post(
+                "/api/v1/webhooks/github",
+                content=b"{}",
+                headers={"X-GitHub-Event": "push", "X-GitHub-Delivery": "abc-123"},
+            )
+        assert response.status_code == 400
+        assert "disconnected" in response.json()["detail"]
+        records = [r for r in caplog.records if "client disconnected" in r.getMessage()]
+        assert len(records) == 1
+        assert records[0].levelname == "WARNING"
+        assert "abc-123" in records[0].getMessage()
 
     async def test_push_event_creates_pet_update(self, async_client: AsyncClient) -> None:
         """Push event should update an existing pet."""

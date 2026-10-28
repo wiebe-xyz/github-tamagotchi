@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
+from starlette.requests import ClientDisconnect
 
 from github_tamagotchi import metrics as metrics_service
 from github_tamagotchi.api.dependencies import DbSession
@@ -84,7 +85,21 @@ async def github_webhook(request: Request, session: DbSession) -> WebhookRespons
             message=f"event type '{event_type}' is not handled",
         )
 
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except ClientDisconnect:
+        # The sender closed the connection before the body arrived, so nothing
+        # was lost on our side: GitHub lists the delivery as failed and offers
+        # a redelivery. Raising it made every cut connection an error event.
+        logger.warning(
+            "webhook body not received: client disconnected (event=%s delivery=%s)",
+            event_type,
+            request.headers.get("X-GitHub-Delivery", ""),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Client disconnected before the request body was received",
+        ) from None
 
     repo = payload.get("repository", {})
     repo_owner = repo.get("owner", {}).get("login", "") if isinstance(repo, dict) else ""
