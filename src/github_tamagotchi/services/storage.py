@@ -55,9 +55,14 @@ def remove_white_background(image_bytes: bytes, threshold: int = 240) -> bytes:
     return out.getvalue()
 
 
+def is_valid_path_component(value: str) -> bool:
+    """Return True if value can name part of an object path in storage."""
+    return bool(value) and bool(_VALID_NAME_RE.match(value))
+
+
 def _validate_path_component(value: str, name: str) -> None:
     """Validate that a path component does not contain path traversal characters."""
-    if not value or not _VALID_NAME_RE.match(value):
+    if not is_valid_path_component(value):
         raise ValueError(
             f"Invalid {name}: must contain only alphanumeric characters, "
             f"hyphens, underscores, and dots"

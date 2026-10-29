@@ -16,7 +16,7 @@ from github_tamagotchi.services.badge import BADGE_STYLES
 from github_tamagotchi.services.image_generation import DEFAULT_STYLE
 from github_tamagotchi.services.naming import is_valid_repo_identifier
 from github_tamagotchi.services.sprite_sheet import compose_animated_gif
-from github_tamagotchi.services.storage import StorageService
+from github_tamagotchi.services.storage import StorageService, is_valid_path_component
 
 logger = structlog.get_logger()
 
@@ -39,6 +39,23 @@ def _validate_repo_identifier(repo_owner: str, repo_name: str) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="repo_owner/repo_name must be valid GitHub identifiers",
         )
+
+
+def _require_storable_repo(repo_owner: str, repo_name: str) -> None:
+    """Answer 404 for an owner or repo that cannot name a stored object.
+
+    Storage refuses such a name with a ValueError, which the media routes logged
+    at error and answered with 503. No pet carries such a name, so its image is
+    simply absent. Crawlers request URLs like /pets/webwiebe/$/image/egg.
+    """
+    if is_valid_path_component(repo_owner) and is_valid_path_component(repo_name):
+        return
+    logger.warning(
+        "Pet media requested for an invalid repo identifier",
+        repo_owner=repo_owner[:100],
+        repo_name=repo_name[:100],
+    )
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
 
 
 def get_storage_service() -> StorageService:
@@ -174,6 +191,7 @@ async def get_pet_image(
             status_code=400,
             detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
         )
+    _require_storable_repo(repo_owner, repo_name)
     if not _api_routes.settings.minio_endpoint:
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
@@ -236,6 +254,7 @@ async def get_pet_animated_gif(
             status_code=400,
             detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
         )
+    _require_storable_repo(repo_owner, repo_name)
     if not _api_routes.settings.minio_endpoint:
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
@@ -342,6 +361,7 @@ async def get_pet_sprite_sheet(
             status_code=400,
             detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
         )
+    _require_storable_repo(repo_owner, repo_name)
     if not _api_routes.settings.minio_endpoint:
         raise HTTPException(status_code=503, detail="Image storage not configured")
 
@@ -382,6 +402,7 @@ async def get_pet_frame(
             status_code=400,
             detail=f"Invalid stage. Must be one of: {', '.join(valid_stages)}",
         )
+    _require_storable_repo(repo_owner, repo_name)
     if frame_index < 0 or frame_index > 5:
         raise HTTPException(status_code=400, detail="frame_index must be 0-5")
     if not _api_routes.settings.minio_endpoint:

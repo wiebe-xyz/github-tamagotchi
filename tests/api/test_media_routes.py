@@ -8,6 +8,7 @@ a generic FastAPI 404 {"detail": "Not Found"} that indicates a missing route.
 import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from httpx import AsyncClient
 from PIL import Image
 
@@ -272,3 +273,54 @@ class TestMediaRouteNoOverlap:
         assert resp.status_code in (200, 404)
         if resp.status_code == 404:
             assert "Frame" in resp.json()["detail"]
+
+
+class TestMediaRoutesInvalidRepo:
+    """An owner or repo that cannot name a stored object is a missing image.
+
+    Storage raises ValueError for such a name. The routes used to log that at
+    error and answer 503, so a crawler asking for /pets/webwiebe/$/image/egg
+    opened a BugBarn issue (GT-10). They now answer 404 without asking storage.
+    """
+
+    ROUTES = [
+        "/api/v1/pets/{owner}/{repo}/image/egg",
+        "/api/v1/pets/{owner}/{repo}/image/egg/animated",
+        "/api/v1/pets/{owner}/{repo}/image/egg/sheet",
+        "/api/v1/pets/{owner}/{repo}/image/egg/frame/0",
+    ]
+
+    @pytest.mark.parametrize("route", ROUTES)
+    @pytest.mark.parametrize(
+        ("owner", "repo"), [("webwiebe", "$"), ("we$bwiebe", REPO), (OWNER, "café")]
+    )
+    async def test_returns_404_without_touching_storage(
+        self, async_client: AsyncClient, route: str, owner: str, repo: str
+    ) -> None:
+        storage = _mock_storage()
+        with (
+            patch("github_tamagotchi.api.routes.settings", _settings_with_minio()),
+            patch("github_tamagotchi.api.routes.StorageService", return_value=storage),
+            patch("github_tamagotchi.api.routes.v1.pets.media.logger") as logger,
+        ):
+            resp = await async_client.get(route.format(owner=owner, repo=repo))
+
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": "Image not found"}
+        storage.get_image.assert_not_called()
+        storage.get_animated_gif.assert_not_called()
+        storage.get_sprite_sheet.assert_not_called()
+        storage.get_frame.assert_not_called()
+        logger.error.assert_not_called()
+        logger.warning.assert_called_once()
+
+    async def test_valid_repo_still_reaches_storage(self, async_client: AsyncClient) -> None:
+        storage = _mock_storage(image=_png_bytes())
+        with (
+            patch("github_tamagotchi.api.routes.settings", _settings_with_minio()),
+            patch("github_tamagotchi.api.routes.StorageService", return_value=storage),
+        ):
+            resp = await async_client.get(f"/api/v1/pets/{OWNER}/my-repo.js/image/egg")
+
+        assert resp.status_code == 200
+        storage.get_image.assert_awaited_once_with(OWNER, "my-repo.js", "egg")
