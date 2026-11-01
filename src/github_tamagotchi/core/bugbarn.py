@@ -57,7 +57,7 @@ class _ProjectTransport(_Transport):  # type: ignore[misc]
         try:
             self._post_event(event)
         except Exception as err:  # noqa: BLE001
-            self._warn_once(f"ingest failed: {err!r}")
+            self._warn_once(f"ingest failed: {type(err).__name__}")
 
     def _post_event(self, event: Envelope) -> None:
         payload = json.dumps(event.to_payload()).encode()
@@ -71,11 +71,8 @@ class _ProjectTransport(_Transport):  # type: ignore[misc]
                 "x-bugbarn-project": self._project,
             },
         )
-        try:
-            with urllib.request.urlopen(req, timeout=2, context=_SSL_CTX) as r:
-                r.read()
-        except urllib.error.URLError as err:
-            self._warn_once(f"ingest unreachable: {err.reason}")
+        with urllib.request.urlopen(req, timeout=2, context=_SSL_CTX) as r:
+            r.read()
 
 
 def init(

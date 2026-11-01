@@ -11,6 +11,7 @@ import pytest
 from bugbarn.client import Envelope
 
 from github_tamagotchi.core.bugbarn import _ProjectTransport
+from github_tamagotchi.core.logging import _LogTransport
 
 
 class _StallOnce:
@@ -81,6 +82,34 @@ def test_event_is_sent_after_an_earlier_request_timed_out(ingest: _StallOnce) ->
         transport.submit(_event())
         assert _wait_for(lambda: bool(ingest.received)), "nothing sent after the timeout"
         assert transport._worker.is_alive()
+    finally:
+        transport.close()
+
+
+def test_log_is_sent_after_an_earlier_request_timed_out(ingest: _StallOnce) -> None:
+    transport = _LogTransport(logs_url=ingest.url, api_key="k", project="p")
+    try:
+        transport.submit("info", "first", None)
+        assert _wait_for(ingest.first.is_set)
+        # The stalled request times out after the 5 s read limit.
+        time.sleep(5.2)
+        transport.submit("info", "second", None)
+        assert _wait_for(lambda: bool(ingest.received)), "nothing sent after the timeout"
+        assert transport._worker.is_alive()
+    finally:
+        transport.close()
+
+
+def test_a_failed_log_send_is_reported_once(capsys: pytest.CaptureFixture[str]) -> None:
+    transport = _LogTransport(
+        logs_url="http://127.0.0.1:9/api/v1/logs", api_key="k", project="p"
+    )
+    try:
+        transport.submit("info", "first", None)
+        assert _wait_for(lambda: "bugbarn" in capsys.readouterr().err)
+        transport.submit("info", "second", None)
+        time.sleep(0.7)
+        assert "bugbarn" not in capsys.readouterr().err
     finally:
         transport.close()
 
