@@ -15,6 +15,7 @@ import logging
 import os
 import queue
 import ssl
+import sys
 import threading
 from datetime import UTC, datetime
 from typing import Any
@@ -35,7 +36,6 @@ class _LogTransport:
 
     def __init__(self, logs_url: str, api_key: str, project: str) -> None:
         import json
-        import urllib.error
         import urllib.request
 
         self._url = logs_url
@@ -43,7 +43,7 @@ class _LogTransport:
         self._project = project
         self._json = json
         self._urllib_request = urllib.request
-        self._urllib_error = urllib.error
+        self._warned: set[str] = set()
 
         self._queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1024)
         self._closed = threading.Event()
@@ -79,23 +79,31 @@ class _LogTransport:
             except queue.Empty:
                 pass
 
+    def _warn_once(self, reason: str) -> None:
+        if reason in self._warned:
+            return
+        self._warned.add(reason)
+        print(f"bugbarn: {reason}", file=sys.stderr)
+
     def _send_batch(self, entries: list[dict[str, Any]]) -> None:
-        payload = self._json.dumps({"logs": entries}).encode()
-        req = self._urllib_request.Request(
-            self._url,
-            data=payload,
-            method="POST",
-            headers={
-                "content-type": "application/json",
-                "x-bugbarn-api-key": self._api_key,
-                "x-bugbarn-project": self._project,
-            },
-        )
+        # Whatever goes wrong with one batch must not end the worker thread:
+        # a dead thread lets the queue fill and every later log is dropped.
         try:
+            payload = self._json.dumps({"logs": entries}).encode()
+            req = self._urllib_request.Request(
+                self._url,
+                data=payload,
+                method="POST",
+                headers={
+                    "content-type": "application/json",
+                    "x-bugbarn-api-key": self._api_key,
+                    "x-bugbarn-project": self._project,
+                },
+            )
             with self._urllib_request.urlopen(req, timeout=5, context=_SSL_CTX) as r:
                 r.read()
-        except self._urllib_error.URLError:
-            pass
+        except Exception as err:  # noqa: BLE001
+            self._warn_once(f"log delivery failed: {type(err).__name__}")
 
     def flush(self) -> None:
         """Drain remaining entries and send them before shutdown."""
@@ -168,8 +176,6 @@ def _bugbarn_processor(
 
                 capture_error(message, extra=data or None)
     except Exception as proc_exc:
-        import sys
-
         print(f"bugbarn processor error: {proc_exc}", file=sys.stderr)
 
     return event_dict
