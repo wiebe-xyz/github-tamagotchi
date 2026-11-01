@@ -8,9 +8,9 @@ from collections.abc import Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from bugbarn.client import Envelope
 
 from github_tamagotchi.core.bugbarn import _ProjectTransport
-from bugbarn.client import Envelope
 
 
 class _StallOnce:
@@ -86,7 +86,9 @@ def test_event_is_sent_after_an_earlier_request_timed_out(ingest: _StallOnce) ->
 
 
 def test_a_full_queue_is_logged_once(capsys: pytest.CaptureFixture[str]) -> None:
-    transport = _ProjectTransport(api_key="k", endpoint="http://127.0.0.1:9/api/v1/events", project="p")
+    transport = _ProjectTransport(
+        api_key="k", endpoint="http://127.0.0.1:9/api/v1/events", project="p"
+    )
     transport._closed.set()  # no worker draining: the queue stays full
     transport._worker.join(timeout=1)
     transport.queue.maxsize = 1
