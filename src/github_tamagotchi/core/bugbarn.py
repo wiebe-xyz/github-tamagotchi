@@ -46,7 +46,7 @@ class _ProjectTransport(_Transport):  # type: ignore[misc]
         print(f"bugbarn: {reason}", file=sys.stderr)
 
     def submit(self, event: Envelope) -> bool:
-        accepted = super().submit(event)
+        accepted: bool = super().submit(event)
         if not accepted:
             self._warn_once("queue full, event not sent")
         return accepted
