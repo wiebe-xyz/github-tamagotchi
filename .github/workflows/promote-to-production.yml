@@ -75,8 +75,18 @@ jobs:
           docker buildx imagetools create \
             --tag "$IMAGE:$PROD_VERSION" \
             "$IMAGE:$STAGING_TAG"
+      - name: Resolve the digest to deploy
+        id: digest
+        env:
+          PROD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          IMAGE_REF=$(bash .github/scripts/resolve_image_digest.sh \
+            "ghcr.io/${{ github.repository }}:$PROD_VERSION")
+          echo "Deploying by digest: $IMAGE_REF"
+          echo "image=$IMAGE_REF" >> "$GITHUB_OUTPUT"
     outputs:
       version: ${{ steps.version.outputs.version }}
+      image: ${{ steps.digest.outputs.image }}
 
   deploy-production:
     runs-on: self-hosted
@@ -112,17 +122,36 @@ jobs:
           chmod 600 "$KUBECFG"
           export KUBECONFIG="$KUBECFG"
 
-          IMAGE="ghcr.io/${{ github.repository }}:${{ needs.promote-image.outputs.version }}"
+          IMAGE="${{ needs.promote-image.outputs.image }}"
           SHA="${{ needs.read-staging-state.outputs.sha }}"
           TAG="${{ needs.read-staging-state.outputs.tag }}"
           NS="tama-prod"
 
           echo "Deploying $IMAGE to $NS (from staging $TAG)"
 
+          ACTIVE=$(kubectl get service github-tamagotchi -n $NS \
+            -o jsonpath='{.spec.selector.version}' 2>/dev/null || echo "blue")
+          if [ "$ACTIVE" = "blue" ]; then INACTIVE="green"; else INACTIVE="blue"; fi
+          echo "Active: $ACTIVE | Deploying to: $INACTIVE"
+
+          # The manifest names no usable image, so each color keeps the image it runs
+          # now and the apply cannot roll the live color. A failed read stops the job;
+          # only a Deployment that does not exist yet reads as empty.
+          color_image() {
+            kubectl get deployment "github-tamagotchi-$1" -n $NS --ignore-not-found \
+              -o jsonpath='{.spec.template.spec.containers[?(@.name=="github-tamagotchi")].image}'
+          }
+          BLUE_IMAGE=$(color_image blue)
+          GREEN_IMAGE=$(color_image green)
+          PINNED="$(mktemp)"
+          bash .github/scripts/pin_color_images.sh k8s/production/deployment.yaml \
+            "$BLUE_IMAGE" "$GREEN_IMAGE" > "$PINNED"
+          echo "Running images: blue=$BLUE_IMAGE green=$GREEN_IMAGE"
+
           # Apply production manifests
           kubectl apply -f k8s/production/namespace.yaml
           kubectl apply -f k8s/production/middleware.yaml
-          kubectl apply -f k8s/production/deployment.yaml
+          kubectl apply -f "$PINNED"
 
           # Create the Service only if it doesn't already exist yet — this manifest
           # only carries the initial selector, and a routine deploy must never
@@ -176,11 +205,6 @@ jobs:
             --type='merge' -p="$PATCH_JSON"
 
           # Blue-green deploy
-          ACTIVE=$(kubectl get service github-tamagotchi -n $NS \
-            -o jsonpath='{.spec.selector.version}' 2>/dev/null || echo "blue")
-          if [ "$ACTIVE" = "blue" ]; then INACTIVE="green"; else INACTIVE="blue"; fi
-          echo "Active: $ACTIVE | Deploying to: $INACTIVE"
-
           kubectl set image deployment/github-tamagotchi-$INACTIVE \
             github-tamagotchi=$IMAGE migrate=$IMAGE -n $NS
 

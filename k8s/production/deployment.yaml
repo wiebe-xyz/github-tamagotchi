@@ -1,6 +1,10 @@
 # No `replicas` field on purpose: the promote workflow owns replica counts with
 # `kubectl scale`. A `replicas: 0` here made every `kubectl apply` scale the live color
 # to zero for the whole rollout of the other color (webhooks got 503, 2026-10-12).
+#
+# The image tag :set-by-promote does not exist in the registry. The promote workflow
+# writes each color's running image into this manifest before it applies it, then moves
+# the new color to a digest. A floating tag here would let a main build reach production.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,7 +36,7 @@ spec:
             - bugbarn.wiebe.xyz
       initContainers:
         - name: migrate
-          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:set-by-promote
           imagePullPolicy: Always
           command:
             - sh
@@ -51,7 +55,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: github-tamagotchi
-          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:set-by-promote
           ports:
             - containerPort: 8000
           lifecycle:
@@ -227,7 +231,7 @@ spec:
             - bugbarn.wiebe.xyz
       initContainers:
         - name: migrate
-          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:set-by-promote
           imagePullPolicy: Always
           command:
             - sh
@@ -246,7 +250,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: github-tamagotchi
-          image: ghcr.io/wiebe-xyz/github-tamagotchi:latest
+          image: ghcr.io/wiebe-xyz/github-tamagotchi:set-by-promote
           ports:
             - containerPort: 8000
           lifecycle:
