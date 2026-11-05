@@ -127,6 +127,8 @@ jobs:
           TAG="${{ needs.read-staging-state.outputs.tag }}"
           NS="tama-prod"
 
+          PUBLIC_URL="https://tamagotchi.webwiebe.nl"
+
           echo "Deploying $IMAGE to $NS (from staging $TAG)"
 
           ACTIVE=$(kubectl get service github-tamagotchi -n $NS \
@@ -256,25 +258,23 @@ jobs:
             exit 1
           fi
 
+          # The public route must pass before the switch, so a later smoke failure
+          # points at the new color and a broken route leaves traffic where it is.
+          if ! bash .github/scripts/prod_smoke.sh "$PUBLIC_URL"; then
+            echo "=== PUBLIC ROUTE FAILS BEFORE THE SWITCH — aborting, traffic stays on $ACTIVE ==="
+            kubectl scale deployment/github-tamagotchi-$INACTIVE --replicas=0 -n $NS
+            exit 1
+          fi
+
           # Switch traffic (new pod is confirmed Ready)
           kubectl patch service github-tamagotchi -n $NS \
             --type='json' \
             -p="[{\"op\":\"replace\",\"path\":\"/spec/selector/version\",\"value\":\"$INACTIVE\"}]"
           echo "Traffic switched to $INACTIVE"
 
-          # Drain: keep the old color running until the Service endpoints list only the
-          # new pods, then give the proxy time to drop the old address and finish
-          # in-flight requests before scaling the old color down.
-          NEW_IPS=$(kubectl get pod -n $NS -l app=github-tamagotchi,version=$INACTIVE \
-            -o jsonpath='{.items[*].status.podIP}')
-          for i in $(seq 1 30); do
-            ENDPOINT_IPS=$(kubectl get endpoints github-tamagotchi -n $NS \
-              -o jsonpath='{.subsets[*].addresses[*].ip}')
-            [ "$ENDPOINT_IPS" = "$NEW_IPS" ] && break
-            sleep 1
-          done
-          echo "Service endpoints: $ENDPOINT_IPS (new pods: $NEW_IPS)"
-          sleep 15
+          # Drain and smoke with the old color still running; a failure returns
+          # traffic to it and fails this job.
+          bash .github/scripts/post_switch_verify.sh $NS $ACTIVE $INACTIVE "$PUBLIC_URL"
 
           kubectl scale deployment/github-tamagotchi-$ACTIVE --replicas=0 -n $NS
           echo "Scaled down $ACTIVE — production deploy complete"
